@@ -11,7 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from csp_lib.core import get_logger
 
-logger = get_logger("csp_lib.mongo.writer")
+logger = get_logger(__name__)
 
 
 @dataclass

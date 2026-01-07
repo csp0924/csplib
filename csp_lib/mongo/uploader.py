@@ -17,7 +17,7 @@ from csp_lib.mongo.config import UploaderConfig
 from csp_lib.mongo.queue import BatchQueue
 from csp_lib.mongo.writer import MongoWriter
 
-logger = get_logger("csp_lib.mongo.uploader")
+logger = get_logger(__name__)
 
 
 class MongoBatchUploader:

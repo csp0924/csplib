@@ -10,7 +10,7 @@ from typing import Any
 
 from csp_lib.core import get_logger
 
-logger = get_logger("csp_lib.mongo.queue")
+logger = get_logger(__name__)
 
 
 class BatchQueue:
