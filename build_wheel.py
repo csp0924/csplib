@@ -71,9 +71,9 @@ def check_requirements() -> bool:
     try:
         import Cython  # noqa: F401
 
-        print(f"✓ Cython version: {Cython.__version__}")
+        print(f"[OK] Cython version: {Cython.__version__}")
     except ImportError:
-        print("✗ Cython not found. Install with: pip install cython")
+        print("[X] Cython not found. Install with: pip install cython")
         return False
 
     # 檢查 C 編譯器
@@ -86,9 +86,9 @@ def check_requirements() -> bool:
             ["gcc", "--version"], capture_output=True, text=True
         )
         if result.returncode == 0:
-            print("✓ GCC found")
+            print("[OK] GCC found")
         else:
-            print("✗ GCC not found. Install build-essential (Ubuntu) or gcc")
+            print("[X] GCC not found. Install build-essential (Ubuntu) or gcc")
             return False
 
     return True
