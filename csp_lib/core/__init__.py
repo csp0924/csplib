@@ -9,7 +9,7 @@ CSP Core Module
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from loguru import logger as _root_logger
 
@@ -52,7 +52,7 @@ def get_logger(name: str) -> Logger:
     return _module_loggers[name]
 
 
-def set_level(level: str, module: str | None = None) -> None:
+def set_level(level: str, module: Optional[str] = None) -> None:
     """
     設定 log 等級
 
@@ -138,7 +138,7 @@ def _reconfigure_logger() -> None:
 
 def configure_logging(
     level: str = "INFO",
-    format_string: str | None = None,
+    format_string: Optional[str] = None,
 ) -> None:
     """
     初始化 logging 配置

@@ -102,36 +102,31 @@ def _get_compile_args() -> list[str]:
 
 # =============== Main Setup ===============
 
+# 找出要編譯的檔案
+_files = find_pyx_and_py_files()
 
-def main():
-    """執行建置設定"""
-    files = find_pyx_and_py_files()
-
-    if not files:
-        print("Warning: No files found to compile!")
-        return
-
-    print(f"Found {len(files)} files to compile:")
-    for f in files:
-        print(f"  - {f.relative_to(PACKAGE_ROOT)}")
-
-    extensions = create_extensions(files)
-
-    setup(
-        name=PACKAGE_NAME,
-        ext_modules=cythonize(
-            extensions,
-            compiler_directives={
-                "language_level": "3",  # Python 3 語法
-                "boundscheck": False,  # 關閉邊界檢查 (效能優化)
-                "wraparound": False,  # 關閉負索引支援 (效能優化)
-            },
-            # 不產生 annotation HTML
-            annotate=False,
-        ),
-        zip_safe=False,
+if not _files:
+    print("Warning: No files found to compile!")
+    # 仍須呼叫 setup()，否則 build backend 會失敗
+    _ext_modules = []
+else:
+    print(f"Found {len(_files)} files to compile:")
+    for _f in _files:
+        print(f"  - {_f.relative_to(PACKAGE_ROOT)}")
+    _ext_modules = cythonize(
+        create_extensions(_files),
+        compiler_directives={
+            "language_level": "3",  # Python 3 語法
+            "boundscheck": False,  # 關閉邊界檢查 (效能優化)
+            "wraparound": False,  # 關閉負索引支援 (效能優化)
+        },
+        # 不產生 annotation HTML
+        annotate=False,
     )
 
-
-if __name__ == "__main__":
-    main()
+# 必須在 module level 呼叫 setup()，build backend 需要這個
+setup(
+    name=PACKAGE_NAME,
+    ext_modules=_ext_modules,
+    zip_safe=False,
+)

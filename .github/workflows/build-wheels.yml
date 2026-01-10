@@ -62,7 +62,7 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install cython build wheel setuptools
+          pip install cython build wheel setuptools mypy
 
       - name: Build wheel
         run: python build_wheel.py
@@ -82,18 +82,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build manylinux wheel
-        uses: pypa/cibuildwheel@v2.22.0
-        env:
-          CIBW_BUILD: "cp313-manylinux_x86_64"
-          CIBW_BEFORE_BUILD: "pip install cython"
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install cython build wheel setuptools mypy auditwheel patchelf
+
+      - name: Build wheel
+        run: python build_wheel.py
+
+      - name: Convert to manylinux
+        run: |
+          # 使用 auditwheel 將 linux_x86_64 轉換為 manylinux
+          auditwheel repair dist/*.whl -w wheelhouse --plat manylinux_2_28_x86_64
+          # 移除原始的 linux_x86_64 wheel
+          rm dist/*.whl
+          # 移動 manylinux wheel 到 dist
+          mv wheelhouse/*.whl dist/
 
       - name: Upload manylinux wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheel-manylinux
-          path: wheelhouse/*.whl
+          path: dist/*.whl
 
   # ============ 發布 (只有 Tag) ============
   publish:

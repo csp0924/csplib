@@ -8,7 +8,7 @@ MongoBatchUploader 模組
 """
 
 import asyncio
-from typing import Any
+from typing import Any, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -50,7 +50,7 @@ class MongoBatchUploader:
     def __init__(
         self,
         mongo_db: AsyncIOMotorDatabase,
-        config: UploaderConfig | None = None,
+        config: Optional[UploaderConfig] = None,
     ) -> None:
         """
         Args:
@@ -62,7 +62,7 @@ class MongoBatchUploader:
         self._queues: dict[str, BatchQueue] = {}
         self._retry_counts: dict[str, int] = {}  # collection_name -> retry count
         self._stop_event = asyncio.Event()
-        self._flush_task: asyncio.Task[None] | None = None
+        self._flush_task: Optional[asyncio.Task[None]] = None
 
     def register_collection(self, collection_name: str) -> None:
         """

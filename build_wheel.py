@@ -3,9 +3,10 @@
 Cross-Platform Wheel Builder for csp_lib
 
 跨平台建置輔助工具，自動執行：
-1. 清理舊建置產物
+1. 複製套件到暫存目錄
 2. Cython 編譯
-3. 打包 wheel
+3. 移除 .py 原始碼（保護程式碼）
+4. 打包 wheel
 
 使用方式：
     python build_wheel.py          # 建置 wheel
@@ -17,16 +18,20 @@ import argparse
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # =============== Configuration ===============
 
 PROJECT_ROOT = Path(__file__).parent
 PACKAGE_NAME = "csp_lib"
-BUILD_DIRS = ["build", "dist", f"{PACKAGE_NAME}.egg-info"]
+BUILD_DIRS = ["build", "dist", f"{PACKAGE_NAME}.egg-info", "csp0924_lib.egg-info"]
 
 # Cython 產生的中間檔案副檔名
 GENERATED_EXTENSIONS = {".c", ".pyd", ".so", ".html"}
+
+# 建置時需要複製的檔案
+BUILD_FILES = ["setup.py", "pyproject.toml", "README.md"]
 
 
 # =============== Clean Functions ===============
@@ -94,9 +99,43 @@ def check_requirements() -> bool:
     return True
 
 
-def build_extensions() -> bool:
+def copy_to_temp(temp_dir: Path) -> None:
     """
-    執行 Cython 編譯
+    複製套件和建置檔案到暫存目錄
+
+    Args:
+        temp_dir: 暫存目錄路徑
+    """
+    print("=" * 50)
+    print(f"Copying to temp directory: {temp_dir}")
+    print("=" * 50)
+
+    # 複製套件目錄
+    src_package = PROJECT_ROOT / PACKAGE_NAME
+    dst_package = temp_dir / PACKAGE_NAME
+    shutil.copytree(
+        src_package,
+        dst_package,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyd", "*.so", "*.c"),
+    )
+    print(f"Copied: {PACKAGE_NAME}/")
+
+    # 複製建置檔案
+    for filename in BUILD_FILES:
+        src_file = PROJECT_ROOT / filename
+        if src_file.exists():
+            shutil.copy2(src_file, temp_dir / filename)
+            print(f"Copied: {filename}")
+
+    print()
+
+
+def build_extensions(build_dir: Path) -> bool:
+    """
+    在指定目錄執行 Cython 編譯
+
+    Args:
+        build_dir: 建置目錄
 
     Returns:
         是否成功
@@ -107,7 +146,7 @@ def build_extensions() -> bool:
 
     result = subprocess.run(
         [sys.executable, "setup.py", "build_ext", "--inplace"],
-        cwd=PROJECT_ROOT,
+        cwd=build_dir,
     )
 
     if result.returncode != 0:
@@ -118,9 +157,119 @@ def build_extensions() -> bool:
     return True
 
 
-def build_wheel() -> bool:
+def generate_stubs(build_dir: Path) -> bool:
+    """
+    使用 stubgen 生成 .pyi stub 檔案
+
+    Args:
+        build_dir: 建置目錄
+
+    Returns:
+        是否成功
+    """
+    print("=" * 50)
+    print("Generating .pyi stub files...")
+    print("=" * 50)
+
+    # 檢查 mypy 是否安裝
+    try:
+        import mypy.stubgen  # noqa: F401
+        print("[OK] mypy.stubgen available")
+    except ImportError:
+        print("[SKIP] mypy not installed, skipping stub generation")
+        print("Install with: pip install mypy")
+        return True
+
+    # 安裝 optional dependencies 以便 stubgen 能分析所有模組
+    # 使用專案根目錄的 pyproject.toml
+    print("Installing optional dependencies for stub generation...")
+    install_result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", ".[all]"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if install_result.returncode != 0:
+        print(f"[WARN] Failed to install optional deps: {install_result.stderr}")
+
+    package_dir = build_dir / PACKAGE_NAME
+
+    # 使用 stubgen 對整個套件生成 stub
+    # stubgen 是 mypy 安裝時提供的命令
+    # --inspect-mode: 實際 import 模組，產生更準確的簽名
+    print("Running stubgen with --inspect-mode...")
+    result = subprocess.run(
+        [
+            "stubgen",
+            "-o", str(build_dir),
+            "--include-private",
+            "--inspect-mode",
+            "-p", PACKAGE_NAME,
+        ],
+        cwd=build_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    # 顯示 stubgen 輸出
+    if result.stdout:
+        print(f"stubgen output: {result.stdout}")
+    if result.returncode != 0:
+        print(f"stubgen stderr: {result.stderr}")
+        print("Continuing without complete stubs...")
+
+    # 統計生成的 stub 數量
+    stub_count = len(list(package_dir.rglob("*.pyi")))
+    print(f"Generated {stub_count} stub files\n")
+    return True
+
+
+def remove_source_files(build_dir: Path) -> None:
+    """
+    移除 .py 原始碼檔案和 .c 中間檔案（保留 __init__.py）
+
+    Args:
+        build_dir: 建置目錄
+    """
+    print("=" * 50)
+    print("Removing source files (keeping __init__.py)...")
+    print("=" * 50)
+
+    package_dir = build_dir / PACKAGE_NAME
+    removed_count = 0
+
+    for py_file in package_dir.rglob("*.py"):
+        # 保留 __init__.py
+        if py_file.name == "__init__.py":
+            continue
+
+        # 檢查是否有對應的 .pyd 或 .so 檔案
+        stem = py_file.stem
+        parent = py_file.parent
+        has_binary = any(parent.glob(f"{stem}*.pyd")) or any(
+            parent.glob(f"{stem}*.so")
+        )
+
+        if has_binary:
+            print(f"Removing: {py_file.relative_to(build_dir)}")
+            py_file.unlink()
+            removed_count += 1
+
+    # 移除 .c 中間檔案
+    for c_file in package_dir.rglob("*.c"):
+        print(f"Removing: {c_file.relative_to(build_dir)}")
+        c_file.unlink()
+        removed_count += 1
+
+    print(f"Removed {removed_count} source files\n")
+
+
+def build_wheel(build_dir: Path) -> bool:
     """
     打包 wheel
+
+    Args:
+        build_dir: 建置目錄
 
     Returns:
         是否成功
@@ -131,24 +280,39 @@ def build_wheel() -> bool:
 
     result = subprocess.run(
         [sys.executable, "-m", "build", "--wheel"],
-        cwd=PROJECT_ROOT,
+        cwd=build_dir,
     )
 
     if result.returncode != 0:
         print("Wheel build failed!")
         return False
 
-    # 顯示產生的 wheel 檔案
-    dist_dir = PROJECT_ROOT / "dist"
-    if dist_dir.exists():
-        wheels = list(dist_dir.glob("*.whl"))
-        if wheels:
-            print("\nGenerated wheel files:")
-            for whl in wheels:
-                print(f"  - {whl.name}")
-
     print("Wheel build completed!\n")
     return True
+
+
+def copy_dist_to_project(temp_dir: Path) -> None:
+    """
+    將產生的 wheel 複製回專案目錄
+
+    Args:
+        temp_dir: 暫存目錄
+    """
+    temp_dist = temp_dir / "dist"
+    project_dist = PROJECT_ROOT / "dist"
+
+    if not temp_dist.exists():
+        print("Warning: No dist directory found in temp")
+        return
+
+    # 確保專案 dist 目錄存在
+    project_dist.mkdir(exist_ok=True)
+
+    # 複製 wheel 檔案
+    for whl_file in temp_dist.glob("*.whl"):
+        dst_file = project_dist / whl_file.name
+        shutil.copy2(whl_file, dst_file)
+        print(f"Copied to: {dst_file.relative_to(PROJECT_ROOT)}")
 
 
 # =============== Main Entry ===============
@@ -169,6 +333,11 @@ def main():
         "--no-clean",
         action="store_true",
         help="Skip cleaning before build",
+    )
+    parser.add_argument(
+        "--keep-temp",
+        action="store_true",
+        help="Keep temp directory after build (for debugging)",
     )
 
     args = parser.parse_args()
@@ -193,11 +362,34 @@ def main():
     if not args.no_clean:
         clean_all()
 
-    if not build_extensions():
-        return 1
+    # 在暫存目錄中建置
+    with tempfile.TemporaryDirectory(
+        prefix="csp_build_", delete=not args.keep_temp
+    ) as temp_str:
+        temp_dir = Path(temp_str)
 
-    if not build_wheel():
-        return 1
+        if args.keep_temp:
+            print(f"Temp directory (kept): {temp_dir}\n")
+
+        # 1. 複製到暫存目錄
+        copy_to_temp(temp_dir)
+
+        # 2. 生成 .pyi stub 檔案 (在 Cython 編譯前，使用 .py 原始碼)
+        generate_stubs(temp_dir)
+
+        # 3. Cython 編譯
+        if not build_extensions(temp_dir):
+            return 1
+
+        # 4. 移除 .py 原始碼
+        remove_source_files(temp_dir)
+
+        # 5. 打包 wheel
+        if not build_wheel(temp_dir):
+            return 1
+
+        # 6. 複製 wheel 回專案
+        copy_dist_to_project(temp_dir)
 
     print("=" * 50)
     print("SUCCESS! Wheel package ready in dist/")

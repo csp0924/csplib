@@ -5,7 +5,7 @@ MongoWriter 模組
 """
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -27,7 +27,7 @@ class WriteResult:
 
     success: bool
     inserted_count: int = 0
-    error_message: str | None = None
+    error_message: Optional[str] = None
 
 
 class MongoWriter:
