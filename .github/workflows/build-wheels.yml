@@ -72,10 +72,9 @@ jobs:
           name: wheel-manylinux
           path: wheelhouse/*.whl
 
-  # 測試建置的 wheel
-  test_wheels:
-    name: Test wheel on ${{ matrix.os }}
-    needs: [build_wheels]
+  # 測試源碼 (在建置 wheel 前)
+  test_source:
+    name: Test source on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -90,15 +89,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Download wheel
-        uses: actions/download-artifact@v4
-        with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/
-
-      - name: Install wheel and test dependencies
+      - name: Install dependencies
         run: |
-          pip install dist/*.whl
+          pip install -e .
           pip install pytest pytest-asyncio
 
       - name: Run tests
@@ -107,7 +100,7 @@ jobs:
   # 發布到 PyPI (僅在 tag 推送時)
   publish:
     name: Publish to PyPI
-    needs: [build_wheels, build_manylinux, test_wheels]
+    needs: [build_wheels, build_manylinux, test_source]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
