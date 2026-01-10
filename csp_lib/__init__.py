@@ -8,4 +8,4 @@ CSP Common Library
 - csp_lib[all]: 安裝所有功能
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
