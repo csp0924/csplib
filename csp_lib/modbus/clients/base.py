@@ -33,7 +33,12 @@ class AsyncModbusClientBase(ABC):
 
     @abstractmethod
     def is_connected(self) -> bool:
-        """檢查連線狀態"""
+        """
+        檢查連線狀態
+        
+        Note: 某些實作 (如 RTU/SharedTCP) 可能需要使用 async 版本
+        以正確處理共享資源的鎖定。
+        """
 
     # ========== 讀取操作 ==========
 
