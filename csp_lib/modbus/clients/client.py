@@ -241,8 +241,9 @@ class PymodbusRtuClient(AsyncModbusClientBase):
     def __init__(self, config: ModbusRtuConfig) -> None:
         self._config = config
         self._port = config.port
+        self._resources_acquired = False
 
-    async def _get_shared_resources(
+    async def _acquire_resources(
         self,
     ) -> tuple[AsyncModbusSerialClient, asyncio.Lock]:
         """
@@ -275,6 +276,18 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             _rtu_instances[self._port] = (client, lock, 1)
             return client, lock
 
+    async def _get_resources(
+        self,
+    ) -> tuple[AsyncModbusSerialClient, asyncio.Lock]:
+        """
+        用於讀寫操作，僅取得已存在的資源。
+        """
+        async with _rtu_instances_lock:
+            if self._port not in _rtu_instances:
+                raise ModbusError(f"尚未連線到串口 {self._port}")
+            client, lock, _ = _rtu_instances[self._port]
+            return client, lock
+
     async def _release_shared_resources(self) -> None:
         """釋放共用資源的參考計數"""
         global _rtu_instances
@@ -294,16 +307,27 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def connect(self) -> None:
         """建立 RTU 連線"""
-        client, lock = await self._get_shared_resources()
+        if self._resources_acquired:
+            return
+
+        client, lock = await self._acquire_resources()
+        self._resources_acquired = True
+
         async with lock:
             if not client.connected:
                 connected = await client.connect()
                 if not connected:
+                    self._resources_acquired = False
+                    await self._release_shared_resources()
                     raise ModbusError(f"無法開啟串口 {self._config.port}")
 
     async def disconnect(self) -> None:
         """斷開 RTU 連線（釋放參考計數）"""
+        if not self._resources_acquired:
+            return  # 未連線，無需釋放
+
         await self._release_shared_resources()
+        self._resources_acquired = False
 
     async def is_connected(self) -> bool:
         """檢查連線狀態"""
@@ -317,7 +341,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def read_coils(self, address: int, count: int) -> list[bool]:
         """讀取線圈狀態 (FC 0x01)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.read_coils(
                 address=address,
@@ -330,7 +354,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def read_discrete_inputs(self, address: int, count: int) -> list[bool]:
         """讀取離散輸入 (FC 0x02)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.read_discrete_inputs(
                 address=address,
@@ -343,7 +367,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def read_holding_registers(self, address: int, count: int) -> list[int]:
         """讀取保持暫存器 (FC 0x03)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.read_holding_registers(
                 address=address,
@@ -356,7 +380,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def read_input_registers(self, address: int, count: int) -> list[int]:
         """讀取輸入暫存器 (FC 0x04)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.read_input_registers(
                 address=address,
@@ -371,7 +395,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def write_single_coil(self, address: int, value: bool) -> None:
         """寫入單一線圈 (FC 0x05)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.write_coil(
                 address=address,
@@ -383,7 +407,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def write_single_register(self, address: int, value: int) -> None:
         """寫入單一暫存器 (FC 0x06)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.write_register(
                 address=address,
@@ -395,7 +419,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def write_multiple_coils(self, address: int, values: list[bool]) -> None:
         """寫入多個線圈 (FC 0x0F)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.write_coils(
                 address=address,
@@ -407,7 +431,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def write_multiple_registers(self, address: int, values: list[int]) -> None:
         """寫入多個暫存器 (FC 0x10)"""
-        client, lock = await self._get_shared_resources()
+        client, lock = await self._get_resources()
         async with lock:
             response = await client.write_registers(
                 address=address,
