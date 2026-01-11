@@ -206,6 +206,43 @@ class BitExtractTransform:
 
 
 @dataclass(frozen=True)
+class ByteExtractTransform:
+    """
+    位元組提取轉換
+
+    從多暫存器值列表提取指定位元組。
+
+    Attributes:
+        byte_offset: 起始位元組位置
+        byte_length: 位元組數量
+
+    使用範例：
+        # 從 [0x1234, 0x5678] 提取前 2 bytes
+        ByteExtractTransform(byte_offset=0, byte_length=2)
+        # -> bytes([0x12, 0x34])
+    """
+
+    byte_offset: int = 0
+    byte_length: int = 1
+
+    def __post_init__(self) -> None:
+        if self.byte_offset < 0:
+            raise ValueError(f"byte_offset 必須 >= 0，收到: {self.byte_offset}")
+        if self.byte_length < 1:
+            raise ValueError(f"byte_length 必須 >= 1，收到: {self.byte_length}")
+
+    def apply(self, value: Any) -> bytes:
+        if isinstance(value, (list, tuple)):
+            # 假設是暫存器列表，每個暫存器 2 bytes
+            data = bytearray()
+            for reg in value:
+                data.append((reg >> 8) & 0xFF)
+                data.append(reg & 0xFF)
+            return bytes(data[self.byte_offset : self.byte_offset + self.byte_length])
+        raise TypeError(f"ByteExtractTransform 需要列表，收到: {type(value).__name__}")
+
+
+@dataclass(frozen=True)
 class MultiFieldExtractTransform:
     """
     多位元欄位提取轉換
@@ -264,6 +301,7 @@ __all__ = [
     "EnumMapTransform",
     "ClampTransform",
     "BoolTransform",
+    "ByteExtractTransform",
     "InverseTransform",
     "BitExtractTransform",
     "MultiFieldExtractTransform",
