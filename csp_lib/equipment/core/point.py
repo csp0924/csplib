@@ -75,12 +75,12 @@ class ReadPoint(PointDefinition):
     Attributes:
         pipeline: 資料處理管線（可選）
         read_group: 讀取分組名稱（可選）
-            - None: 參與自動合併邏輯
+            - "": 參與自動合併邏輯
             - str: 只與相同 read_group 名稱的點位合併
         metadata: 點位元資料（可選）
     """
     pipeline: ProcessingPipeline | None = None
-    read_group: str | None = None
+    read_group: str = ""
     metadata: PointMetadata | None = None
 
     def __post_init__(self) -> None:
