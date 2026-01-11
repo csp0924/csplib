@@ -4,11 +4,10 @@
 #
 # 將 Modbus 暫存器列表解碼為 Python 值
 
-from typing import Iterable
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Iterable, Any
 
 from csp_lib.modbus import ByteOrder, ModbusDataType, RegisterOrder
 
@@ -27,7 +26,7 @@ class ModbusDecoder:
 
     data_type: ModbusDataType
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
-    register_order: RegisterOrder = RegisterOrder.HIGH_TO_LOW
+    register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
 
     def apply(self, value: Iterable[Any]) -> Any:
         if not isinstance(value, (list, tuple)):
@@ -57,7 +56,7 @@ class ModbusEncoder:
     """
     data_type: ModbusDataType
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
-    register_order: RegisterOrder = RegisterOrder.HIGH_TO_LOW
+    register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
 
     def apply(self, value: Any) -> list[int]:
         return self.data_type.encode(
