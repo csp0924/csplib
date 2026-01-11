@@ -1,0 +1,258 @@
+# =============== Equipment Alarm - Evaluator ===============
+#
+# 告警評估器
+#
+# 根據點位值評估是否觸發告警：
+#   - BitMaskAlarmEvaluator: 位元遮罩告警
+#   - TableAlarmEvaluator: 查表告警
+#   - ThresholdAlarmEvaluator: 閾值告警
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+from .definition import AlarmDefinition
+
+
+class AlarmEvaluator(ABC):
+    """告警評估器抽象基底"""
+
+    @property
+    @abstractmethod
+    def point_name(self) -> str:
+        """關聯的點位名稱"""
+
+    @abstractmethod
+    def evaluate(self, value: Any) -> dict[str, bool]:
+        """
+        評估告警狀態
+
+        Args:
+            value: 點位值
+
+        Returns:
+            {告警代碼: 是否觸發} 字典
+        """
+
+
+@dataclass
+class BitMaskAlarmEvaluator(AlarmEvaluator):
+    """
+    位元遮罩告警評估器
+
+    檢查暫存器值的特定位元是否為 1。
+
+    Attributes:
+        _point_name: 關聯的點位名稱
+        bit_alarms: {位元位置: 告警定義} 字典
+    """
+
+    _point_name: str
+    bit_alarms: dict[int, AlarmDefinition]
+
+    @property
+    def point_name(self) -> str:
+        return self._point_name
+
+    def evaluate(self, value: Any) -> dict[str, bool]:
+        """
+        評估告警狀態
+
+        Args:
+            value: 點位值
+
+        Returns:
+            {告警代碼: 是否觸發} 字典
+        """
+        if value is None:
+            return {}
+        if not isinstance(value, int):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                return {}
+
+        result: dict[str, bool] = {}
+        for bit_pos, alarm in self.bit_alarms.items():
+            is_triggered = bool((value >> bit_pos) & 1)
+            result[alarm.code] = is_triggered
+        return result
+
+    def get_alarms(self) -> list[AlarmDefinition]:
+        """
+        取得所有告警定義
+
+        Returns:
+            告警定義列表
+        """
+        return list(self.bit_alarms.values())
+
+
+@dataclass
+class TableAlarmEvaluator(AlarmEvaluator):
+    """
+    查表告警評估器
+
+    根據值查表判斷告警。
+
+    Attributes:
+        _point_name: 關聯的點位名稱
+        table: {值: 告警定義} 字典
+    """
+
+    _point_name: str
+    table: dict[int, AlarmDefinition]
+
+    @property
+    def point_name(self) -> str:
+        return self._point_name
+
+    def evaluate(self, value: Any) -> dict[str, bool]:
+        """
+        評估告警狀態
+
+        Args:
+            value: 點位值
+
+        Returns:
+            {告警代碼: 是否觸發} 字典
+        """
+        if value is None:
+            return {}
+
+        result: dict[str, bool] = {alarm.code: False for alarm in self.table.values()}
+
+        if not isinstance(value, int):
+            try:
+                value = int(value)
+            except (TypeError, ValueError):
+                return result
+
+        if value in self.table:
+            alarm = self.table[value]
+            result[alarm.code] = True
+        
+        return result
+
+    def get_alarms(self) -> list[AlarmDefinition]:
+        """
+        取得所有告警定義
+
+        Returns:
+            告警定義列表
+        """
+        return list(self.table.values())
+
+
+class Operator(Enum):
+    """比較運算子"""
+
+    GT = ">"
+    GE = ">="
+    LT = "<"
+    LE = "<="
+    EQ = "=="
+    NE = "!="
+
+
+@dataclass(frozen=True)
+class ThresholdCondition:
+    """閾值條件"""
+
+    alarm: AlarmDefinition
+    operator: Operator
+    value: float
+
+    def check(self, actual_value: float) -> bool:
+        """檢查是否滿足條件"""
+        match self.operator:
+            case Operator.GT:
+                return actual_value > self.value
+            case Operator.GE:
+                return actual_value >= self.value
+            case Operator.LT:
+                return actual_value < self.value
+            case Operator.LE:
+                return actual_value <= self.value
+            case Operator.EQ:
+                return actual_value == self.value
+            case Operator.NE:
+                return actual_value != self.value
+
+
+@dataclass
+class ThresholdAlarmEvaluator(AlarmEvaluator):
+    """
+    閾值告警評估器
+
+    根據數值與閾值比較判斷告警。
+
+    Attributes:
+        _point_name: 關聯的點位名稱
+        conditions: 閾值條件列表
+
+    使用範例：
+        ThresholdAlarmEvaluator(
+            _point_name="temperature",
+            conditions=[
+                ThresholdCondition(
+                    alarm=AlarmDefinition("HIGH_TEMP", "溫度過高"),
+                    operator=Operator.GT,
+                    value=45.0,
+                ),
+            ],
+        )
+    """
+
+    _point_name: str
+    conditions: list[ThresholdCondition]
+
+    @property
+    def point_name(self) -> str:
+        return self._point_name
+
+    def evaluate(self, value: Any) -> dict[str, bool]:
+        """
+        評估告警狀態
+
+        Args:
+            value: 點位值
+
+        Returns:
+            {告警代碼: 是否觸發} 字典
+        """
+        if value is None:
+            return {}
+
+        if not isinstance(value, (int, float)):
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                return {}
+
+        result: dict[str, bool] = {}
+        for condition in self.conditions:
+            result[condition.alarm.code] = condition.check(value)
+        return result
+
+    def get_alarms(self) -> list[AlarmDefinition]:
+        """
+        取得所有告警定義
+
+        Returns:
+            告警定義列表
+        """
+        return [condition.alarm for condition in self.conditions]
+
+
+__all__ = [
+    "AlarmEvaluator",
+    "BitMaskAlarmEvaluator",
+    "TableAlarmEvaluator",
+    "ThresholdAlarmEvaluator",
+    "ThresholdCondition",
+    "Operator",
+]
