@@ -49,4 +49,27 @@ dev = [
     "setuptools>=80.9.0",
     "build>=1.4.0",
     "mypy>=1.19.1",
+    "ruff>=0.11.0",
+    "pre-commit>=4.0.0",
 ]
+
+# =============== Ruff (Linting + Formatting) ===============
+[tool.ruff]
+target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.format]
+quote-style = "double"

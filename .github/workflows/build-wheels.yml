@@ -19,9 +19,31 @@ on:
     branches: [main]
 
 jobs:
+  # ============ Lint (PR + Tag 都會跑) ============
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --group dev
+        env:
+          SKIP_CYTHON: "1"
+
+      - name: Run Ruff (lint)
+        run: uv run ruff check .
+
+      - name: Run Ruff (format check)
+        run: uv run ruff format --check .
+
   # ============ 測試 (PR + Tag 都會跑) ============
   test:
     name: Test on ${{ matrix.os }}
+    needs: [lint]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
