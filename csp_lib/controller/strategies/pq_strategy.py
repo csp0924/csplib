@@ -7,18 +7,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from csp_lib.controller.core import Strategy, StrategyContext, Command, ExecutionConfig, ExecutionMode, ConfigMixin
+from csp_lib.controller.core import Command, ConfigMixin, ExecutionConfig, ExecutionMode, Strategy, StrategyContext
 
 
 @dataclass
 class PQModeConfig(ConfigMixin):
     """
     PQ 模式配置
-    
+
     Attributes:
         p: 有功功率目標值 (kW)
         q: 無功功率目標值 (kVar)
     """
+
     p: float = 0.0
     q: float = 0.0
 
@@ -26,10 +27,10 @@ class PQModeConfig(ConfigMixin):
 class PQModeStrategy(Strategy):
     """
     PQ 模式策略
-    
+
     根據配置輸出固定的 P/Q 值。
     每秒執行一次 (PERIODIC)。
-    
+
     Usage:
         config = PQModeConfig(p=100, q=50)
         strategy = PQModeStrategy(config)
@@ -38,7 +39,7 @@ class PQModeStrategy(Strategy):
     def __init__(self, config: Optional[PQModeConfig] = None):
         """
         初始化 PQ 模式策略
-        
+
         Args:
             config: PQ 配置，若為 None 則使用預設值 (0, 0)
         """
@@ -61,7 +62,7 @@ class PQModeStrategy(Strategy):
     def update_config(self, config: PQModeConfig) -> None:
         """
         更新配置
-        
+
         Args:
             config: 新的 PQ 配置
         """

@@ -6,26 +6,27 @@ import pytest
 
 from csp_lib.modbus import (
     ByteOrder,
-    RegisterOrder,
-    ModbusCodec,
-    ModbusEncodeError,
-    ModbusDecodeError,
-    ModbusConfigError,
-    # Numeric types
-    Int16,
-    UInt16,
-    Int32,
-    UInt32,
-    Int64,
-    UInt64,
-    Float32,
-    Float64,
     # Dynamic types
     DynamicInt,
     DynamicUInt,
+    Float32,
+    Float64,
+    # Numeric types
+    Int16,
+    Int32,
+    Int64,
+    ModbusCodec,
+    ModbusConfigError,
+    ModbusDecodeError,
+    ModbusEncodeError,
     # String type
     ModbusString,
+    RegisterOrder,
+    UInt16,
+    UInt32,
+    UInt64,
 )
+
 
 class TestInt16:
     """Int16 測試"""
@@ -366,11 +367,11 @@ class TestDynamicUInt:
     def test_uint48_encode_decode(self):
         codec = ModbusCodec()
         uint48 = DynamicUInt(48)
-        
+
         value = 0x123456789ABC
         registers = codec.encode(uint48, value)
         assert len(registers) == 3
-        
+
         decoded = codec.decode(uint48, registers)
         assert decoded == value
 
@@ -384,7 +385,7 @@ class TestDynamicUInt:
         codec = ModbusCodec()
         uint64 = DynamicUInt(64)
         assert uint64.register_count == 4
-        
+
         value = 0x123456789ABCDEF0
         registers = codec.encode(uint64, value)
         decoded = codec.decode(uint64, registers)
@@ -397,7 +398,7 @@ class TestDynamicInt:
     def test_int48_negative(self):
         codec = ModbusCodec()
         int48 = DynamicInt(48)
-        
+
         value = -1
         registers = codec.encode(int48, value)
         decoded = codec.decode(int48, registers)
@@ -406,10 +407,10 @@ class TestDynamicInt:
     def test_int48_roundtrip(self):
         codec = ModbusCodec()
         int48 = DynamicInt(48)
-        
+
         max_val = (1 << 47) - 1
         min_val = -(1 << 47)
-        
+
         for value in [min_val, -1, 0, 1, max_val]:
             registers = codec.encode(int48, value)
             decoded = codec.decode(int48, registers)
@@ -426,7 +427,7 @@ class TestModbusString:
     def test_encode_decode_ascii(self):
         codec = ModbusCodec()
         str_type = ModbusString(16)
-        
+
         value = "Hello"
         registers = codec.encode(str_type, value)
         decoded = codec.decode(str_type, registers)
@@ -435,7 +436,7 @@ class TestModbusString:
     def test_encode_decode_utf8(self):
         codec = ModbusCodec()
         str_type = ModbusString(32, encoding="utf-8")
-        
+
         value = "Hello 世界"
         registers = codec.encode(str_type, value)
         decoded = codec.decode(str_type, registers)
@@ -444,7 +445,6 @@ class TestModbusString:
     def test_max_length_exceeded(self):
         codec = ModbusCodec()
         str_type = ModbusString(5)
-        
+
         with pytest.raises(ModbusEncodeError):
             codec.encode(str_type, "123456")  # 6 chars > 5 max
-

@@ -12,8 +12,8 @@
 #   - 自動適配 3.10.0+ API 變更 (slave → device_id)
 
 from .base import AsyncModbusClientBase
-from .compat import is_new_api, slave_kwarg
 from .client import PymodbusRtuClient, PymodbusTcpClient, SharedPymodbusTcpClient
+from .compat import is_new_api, slave_kwarg
 
 __all__ = [
     # Base
@@ -26,4 +26,3 @@ __all__ = [
     "SharedPymodbusTcpClient",
     "PymodbusRtuClient",
 ]
-

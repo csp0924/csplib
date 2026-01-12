@@ -48,9 +48,7 @@ class BatchQueue:
             if len(self._queue) >= self.max_size:
                 self._queue.popleft()  # 丟棄最舊的資料
                 dropped = True
-                logger.warning(
-                    f"BatchQueue[{self.collection_name}]: 容量已滿，丟棄最舊資料"
-                )
+                logger.warning(f"BatchQueue[{self.collection_name}]: 容量已滿，丟棄最舊資料")
             self._queue.append(document)
             return not dropped
 
@@ -78,10 +76,7 @@ class BatchQueue:
                 if len(self._queue) < self.max_size:
                     self._queue.appendleft(doc)
                 else:
-                    logger.warning(
-                        f"BatchQueue[{self.collection_name}]: "
-                        "restore 時容量已滿，丟棄資料"
-                    )
+                    logger.warning(f"BatchQueue[{self.collection_name}]: restore 時容量已滿，丟棄資料")
                     break
 
     async def size(self) -> int:

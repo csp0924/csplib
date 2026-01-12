@@ -51,8 +51,7 @@ def _ensure_pymodbus_imported() -> None:
         _AsyncModbusSerialClient = AsyncModbusSerialClient
     except ImportError as e:
         raise ImportError(
-            "Pymodbus client requires 'pymodbus' package. "
-            "Install with: uv pip install csp_lib[modbus]"
+            "Pymodbus client requires 'pymodbus' package. Install with: uv pip install csp_lib[modbus]"
         ) from e
 
 
@@ -98,9 +97,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         if not client.connected:
             connected = await client.connect()
             if not connected:
-                raise ModbusError(
-                    f"無法連線到 {self._config.host}:{self._config.port}"
-                )
+                raise ModbusError(f"無法連線到 {self._config.host}:{self._config.port}")
 
     async def disconnect(self) -> None:
         """斷開 TCP 連線"""
@@ -331,7 +328,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def is_connected(self) -> bool:
         """檢查連線狀態"""
-        async with _rtu_instances_lock: 
+        async with _rtu_instances_lock:
             if self._port not in _rtu_instances:
                 return False
             client, _, _ = _rtu_instances[self._port]
@@ -680,4 +677,3 @@ __all__ = [
     "PymodbusRtuClient",
     "SharedPymodbusTcpClient",
 ]
-

@@ -26,52 +26,51 @@
 #     )
 
 # Exceptions
-from .exceptions import (
-    ModbusError,
-    ModbusEncodeError,
-    ModbusDecodeError,
-    ModbusConfigError,
-)
-
-# Enums
-from .enums import (
-    ByteOrder,
-    RegisterOrder,
-    Parity,
-    FunctionCode,
-)
-
-# Config
-from .config import (
-    ModbusTcpConfig,
-    ModbusRtuConfig,
-)
-
-# Types
-from .types import (
-    ModbusDataType,
-    Int16,
-    UInt16,
-    Int32,
-    UInt32,
-    Float32,
-    Int64,
-    UInt64,
-    Float64,
-    DynamicInt,
-    DynamicUInt,
-    ModbusString,
+# Clients
+from .clients import (
+    AsyncModbusClientBase,
+    PymodbusRtuClient,
+    PymodbusTcpClient,
+    SharedPymodbusTcpClient,
 )
 
 # Codec
 from .codec import ModbusCodec
 
-# Clients
-from .clients import (
-    AsyncModbusClientBase,
-    PymodbusTcpClient,
-    PymodbusRtuClient,
-    SharedPymodbusTcpClient,
+# Config
+from .config import (
+    ModbusRtuConfig,
+    ModbusTcpConfig,
+)
+
+# Enums
+from .enums import (
+    ByteOrder,
+    FunctionCode,
+    Parity,
+    RegisterOrder,
+)
+from .exceptions import (
+    ModbusConfigError,
+    ModbusDecodeError,
+    ModbusEncodeError,
+    ModbusError,
+)
+
+# Types
+from .types import (
+    DynamicInt,
+    DynamicUInt,
+    Float32,
+    Float64,
+    Int16,
+    Int32,
+    Int64,
+    ModbusDataType,
+    ModbusString,
+    UInt16,
+    UInt32,
+    UInt64,
 )
 
 __all__ = [

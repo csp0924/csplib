@@ -67,9 +67,7 @@ class MongoWriter:
         try:
             result = await self._db[collection_name].insert_many(documents)
             inserted_count = len(result.inserted_ids)
-            logger.debug(
-                f"MongoWriter: 成功寫入 {inserted_count} 筆至 '{collection_name}'"
-            )
+            logger.debug(f"MongoWriter: 成功寫入 {inserted_count} 筆至 '{collection_name}'")
             return WriteResult(success=True, inserted_count=inserted_count)
 
         except Exception as e:

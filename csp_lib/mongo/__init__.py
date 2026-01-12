@@ -11,10 +11,7 @@ Usage:
 try:
     from motor.motor_asyncio import AsyncIOMotorDatabase  # noqa: F401
 except ImportError as e:
-    raise ImportError(
-        "MongoDB module requires 'motor' package. "
-        "Install with: uv pip install csp_lib[mongo]"
-    ) from e
+    raise ImportError("MongoDB module requires 'motor' package. Install with: uv pip install csp_lib[mongo]") from e
 
 from csp_lib.mongo.config import UploaderConfig
 from csp_lib.mongo.uploader import MongoBatchUploader

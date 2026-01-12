@@ -61,22 +61,16 @@ class ModbusString(ModbusDataType):
         register_order: RegisterOrder,
     ) -> list[int]:
         if not isinstance(value, str):
-            raise ModbusEncodeError(
-                f"ModbusString 需要字串，收到: {type(value).__name__}"
-            )
+            raise ModbusEncodeError(f"ModbusString 需要字串，收到: {type(value).__name__}")
 
         # 編碼為 bytes
         try:
             encoded = value.encode(self._encoding)
         except UnicodeEncodeError as e:
-            raise ModbusEncodeError(
-                f"無法使用 {self._encoding} 編碼字串: {e}"
-            ) from e
+            raise ModbusEncodeError(f"無法使用 {self._encoding} 編碼字串: {e}") from e
 
         if len(encoded) > self._max_length:
-            raise ModbusEncodeError(
-                f"字串長度超過上限 {self._max_length}，實際: {len(encoded)}"
-            )
+            raise ModbusEncodeError(f"字串長度超過上限 {self._max_length}，實際: {len(encoded)}")
 
         # 補齊到偶數長度 (每個暫存器 2 bytes)
         padded_length = self._register_count * 2
@@ -107,8 +101,7 @@ class ModbusString(ModbusDataType):
     ) -> str:
         if len(registers) < self._register_count:
             raise ModbusDecodeError(
-                f"ModbusString({self._max_length}) 需要 {self._register_count} 個暫存器，"
-                f"收到: {len(registers)}"
+                f"ModbusString({self._max_length}) 需要 {self._register_count} 個暫存器，收到: {len(registers)}"
             )
 
         # 取得所需的暫存器並根據 register_order 還原順序
@@ -130,13 +123,10 @@ class ModbusString(ModbusDataType):
         try:
             decoded = bytes(data).decode(self._encoding)
         except UnicodeDecodeError as e:
-            raise ModbusDecodeError(
-                f"無法使用 {self._encoding} 解碼資料: {e}"
-            ) from e
+            raise ModbusDecodeError(f"無法使用 {self._encoding} 解碼資料: {e}") from e
 
         # 去除尾部 null 字元與空白
         return decoded.rstrip("\x00").rstrip()
 
 
 __all__ = ["ModbusString"]
-

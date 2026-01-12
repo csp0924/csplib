@@ -4,9 +4,9 @@
 
 from csp_lib.modbus import (
     ByteOrder,
-    RegisterOrder,
-    Parity,
     FunctionCode,
+    Parity,
+    RegisterOrder,
 )
 
 

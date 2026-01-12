@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .enums import ByteOrder, RegisterOrder
-from .exceptions import ModbusEncodeError, ModbusDecodeError
+from .exceptions import ModbusDecodeError, ModbusEncodeError
 from .types import ModbusDataType
 
 
@@ -36,8 +36,8 @@ class ModbusCodec:
     """
 
     def encode(
-        self, 
-        data_type: ModbusDataType, 
+        self,
+        data_type: ModbusDataType,
         value: Any,
         byte_order: ByteOrder | None = None,
         register_order: RegisterOrder | None = None,
@@ -68,10 +68,9 @@ class ModbusCodec:
         except Exception as e:
             raise ModbusEncodeError(f"編碼失敗: {e}") from e
 
-
     def decode(
-        self, 
-        data_type: ModbusDataType, 
+        self,
+        data_type: ModbusDataType,
         registers: list[int],
         byte_order: ByteOrder | None = None,
         register_order: RegisterOrder | None = None,
@@ -101,6 +100,7 @@ class ModbusCodec:
             raise e
         except Exception as e:
             raise ModbusDecodeError(f"解碼失敗: {e}") from e
+
 
 __all__ = [
     "ModbusCodec",

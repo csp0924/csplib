@@ -149,8 +149,7 @@ class MongoBatchUploader:
 
         if retry_count <= self._config.max_retry_count:
             logger.warning(
-                f"MongoBatchUploader: '{collection_name}' 寫入失敗，"
-                f"重試 {retry_count}/{self._config.max_retry_count}"
+                f"MongoBatchUploader: '{collection_name}' 寫入失敗，重試 {retry_count}/{self._config.max_retry_count}"
             )
             await self._queues[collection_name].restore(documents)
         else:

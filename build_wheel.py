@@ -87,9 +87,7 @@ def check_requirements() -> bool:
         print("Note: Windows requires Visual Studio Build Tools")
     else:
         # Linux/macOS 檢查 gcc
-        result = subprocess.run(
-            ["gcc", "--version"], capture_output=True, text=True
-        )
+        result = subprocess.run(["gcc", "--version"], capture_output=True, text=True)
         if result.returncode == 0:
             print("[OK] GCC found")
         else:
@@ -174,6 +172,7 @@ def generate_stubs(build_dir: Path) -> bool:
     # 檢查 mypy 是否安裝
     try:
         import mypy.stubgen  # noqa: F401
+
         print("[OK] mypy.stubgen available")
     except ImportError:
         print("[SKIP] mypy not installed, skipping stub generation")
@@ -201,10 +200,12 @@ def generate_stubs(build_dir: Path) -> bool:
     result = subprocess.run(
         [
             "stubgen",
-            "-o", str(build_dir),
+            "-o",
+            str(build_dir),
             "--include-private",
             "--inspect-mode",
-            "-p", PACKAGE_NAME,
+            "-p",
+            PACKAGE_NAME,
         ],
         cwd=build_dir,
         capture_output=True,
@@ -246,9 +247,7 @@ def remove_source_files(build_dir: Path) -> None:
         # 檢查是否有對應的 .pyd 或 .so 檔案
         stem = py_file.stem
         parent = py_file.parent
-        has_binary = any(parent.glob(f"{stem}*.pyd")) or any(
-            parent.glob(f"{stem}*.so")
-        )
+        has_binary = any(parent.glob(f"{stem}*.pyd")) or any(parent.glob(f"{stem}*.so"))
 
         if has_binary:
             print(f"Removing: {py_file.relative_to(build_dir)}")
@@ -319,9 +318,7 @@ def copy_dist_to_project(temp_dir: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build csp_lib as binary wheel package"
-    )
+    parser = argparse.ArgumentParser(description="Build csp_lib as binary wheel package")
     parser.add_argument(
         "action",
         nargs="?",
@@ -363,9 +360,7 @@ def main():
         clean_all()
 
     # 在暫存目錄中建置
-    with tempfile.TemporaryDirectory(
-        prefix="csp_build_", delete=not args.keep_temp
-    ) as temp_str:
+    with tempfile.TemporaryDirectory(prefix="csp_build_", delete=not args.keep_temp) as temp_str:
         temp_dir = Path(temp_str)
 
         if args.keep_temp:

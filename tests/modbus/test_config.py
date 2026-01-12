@@ -2,15 +2,17 @@
 #
 # 設定模組單元測試
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from csp_lib.modbus import (
-    ModbusTcpConfig,
-    ModbusRtuConfig,
-    ModbusConfigError,
     ByteOrder,
-    RegisterOrder,
+    ModbusConfigError,
+    ModbusRtuConfig,
+    ModbusTcpConfig,
     Parity,
+    RegisterOrder,
 )
 
 
@@ -72,7 +74,7 @@ class TestModbusTcpConfig:
 
     def test_config_is_frozen(self):
         config = ModbusTcpConfig(host="localhost")
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             config.host = "changed"
 
 
@@ -144,5 +146,5 @@ class TestModbusRtuConfig:
 
     def test_config_is_frozen(self):
         config = ModbusRtuConfig(port="COM1")
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             config.baudrate = 19200

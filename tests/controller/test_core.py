@@ -1,22 +1,22 @@
-   # =============== Core Module Tests ===============
+# =============== Core Module Tests ===============
 #
 # 測試 Command, SystemBase, StrategyContext, ExecutionConfig
 
-import pytest
 import dataclasses
-from datetime import datetime
+
+import pytest
 
 from csp_lib.controller.core import (
     Command,
-    SystemBase,
     ConfigMixin,
-    StrategyContext,
-    ExecutionMode,
     ExecutionConfig,
+    ExecutionMode,
+    StrategyContext,
+    SystemBase,
 )
 
-
 # =============== Command Tests ===============
+
 
 class TestCommand:
     """Command 不可變物件測試"""
@@ -43,7 +43,7 @@ class TestCommand:
         """with_p 應建立新實例，不修改原物件"""
         original = Command(p_target=100.0, q_target=50.0)
         new_cmd = original.with_p(200.0)
-        
+
         assert new_cmd.p_target == 200.0
         assert new_cmd.q_target == 50.0
         assert original.p_target == 100.0  # 原物件不變
@@ -52,7 +52,7 @@ class TestCommand:
         """with_q 應建立新實例，不修改原物件"""
         original = Command(p_target=100.0, q_target=50.0)
         new_cmd = original.with_q(75.0)
-        
+
         assert new_cmd.p_target == 100.0
         assert new_cmd.q_target == 75.0
         assert original.q_target == 50.0  # 原物件不變
@@ -67,6 +67,7 @@ class TestCommand:
 
 
 # =============== SystemBase Tests ===============
+
 
 class TestSystemBase:
     """SystemBase 系統基準值測試"""
@@ -86,9 +87,11 @@ class TestSystemBase:
 
 # =============== ConfigMixin Tests ===============
 
+
 @dataclasses.dataclass
 class SampleConfig(ConfigMixin):
     """測試用 Config"""
+
     ramp_rate: float = 10.0
     max_power: float = 100.0
 
@@ -104,19 +107,13 @@ class TestConfigMixin:
 
     def test_from_dict_ignores_extra_keys(self):
         """應忽略不存在的 key"""
-        config = SampleConfig.from_dict({
-            "ramp_rate": 15.0,
-            "unknown_key": "ignored"
-        })
+        config = SampleConfig.from_dict({"ramp_rate": 15.0, "unknown_key": "ignored"})
         assert config.ramp_rate == 15.0
         assert config.max_power == 100.0  # 使用預設值
 
     def test_from_dict_camel_to_snake(self):
         """支援 camelCase 轉 snake_case"""
-        config = SampleConfig.from_dict({
-            "rampRate": 25.0,
-            "maxPower": 300.0
-        })
+        config = SampleConfig.from_dict({"rampRate": 25.0, "maxPower": 300.0})
         assert config.ramp_rate == 25.0
         assert config.max_power == 300.0
 
@@ -128,6 +125,7 @@ class TestConfigMixin:
 
 
 # =============== StrategyContext Tests ===============
+
 
 class TestStrategyContext:
     """StrategyContext 策略上下文測試"""
@@ -168,12 +166,13 @@ class TestStrategyContext:
         """應支援 dataclasses.replace()"""
         original = StrategyContext(soc=50.0)
         new_ctx = dataclasses.replace(original, soc=80.0)
-        
+
         assert new_ctx.soc == 80.0
         assert original.soc == 50.0  # 原物件不變
 
 
 # =============== ExecutionConfig Tests ===============
+
 
 class TestExecutionConfig:
     """ExecutionConfig 執行配置測試"""

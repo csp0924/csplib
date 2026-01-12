@@ -115,9 +115,7 @@ class Int32(ModbusDataType):
         if not isinstance(value, int):
             raise ModbusEncodeError(f"Int32 需要整數，收到: {type(value).__name__}")
         if not -2147483648 <= value <= 2147483647:
-            raise ModbusEncodeError(
-                f"Int32 範圍為 -2147483648~2147483647，收到: {value}"
-            )
+            raise ModbusEncodeError(f"Int32 範圍為 -2147483648~2147483647，收到: {value}")
 
         # 編碼為 4 bytes
         packed = struct.pack(f"{byte_order.value}i", value)
@@ -254,10 +252,7 @@ class UInt64(ModbusDataType):
             regs.reverse()
 
         # 組合為 8 bytes
-        packed = struct.pack(
-            f"{byte_order.value}HHHH",
-            regs[0], regs[1], regs[2], regs[3]
-        )
+        packed = struct.pack(f"{byte_order.value}HHHH", regs[0], regs[1], regs[2], regs[3])
         return struct.unpack(f"{byte_order.value}Q", packed)[0]
 
 
@@ -282,9 +277,7 @@ class Int64(ModbusDataType):
         if not isinstance(value, int):
             raise ModbusEncodeError(f"Int64 需要整數，收到: {type(value).__name__}")
         if not -9223372036854775808 <= value <= 9223372036854775807:
-            raise ModbusEncodeError(
-                f"Int64 範圍為 -9223372036854775808~9223372036854775807，收到: {value}"
-            )
+            raise ModbusEncodeError(f"Int64 範圍為 -9223372036854775808~9223372036854775807，收到: {value}")
 
         # 編碼為 8 bytes
         packed = struct.pack(f"{byte_order.value}q", value)
@@ -315,10 +308,7 @@ class Int64(ModbusDataType):
             regs.reverse()
 
         # 組合為 8 bytes
-        packed = struct.pack(
-            f"{byte_order.value}HHHH",
-            regs[0], regs[1], regs[2], regs[3]
-        )
+        packed = struct.pack(f"{byte_order.value}HHHH", regs[0], regs[1], regs[2], regs[3])
         return struct.unpack(f"{byte_order.value}q", packed)[0]
 
 
@@ -421,20 +411,8 @@ class Float64(ModbusDataType):
             regs.reverse()
 
         # 組合為 8 bytes 並解碼
-        packed = struct.pack(
-            f"{byte_order.value}HHHH",
-            regs[0], regs[1], regs[2], regs[3]
-        )
+        packed = struct.pack(f"{byte_order.value}HHHH", regs[0], regs[1], regs[2], regs[3])
         return struct.unpack(f"{byte_order.value}d", packed)[0]
 
 
-__all__ = [
-    "Int16",
-    "UInt16",
-    "Int32",
-    "UInt32",
-    "Int64",
-    "UInt64",
-    "Float32",
-    "Float64"
-]
+__all__ = ["Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float32", "Float64"]

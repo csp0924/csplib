@@ -63,13 +63,10 @@ class DynamicInt(ModbusDataType):
         register_order: RegisterOrder,
     ) -> list[int]:
         if not isinstance(value, int):
-            raise ModbusEncodeError(
-                f"DynamicInt({self._bit_width}) 需要整數，收到: {type(value).__name__}"
-            )
+            raise ModbusEncodeError(f"DynamicInt({self._bit_width}) 需要整數，收到: {type(value).__name__}")
         if not self._min_value <= value <= self._max_value:
             raise ModbusEncodeError(
-                f"DynamicInt({self._bit_width}) 範圍為 "
-                f"{self._min_value}~{self._max_value}，收到: {value}"
+                f"DynamicInt({self._bit_width}) 範圍為 {self._min_value}~{self._max_value}，收到: {value}"
             )
 
         # 處理負數：轉換為補數表示
@@ -96,8 +93,7 @@ class DynamicInt(ModbusDataType):
     ) -> int:
         if len(registers) < self._register_count:
             raise ModbusDecodeError(
-                f"DynamicInt({self._bit_width}) 需要 {self._register_count} 個暫存器，"
-                f"收到: {len(registers)}"
+                f"DynamicInt({self._bit_width}) 需要 {self._register_count} 個暫存器，收到: {len(registers)}"
             )
 
         regs = list(registers[: self._register_count])
@@ -164,13 +160,9 @@ class DynamicUInt(ModbusDataType):
         register_order: RegisterOrder,
     ) -> list[int]:
         if not isinstance(value, int):
-            raise ModbusEncodeError(
-                f"DynamicUInt({self._bit_width}) 需要整數，收到: {type(value).__name__}"
-            )
+            raise ModbusEncodeError(f"DynamicUInt({self._bit_width}) 需要整數，收到: {type(value).__name__}")
         if not 0 <= value <= self._max_value:
-            raise ModbusEncodeError(
-                f"DynamicUInt({self._bit_width}) 範圍為 0~{self._max_value}，收到: {value}"
-            )
+            raise ModbusEncodeError(f"DynamicUInt({self._bit_width}) 範圍為 0~{self._max_value}，收到: {value}")
 
         # 將整數分割為多個 16-bit 暫存器 (LSW first)
         registers = []
@@ -192,8 +184,7 @@ class DynamicUInt(ModbusDataType):
     ) -> int:
         if len(registers) < self._register_count:
             raise ModbusDecodeError(
-                f"DynamicUInt({self._bit_width}) 需要 {self._register_count} 個暫存器，"
-                f"收到: {len(registers)}"
+                f"DynamicUInt({self._bit_width}) 需要 {self._register_count} 個暫存器，收到: {len(registers)}"
             )
 
         regs = list(registers[: self._register_count])

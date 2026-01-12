@@ -27,18 +27,10 @@ class UploaderConfig:
     def __post_init__(self) -> None:
         """驗證設定值的合理性"""
         if self.flush_interval <= 0:
-            raise ValueError(
-                f"flush_interval 必須為正整數，收到: {self.flush_interval}"
-            )
+            raise ValueError(f"flush_interval 必須為正整數，收到: {self.flush_interval}")
         if self.batch_size_threshold <= 0:
-            raise ValueError(
-                f"batch_size_threshold 必須為正整數，收到: {self.batch_size_threshold}"
-            )
+            raise ValueError(f"batch_size_threshold 必須為正整數，收到: {self.batch_size_threshold}")
         if self.max_queue_size <= 0:
-            raise ValueError(
-                f"max_queue_size 必須為正整數，收到: {self.max_queue_size}"
-            )
+            raise ValueError(f"max_queue_size 必須為正整數，收到: {self.max_queue_size}")
         if self.max_retry_count < 0:
-            raise ValueError(
-                f"max_retry_count 不可為負數，收到: {self.max_retry_count}"
-            )
+            raise ValueError(f"max_retry_count 不可為負數，收到: {self.max_retry_count}")

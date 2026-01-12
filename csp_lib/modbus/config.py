@@ -42,17 +42,11 @@ class ModbusTcpConfig:
         if not self.host:
             raise ModbusConfigError("host 不可為空")
         if not 1 <= self.port <= 65535:
-            raise ModbusConfigError(
-                f"port 必須在 1-65535 範圍內，收到: {self.port}"
-            )
+            raise ModbusConfigError(f"port 必須在 1-65535 範圍內，收到: {self.port}")
         if self.timeout <= 0:
-            raise ModbusConfigError(
-                f"timeout 必須為正數，收到: {self.timeout}"
-            )
+            raise ModbusConfigError(f"timeout 必須為正數，收到: {self.timeout}")
         if not 0 <= self.unit_id <= 255:
-            raise ModbusConfigError(
-                f"unit_id 必須在 0-255 範圍內，收到: {self.unit_id}"
-            )
+            raise ModbusConfigError(f"unit_id 必須在 0-255 範圍內，收到: {self.unit_id}")
 
 
 @dataclass(frozen=True)
@@ -89,25 +83,15 @@ class ModbusRtuConfig:
         if not self.port:
             raise ModbusConfigError("port 不可為空")
         if self.baudrate <= 0:
-            raise ModbusConfigError(
-                f"baudrate 必須為正整數，收到: {self.baudrate}"
-            )
+            raise ModbusConfigError(f"baudrate 必須為正整數，收到: {self.baudrate}")
         if self.stopbits not in (1, 2):
-            raise ModbusConfigError(
-                f"stopbits 必須為 1 或 2，收到: {self.stopbits}"
-            )
+            raise ModbusConfigError(f"stopbits 必須為 1 或 2，收到: {self.stopbits}")
         if self.bytesize not in (5, 6, 7, 8):
-            raise ModbusConfigError(
-                f"bytesize 必須為 5, 6, 7 或 8，收到: {self.bytesize}"
-            )
+            raise ModbusConfigError(f"bytesize 必須為 5, 6, 7 或 8，收到: {self.bytesize}")
         if self.timeout <= 0:
-            raise ModbusConfigError(
-                f"timeout 必須為正數，收到: {self.timeout}"
-            )
+            raise ModbusConfigError(f"timeout 必須為正數，收到: {self.timeout}")
         if not 1 <= self.unit_id <= 247:
-            raise ModbusConfigError(
-                f"unit_id 必須在 1-247 範圍內 (RTU 規範)，收到: {self.unit_id}"
-            )
+            raise ModbusConfigError(f"unit_id 必須在 1-247 範圍內 (RTU 規範)，收到: {self.unit_id}")
 
 
 __all__ = [
