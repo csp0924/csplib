@@ -65,11 +65,15 @@ select = [
     "F",      # pyflakes
     "I",      # isort
     "B",      # flake8-bugbear
-    "UP",     # pyupgrade
+    # "UP" 已移除 - pyupgrade 的 A | B 語法與 stubgen 不相容
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "B027",   # empty method in abstract class (intentional optional hooks)
 ]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ruff.lint.per-file-ignores]
+"setup.py" = ["E402"]  # setup.py 需要先檢查環境變數再 import
