@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -21,7 +20,6 @@ from csp_lib.equipment.core.transform import ClampTransform, RoundTransform, Sca
 from csp_lib.equipment.transport.base import ReadGroup
 from csp_lib.equipment.transport.reader import GroupReader
 from csp_lib.modbus import Float32, FunctionCode, Int32, UInt16
-
 
 # ======================== Mock Fixtures ========================
 

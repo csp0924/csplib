@@ -273,4 +273,3 @@ class TestPointGrouperEdgeCases:
         # 2. read_group="b", FC=3 (b1)
         # 3. read_group="a", FC=4 (a_input)
         assert len(result) == 3
-

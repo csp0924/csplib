@@ -2,8 +2,9 @@
 #
 # 設定模組單元測試
 
-import pytest
 from dataclasses import FrozenInstanceError
+
+import pytest
 
 from csp_lib.modbus import (
     ByteOrder,

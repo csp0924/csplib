@@ -13,7 +13,6 @@ from csp_lib.modbus.enums import FunctionCode
 from .base import ReadGroup
 
 if TYPE_CHECKING:
-    from ..core.point import ReadPoint
     from csp_lib.modbus import AsyncModbusClientBase
 
 
