@@ -9,9 +9,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from csp_lib.core import get_logger
+
+if TYPE_CHECKING:
+    from csp_lib.equipment.alarm import AlarmEvent
 
 logger = get_logger(__name__)
 
@@ -33,6 +36,7 @@ EVENT_WRITE_ERROR = "write_error"
 class ValueChangePayload:
     """值變化事件資料"""
 
+    device_id: str
     point_name: str
     old_value: Any
     new_value: Any
@@ -40,11 +44,60 @@ class ValueChangePayload:
 
 
 @dataclass(frozen=True)
+class ConnectedPayload:
+    """連線成功事件資料"""
+
+    device_id: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
+class ReadErrorPayload:
+    """讀取錯誤事件資料"""
+
+    device_id: str
+    error: str
+    consecutive_failures: int
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
+class WriteCompletePayload:
+    """寫入完成事件資料"""
+
+    device_id: str
+    point_name: str
+    value: Any
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
+class WriteErrorPayload:
+    """寫入錯誤事件資料"""
+
+    device_id: str
+    point_name: str
+    value: Any
+    error: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
 class DisconnectPayload:
     """斷線事件資料"""
 
+    device_id: str
     reason: str
     consecutive_failures: int
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
+class DeviceAlarmPayload:
+    """設備告警事件資料"""
+
+    device_id: str
+    alarm_event: AlarmEvent
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -52,6 +105,7 @@ class DisconnectPayload:
 class ReadCompletePayload:
     """讀取完成事件資料"""
 
+    device_id: str
     values: dict[str, Any]
     duration_ms: float
     timestamp: datetime = field(default_factory=datetime.now)
@@ -61,19 +115,22 @@ class DeviceEventEmitter:
     """
     設備事件發射器
 
-    提供非同步事件訂閱與發射功能。
+    使用 asyncio.Queue 進行非阻塞事件處理，避免大量事件阻塞讀取循環。
 
     支援的事件：
-        - connected: 連線成功
+        - connected: 連線成功 (ConnectedPayload)
         - disconnected: 斷線 (DisconnectPayload)
         - read_complete: 讀取完成 (ReadCompletePayload)
-        - read_error: 讀取錯誤 (Exception)
+        - read_error: 讀取錯誤 (ReadErrorPayload)
         - value_change: 值變化 (ValueChangePayload)
-        - alarm_triggered: 告警觸發 (AlarmEvent)
-        - alarm_cleared: 告警解除 (AlarmEvent)
+        - alarm_triggered: 告警觸發 (DeviceAlarmPayload)
+        - alarm_cleared: 告警解除 (DeviceAlarmPayload)
+        - write_complete: 寫入完成 (WriteCompletePayload)
+        - write_error: 寫入錯誤 (WriteErrorPayload)
 
     使用範例：
         emitter = DeviceEventEmitter()
+        await emitter.start()  # 啟動 worker
 
         # 註冊處理器
         async def on_change(payload: ValueChangePayload):
@@ -81,15 +138,54 @@ class DeviceEventEmitter:
 
         cancel = emitter.on("value_change", on_change)
 
-        # 發射事件
-        await emitter.emit("value_change", ValueChangePayload(...))
+        # 發射事件（非阻塞）
+        emitter.emit("value_change", ValueChangePayload(...))
 
-        # 取消訂閱
-        cancel()
+        # 停止
+        await emitter.stop()
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_queue_size: int = 10000) -> None:
+        """
+        初始化事件發射器
+
+        Args:
+            max_queue_size: 最大佇列大小，超過時丟棄事件
+        """
         self._handlers: dict[str, list[AsyncHandler]] = {}
+        self._queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=max_queue_size)
+        self._worker_task: asyncio.Task[None] | None = None
+        self._running = False
+
+    async def start(self) -> None:
+        """啟動事件處理 worker"""
+        if self._running:
+            return
+        self._running = True
+        self._worker_task = asyncio.create_task(self._worker(), name="event_emitter_worker")
+
+    async def stop(self) -> None:
+        """停止 worker，處理剩餘事件後關閉"""
+        if not self._running:
+            return
+        self._running = False
+
+        # 先取消 worker，避免競爭
+        if self._worker_task:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+
+        # 處理剩餘事件
+        while not self._queue.empty():
+            try:
+                event, payload = self._queue.get_nowait()
+                await self._process_event(event, payload)
+            except asyncio.QueueEmpty:
+                break
 
     def on(self, event: str, handler: AsyncHandler) -> Callable[[], None]:
         """
@@ -113,27 +209,32 @@ class DeviceEventEmitter:
 
         return cancel
 
-    async def emit(self, event: str, payload: Any = None) -> None:
+    def emit(self, event: str, payload: Any = None) -> None:
         """
-        發射事件
+        發射事件（非阻塞）
+
+        事件會被放入佇列，由 worker 處理。
 
         Args:
             event: 事件名稱
             payload: 事件資料
         """
-        handlers = self._handlers.get(event, [])
-        if not handlers:
-            return
+        try:
+            self._queue.put_nowait((event, payload))
+        except asyncio.QueueFull:
+            logger.warning("事件佇列已滿，丟棄事件: event=%s", event)
 
-        # 並行執行所有處理器
-        results = await asyncio.gather(
-            *(handler(payload) for handler in handlers),
-            return_exceptions=True,
-        )
+    async def emit_await(self, event: str, payload: Any = None) -> None:
+        """
+        發射事件並等待處理完成（阻塞）
 
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning("事件處理失敗: event={}, payload={}", event, repr(payload), exc_info=result)
+        用於需要確保處理完成的重要事件（如告警、連線狀態）。
+
+        Args:
+            event: 事件名稱
+            payload: 事件資料
+        """
+        await self._process_event(event, payload)
 
     def has_listeners(self, event: str) -> bool:
         """檢查是否有事件監聽器"""
@@ -151,13 +252,51 @@ class DeviceEventEmitter:
         elif event in self._handlers:
             del self._handlers[event]
 
+    @property
+    def queue_size(self) -> int:
+        """目前佇列中的事件數量"""
+        return self._queue.qsize()
+
+    async def _worker(self) -> None:
+        """事件處理 worker"""
+        while self._running:
+            try:
+                event, payload = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                await self._process_event(event, payload)
+                self._queue.task_done()
+            except asyncio.TimeoutError:
+                continue
+            except asyncio.CancelledError:
+                break
+
+    async def _process_event(self, event: str, payload: Any) -> None:
+        """
+        處理單一事件
+
+        Note: 順序執行 handlers，避免並行造成資源競爭
+        """
+        handlers = self._handlers.get(event, [])
+        if not handlers:
+            return
+
+        for handler in handlers:
+            try:
+                await handler(payload)
+            except Exception:
+                logger.warning("事件處理失敗: event=%s, payload=%s", event, repr(payload), exc_info=True)
+
 
 __all__ = [
     "AsyncHandler",
     "ValueChangePayload",
-    "DisconnectPayload",
     "ReadCompletePayload",
     "DeviceEventEmitter",
+    "ConnectedPayload",
+    "DisconnectPayload",
+    "ReadErrorPayload",
+    "WriteCompletePayload",
+    "WriteErrorPayload",
+    "DeviceAlarmPayload",
     # Event names
     "EVENT_CONNECTED",
     "EVENT_DISCONNECTED",
