@@ -168,20 +168,19 @@ class ThresholdCondition:
 
     def check(self, actual_value: float) -> bool:
         """檢查是否滿足條件"""
-        match self.operator:
-            case Operator.GT:
-                return actual_value > self.value
-            case Operator.GE:
-                return actual_value >= self.value
-            case Operator.LT:
-                return actual_value < self.value
-            case Operator.LE:
-                return actual_value <= self.value
-            case Operator.EQ:
-                return actual_value == self.value
-            case Operator.NE:
-                return actual_value != self.value
-
+        if self.operator == Operator.GT:
+            return actual_value > self.value
+        if self.operator == Operator.GE:
+            return actual_value >= self.value
+        if self.operator == Operator.LT:
+            return actual_value < self.value
+        if self.operator == Operator.LE:
+            return actual_value <= self.value
+        if self.operator == Operator.EQ:
+            return actual_value == self.value
+        if self.operator == Operator.NE:
+            return actual_value != self.value
+        raise ValueError(f"Invalid operator: {self.operator}")
 
 @dataclass
 class ThresholdAlarmEvaluator(AlarmEvaluator):
