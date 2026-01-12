@@ -3,7 +3,7 @@
 # 設定模組單元測試
 
 import pytest
-from attrs.exceptions import FrozenInstanceError
+from dataclasses import FrozenInstanceError
 
 from csp_lib.modbus import (
     ByteOrder,
