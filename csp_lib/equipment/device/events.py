@@ -288,7 +288,9 @@ class DeviceEventEmitter:
             try:
                 await handler(payload)
             except Exception:
-                logger.warning("事件處理失敗: event=%s, payload=%s", event, repr(payload), exc_info=True)
+                logger.opt(exception=True).warning(
+                    "事件處理失敗: event={}, payload={}", event, repr(payload)
+                )
 
 
 __all__ = [

@@ -114,7 +114,7 @@ class AlarmPersistenceManager:
             device_id=payload.device_id,
             alarm_type=AlarmType.DISCONNECT,
             name=self.DISCONNECT_NAME,
-            level=AlarmLevel.WARNING.value,
+            level=AlarmLevel.WARNING,
             description=payload.reason,
             occurred_at=payload.timestamp,
         )
@@ -147,7 +147,7 @@ class AlarmPersistenceManager:
             device_id=payload.device_id,
             alarm_type=AlarmType.DEVICE_ALARM,
             name=alarm.name,
-            level=alarm.level.value,
+            level=alarm.level,
             description=alarm.description,
             occurred_at=payload.timestamp,
         )
