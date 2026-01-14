@@ -16,7 +16,7 @@ from csp_lib.core import get_logger
 from .schema import CommandRecord, CommandStatus
 
 if TYPE_CHECKING:
-    from motor.motor_asyncio import AsyncIOMotorCollection
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = get_logger(__name__)
 
@@ -105,15 +105,17 @@ class MongoCommandRepository:
         await repo.update_status(command_id, CommandStatus.SUCCESS, result)
         ```
     """
+    
+    COLLECTION_NAME = "commands"
 
-    def __init__(self, collection: AsyncIOMotorCollection) -> None:
+    def __init__(self, db: AsyncIOMotorDatabase, collection: str = COLLECTION_NAME) -> None:
         """
         初始化 MongoDB 儲存庫
 
         Args:
             collection: MongoDB collection
         """
-        self._collection = collection
+        self._collection = db[collection]
 
     async def create(self, record: CommandRecord) -> str:
         """建立指令記錄"""
