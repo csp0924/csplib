@@ -229,13 +229,13 @@ class TestAsyncModbusDeviceRead:
     """讀取測試"""
 
     @pytest.mark.asyncio
-    async def test_read_all_returns_values(self, device: AsyncModbusDevice, mock_client: AsyncMock):
-        """read_all() 應返回讀取值"""
+    async def test_read_once_returns_values(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """read_once() 應返回讀取值"""
         mock_client.read_holding_registers.return_value = [100, 200, 300]
 
         await device.connect()
         try:
-            values = await device.read_all()
+            values = await device.read_once()
 
             assert "power" in values
             assert "voltage" in values
@@ -737,7 +737,7 @@ class TestAsyncModbusDeviceEdgeCases:
 
         await device.connect()
         try:
-            values = await device.read_all()
+            values = await device.read_once()
             assert values == {}
         finally:
             await device.disconnect()
