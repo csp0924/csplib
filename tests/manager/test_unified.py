@@ -14,7 +14,6 @@ import pytest
 
 from csp_lib.manager import UnifiedConfig, UnifiedDeviceManager
 
-
 # ================ Fixtures ================
 
 

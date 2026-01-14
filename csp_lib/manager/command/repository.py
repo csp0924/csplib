@@ -105,7 +105,7 @@ class MongoCommandRepository:
         await repo.update_status(command_id, CommandStatus.SUCCESS, result)
         ```
     """
-    
+
     COLLECTION_NAME = "commands"
 
     def __init__(self, db: AsyncIOMotorDatabase, collection: str = COLLECTION_NAME) -> None:
