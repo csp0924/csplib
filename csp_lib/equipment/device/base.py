@@ -239,13 +239,75 @@ class AsyncModbusDevice:
 
     # =============== Transport ===============
 
-    async def read_all(self) -> dict[str, Any]:
-        """讀取所有點位（使用排程器預計算分組）"""
-        groups = self._scheduler.get_next_groups()
-        if not groups:
-            return {}
-        result = await self._reader.read_many(groups)
-        return result
+    async def read_once(self) -> dict[str, Any]:
+        """
+        執行一次完整的讀取流程
+
+        包含：讀取點位、更新狀態、處理值變更事件、評估告警。
+        適合不需要定期讀取的場景（如：手動觸發讀取）。
+
+        Returns:
+            讀取到的點位值字典
+
+        Raises:
+            Exception: 讀取失敗時拋出例外（會發送 EVENT_READ_ERROR）
+        """
+        start_time = time.monotonic()
+
+        try:
+            values = await self._read_all()
+            self._consecutive_failures = 0
+
+            # 設備恢復回應
+            if not self._device_responsive:
+                self._device_responsive = True
+                await self._emitter.emit_await(
+                    EVENT_CONNECTED,
+                    ConnectedPayload(device_id=self._config.device_id),
+                )
+
+            # 更新值並發送變更事件
+            await self._process_values(values)
+
+            # 執行告警評估
+            await self._evaluate_alarm(values)
+
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self._emitter.emit(
+                EVENT_READ_COMPLETE,
+                ReadCompletePayload(
+                    device_id=self._config.device_id,
+                    values=values,
+                    duration_ms=duration_ms,
+                ),
+            )
+
+            return values
+
+        except Exception as e:
+            self._consecutive_failures += 1
+            self._emitter.emit(
+                EVENT_READ_ERROR,
+                ReadErrorPayload(
+                    device_id=self._config.device_id,
+                    error=str(e),
+                    consecutive_failures=self._consecutive_failures,
+                ),
+            )
+
+            # 達到斷線閾值，標記設備無回應
+            if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
+                self._device_responsive = False
+                await self._emitter.emit_await(
+                    EVENT_DISCONNECTED,
+                    DisconnectPayload(
+                        device_id=self._config.device_id,
+                        reason=str(e),
+                        consecutive_failures=self._consecutive_failures,
+                    ),
+                )
+
+            raise
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""
@@ -296,6 +358,13 @@ class AsyncModbusDevice:
 
     # =============== Private ===============
 
+    async def _read_all(self) -> dict[str, Any]:
+        """讀取所有點位（使用排程器預計算分組）"""
+        groups = self._scheduler.get_next_groups()
+        if not groups:
+            return {}
+        return await self._reader.read_many(groups)
+
     async def _read_loop(self) -> None:
         """讀取循環"""
         interval = self._config.read_interval
@@ -304,52 +373,9 @@ class AsyncModbusDevice:
             start_time = time.monotonic()
 
             try:
-                values = await self.read_all()
-                self._consecutive_failures = 0
-
-                # 設備恢復回應
-                if not self._device_responsive:
-                    self._device_responsive = True
-                    await self._emitter.emit_await(
-                        EVENT_CONNECTED,
-                        ConnectedPayload(device_id=self._config.device_id),
-                    )
-
-                # 更新值並發送變更事件
-                await self._process_values(values)
-
-                # 執行告警評估
-                await self._evaluate_alarm(values)
-
-                duration_ms = (time.monotonic() - start_time) * 1000
-                self._emitter.emit(
-                    EVENT_READ_COMPLETE,
-                    ReadCompletePayload(
-                        device_id=self._config.device_id,
-                        values=values,
-                        duration_ms=duration_ms,
-                    ),
-                )
-            except Exception as e:
-                self._consecutive_failures += 1
-                self._emitter.emit(
-                    EVENT_READ_ERROR,
-                    ReadErrorPayload(
-                        device_id=self._config.device_id, error=str(e), consecutive_failures=self._consecutive_failures
-                    ),
-                )
-
-                # 達到斷線閾值，標記設備無回應
-                if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
-                    self._device_responsive = False
-                    await self._emitter.emit_await(
-                        EVENT_DISCONNECTED,
-                        DisconnectPayload(
-                            device_id=self._config.device_id,
-                            reason=str(e),
-                            consecutive_failures=self._consecutive_failures,
-                        ),
-                    )
+                await self.read_once()
+            except Exception:
+                pass  # read_once 已處理錯誤事件
 
             elapsed = time.monotonic() - start_time
             sleep_time = max(0, interval - elapsed)
