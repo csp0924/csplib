@@ -214,11 +214,16 @@ class DeviceEventEmitter:
         發射事件（非阻塞）
 
         事件會被放入佇列，由 worker 處理。
+        若無監聽器則直接跳過，避免無謂的入隊操作。
 
         Args:
             event: 事件名稱
             payload: 事件資料
         """
+        # 沒有監聽器就不入隊
+        if not self._handlers.get(event):
+            return
+
         try:
             self._queue.put_nowait((event, payload))
         except asyncio.QueueFull:
