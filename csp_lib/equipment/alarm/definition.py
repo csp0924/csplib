@@ -73,7 +73,7 @@ class AlarmDefinition:
     code: str
     name: str
     level: AlarmLevel = AlarmLevel.ALARM
-    hysteresis: HysteresisConfig = field(default_factory=lambda: NO_HYSTERESIS)
+    hysteresis: HysteresisConfig = NO_HYSTERESIS
     description: str = ""
 
     def __hash__(self) -> int:
