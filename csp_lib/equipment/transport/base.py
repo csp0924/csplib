@@ -102,6 +102,8 @@ class PointGrouper:
             groups.append(
                 ReadGroup(function_code=function_code, start_address=start, count=end - start, points=tuple(current))
             )
+            # 重置狀態，開始新群組
+            current, start, end = [point], p_start, p_end
 
         if current:
             groups.append(
