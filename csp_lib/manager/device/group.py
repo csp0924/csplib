@@ -35,6 +35,7 @@ class DeviceGroup:
     Attributes:
         devices: 群組內設備列表（必須共用同一 Client）
         interval: 完整讀取一輪的間隔時間（秒）
+        step_interval: 設備間的讀取間隔時間（秒）
 
     使用範例：
         group = DeviceGroup(
@@ -53,6 +54,7 @@ class DeviceGroup:
 
     devices: list[AsyncModbusDevice]
     interval: float = 1.0
+    step_interval: float = 0.05
 
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _stop_event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
@@ -177,6 +179,8 @@ class DeviceGroup:
                     # read_once 內部已處理錯誤並發射事件
                     # 這裡捕獲避免影響其他設備
                     pass
+                finally:
+                    await asyncio.sleep(self.step_interval)
 
             elapsed = time.monotonic() - start
             sleep_time = max(0, self.interval - elapsed)

@@ -183,7 +183,7 @@ class TestDeviceGroupSequentialLoop:
     async def test_reads_all_devices(self, group: DeviceGroup):
         """應讀取所有設備"""
         group.start()
-        await asyncio.sleep(0.1)  # 等待至少一輪
+        await asyncio.sleep(0.5)  # 3 devices × 0.1s sleep = 至少 0.3s
         await group.stop()
 
         for device in group.devices:
@@ -203,7 +203,7 @@ class TestDeviceGroupSequentialLoop:
             device.read_once = AsyncMock(side_effect=make_side_effect(device.device_id))
 
         group.start()
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)  # 增加等待時間
         await group.stop()
 
         # 驗證順序
@@ -219,7 +219,7 @@ class TestDeviceGroupSequentialLoop:
         group.devices[0].read_once = AsyncMock(side_effect=Exception("Read failed"))
 
         group.start()
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)  # 增加等待時間
         await group.stop()
 
         # 其他設備仍應被讀取
