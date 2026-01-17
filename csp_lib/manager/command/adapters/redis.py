@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
-from csp_lib.equipment.transport import WriteResult, WriteStatus
+from csp_lib.equipment.transport import WriteStatus
 
 from ..schema import ActionCommand, CommandSource
 

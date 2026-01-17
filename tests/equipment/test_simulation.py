@@ -262,7 +262,6 @@ class TestVirtualMeterAsync:
     @pytest.mark.asyncio
     async def test_update_random_mode(self):
         meter = VirtualMeter(voltage_noise=1.0, frequency_noise=0.01)
-        original_v = meter.get_voltage()
 
         await meter.update()
 
