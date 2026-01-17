@@ -2,8 +2,9 @@
 #
 # 測試 PQModeStrategy, PVSmoothStrategy, StopStrategy, ScheduleStrategy
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from csp_lib.controller.core import (
     Command,

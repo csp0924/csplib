@@ -19,7 +19,6 @@ from csp_lib.manager.command.schema import (
     WriteCommand,
 )
 
-
 # ======================== WriteCommand Tests ========================
 
 

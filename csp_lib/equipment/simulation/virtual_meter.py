@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from csp_lib.core import get_logger
 
-from .curve import CurvePoint, CurveType, CurveProvider, DEFAULT_REGISTRY
+from .curve import DEFAULT_REGISTRY, CurvePoint, CurveProvider, CurveType
 
 if TYPE_CHECKING:
     pass

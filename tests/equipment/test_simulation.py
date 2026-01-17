@@ -8,18 +8,17 @@ from typing import Iterator
 import pytest
 
 from csp_lib.equipment.simulation import (
+    DEFAULT_REGISTRY,
     CurvePoint,
+    CurveProvider,
     CurveRegistry,
     CurveType,
-    DEFAULT_REGISTRY,
     MeterMode,
     MeterReading,
-    CurveProvider,
     VirtualMeter,
     curve_fp_step,
     curve_qv_step,
 )
-
 
 # ================ CurvePoint Tests ================
 
