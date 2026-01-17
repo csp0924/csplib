@@ -265,10 +265,7 @@ class RedisClient:
 
         self._client = Redis(**kwargs)
         await self._client.ping()
-        logger.info(
-            f"Redis 已連線 (Standalone): {self._host}:{self._port} "
-            f"(TLS: {self._tls_config is not None})"
-        )
+        logger.info(f"Redis 已連線 (Standalone): {self._host}:{self._port} (TLS: {self._tls_config is not None})")
 
     async def _connect_sentinel(self) -> None:
         """Sentinel 模式連線"""
@@ -327,8 +324,7 @@ class RedisClient:
 
         await self._client.ping()
         logger.info(
-            f"Redis 已連線 (Sentinel): master={self._config.sentinel_master} "
-            f"(TLS: {self._tls_config is not None})"
+            f"Redis 已連線 (Sentinel): master={self._config.sentinel_master} (TLS: {self._tls_config is not None})"
         )
 
     async def disconnect(self) -> None:

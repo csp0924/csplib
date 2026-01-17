@@ -133,9 +133,7 @@ class TestStateSyncManagerReadComplete:
         return StateSyncManager(redis_client=redis_client)
 
     @pytest.mark.asyncio
-    async def test_on_read_complete_updates_hash(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_read_complete_updates_hash(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """read_complete 應更新 Redis Hash"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -153,9 +151,7 @@ class TestStateSyncManagerReadComplete:
         assert call_args[1] == {"temperature": 25.5, "humidity": 60}
 
     @pytest.mark.asyncio
-    async def test_on_read_complete_publishes(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_read_complete_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """read_complete 應發布至 data channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -192,9 +188,7 @@ class TestStateSyncManagerConnection:
         return StateSyncManager(redis_client=redis_client)
 
     @pytest.mark.asyncio
-    async def test_on_connected_sets_online(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_connected_sets_online(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """connected 應設定 online=1"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -208,9 +202,7 @@ class TestStateSyncManagerConnection:
         assert call_args[1] == "1"
 
     @pytest.mark.asyncio
-    async def test_on_connected_publishes(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_connected_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """connected 應發布至 status channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -226,9 +218,7 @@ class TestStateSyncManagerConnection:
         assert message["online"] is True
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_sets_offline(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_disconnected_sets_offline(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """disconnected 應設定 online=0"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -246,9 +236,7 @@ class TestStateSyncManagerConnection:
         assert call_args[1] == "0"
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_publishes(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_disconnected_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """disconnected 應發布至 status channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -284,9 +272,7 @@ class TestStateSyncManagerAlarm:
         return StateSyncManager(redis_client=redis_client)
 
     @pytest.mark.asyncio
-    async def test_on_alarm_triggered_adds_to_set(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_alarm_triggered_adds_to_set(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """alarm_triggered 應新增至 Set"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -308,9 +294,7 @@ class TestStateSyncManagerAlarm:
         assert call_args[1] == "OVER_TEMP"
 
     @pytest.mark.asyncio
-    async def test_on_alarm_triggered_publishes(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_alarm_triggered_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """alarm_triggered 應發布至 alarm channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -334,9 +318,7 @@ class TestStateSyncManagerAlarm:
         assert message["alarm"]["code"] == "OVER_TEMP"
 
     @pytest.mark.asyncio
-    async def test_on_alarm_cleared_removes_from_set(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_alarm_cleared_removes_from_set(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """alarm_cleared 應從 Set 移除"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -353,9 +335,7 @@ class TestStateSyncManagerAlarm:
         assert call_args[1] == "OVER_TEMP"
 
     @pytest.mark.asyncio
-    async def test_on_alarm_cleared_publishes(
-        self, manager: StateSyncManager, redis_client: MockRedisClient
-    ):
+    async def test_on_alarm_cleared_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
         """alarm_cleared 應發布至 alarm channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)

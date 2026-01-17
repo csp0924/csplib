@@ -78,9 +78,7 @@ class RedisConfig:
         """驗證配置一致性"""
         # Sentinel 模式需同時提供 sentinels 和 sentinel_master
         if (self.sentinels is None) != (self.sentinel_master is None):
-            raise ValueError(
-                "Sentinel 模式需同時提供 sentinels 和 sentinel_master"
-            )
+            raise ValueError("Sentinel 模式需同時提供 sentinels 和 sentinel_master")
 
     @property
     def is_sentinel_mode(self) -> bool:

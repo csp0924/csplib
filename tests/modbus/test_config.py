@@ -61,8 +61,6 @@ class TestModbusTcpConfig:
         with pytest.raises(ModbusConfigError):
             ModbusTcpConfig(host="localhost", timeout=0)
 
-
-
     def test_config_is_frozen(self):
         config = ModbusTcpConfig(host="localhost")
         with pytest.raises(FrozenInstanceError):
@@ -122,8 +120,6 @@ class TestModbusRtuConfig:
     def test_negative_timeout_raises(self):
         with pytest.raises(ModbusConfigError):
             ModbusRtuConfig(port="COM1", timeout=-1.0)
-
-
 
     def test_config_is_frozen(self):
         config = ModbusRtuConfig(port="COM1")

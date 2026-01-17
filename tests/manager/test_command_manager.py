@@ -103,9 +103,7 @@ class TestWriteCommandManagerExecute:
         return WriteCommandManager(repository=repository)
 
     @pytest.mark.asyncio
-    async def test_execute_success(
-        self, manager: WriteCommandManager, repository: MockRepository
-    ):
+    async def test_execute_success(self, manager: WriteCommandManager, repository: MockRepository):
         """execute 成功時應正確記錄"""
         device = MockDevice("device_001")
         manager.register_device(device)
@@ -128,9 +126,7 @@ class TestWriteCommandManagerExecute:
         assert repository.update_status.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_execute_device_not_found(
-        self, manager: WriteCommandManager, repository: MockRepository
-    ):
+    async def test_execute_device_not_found(self, manager: WriteCommandManager, repository: MockRepository):
         """execute 設備未找到時應返回錯誤"""
         command = WriteCommand(
             device_id="nonexistent",
@@ -148,9 +144,7 @@ class TestWriteCommandManagerExecute:
         assert call_args[0][1] == CommandStatus.DEVICE_NOT_FOUND
 
     @pytest.mark.asyncio
-    async def test_execute_write_failed(
-        self, manager: WriteCommandManager, repository: MockRepository
-    ):
+    async def test_execute_write_failed(self, manager: WriteCommandManager, repository: MockRepository):
         """execute 寫入失敗時應正確記錄"""
         device = MockDevice("device_001")
         device.write = AsyncMock(
@@ -174,9 +168,7 @@ class TestWriteCommandManagerExecute:
         assert result.error_message == "連線逾時"
 
     @pytest.mark.asyncio
-    async def test_execute_from_dict(
-        self, manager: WriteCommandManager, repository: MockRepository
-    ):
+    async def test_execute_from_dict(self, manager: WriteCommandManager, repository: MockRepository):
         """execute_from_dict 應正確解析並執行"""
         device = MockDevice("device_001")
         manager.register_device(device)

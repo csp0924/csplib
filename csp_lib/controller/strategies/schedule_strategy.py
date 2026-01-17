@@ -103,4 +103,3 @@ class ScheduleStrategy(Strategy):
         if self._current_strategy:
             return f"ScheduleStrategy(current={self._current_strategy})"
         return f"ScheduleStrategy(fallback={self._fallback})"
-

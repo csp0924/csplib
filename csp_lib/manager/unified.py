@@ -113,24 +113,16 @@ class UnifiedDeviceManager:
 
         # 根據配置初始化子管理器（可選）
         self._alarm_manager: AlarmPersistenceManager | None = (
-            AlarmPersistenceManager(config.alarm_repository)
-            if config.alarm_repository
-            else None
+            AlarmPersistenceManager(config.alarm_repository) if config.alarm_repository else None
         )
         self._command_manager: WriteCommandManager | None = (
-            WriteCommandManager(config.command_repository)
-            if config.command_repository
-            else None
+            WriteCommandManager(config.command_repository) if config.command_repository else None
         )
         self._data_manager: DataUploadManager | None = (
-            DataUploadManager(config.mongo_uploader)
-            if config.mongo_uploader
-            else None
+            DataUploadManager(config.mongo_uploader) if config.mongo_uploader else None
         )
         self._state_manager: StateSyncManager | None = (
-            StateSyncManager(config.redis_client)
-            if config.redis_client
-            else None
+            StateSyncManager(config.redis_client) if config.redis_client else None
         )
 
         logger.info(

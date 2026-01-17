@@ -249,7 +249,9 @@ class VirtualMeter:
         """隨機模式更新"""
         v = self._base_voltage + random.uniform(-self._voltage_noise, self._voltage_noise)
         f = self._base_frequency + random.uniform(-self._frequency_noise, self._frequency_noise)
-        self._reading = MeterReading(v=v, f=f, p=self._reading.p, q=self._reading.q, s=self._reading.s, pf=self._reading.pf)
+        self._reading = MeterReading(
+            v=v, f=f, p=self._reading.p, q=self._reading.q, s=self._reading.s, pf=self._reading.pf
+        )
 
     async def _update_test_curve(self) -> None:
         """測試曲線模式更新"""
@@ -273,7 +275,9 @@ class VirtualMeter:
             v = self._current_point.value
             f = self._base_frequency + random.uniform(-self._frequency_noise, self._frequency_noise)
 
-        self._reading = MeterReading(v=v, f=f, p=self._reading.p, q=self._reading.q, s=self._reading.s, pf=self._reading.pf)
+        self._reading = MeterReading(
+            v=v, f=f, p=self._reading.p, q=self._reading.q, s=self._reading.s, pf=self._reading.pf
+        )
 
     # ================ Magic Methods ================
 

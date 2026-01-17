@@ -64,4 +64,3 @@ __all__ = [
     "UnifiedConfig",
     "UnifiedDeviceManager",
 ]
-

@@ -201,7 +201,9 @@ class StrategyExecutor:
         try:
             # 取得基礎上下文並建立不可變副本
             base_context = self._context_provider()
-            context = dataclasses.replace(base_context, last_command=self._last_command, current_time=datetime.now(timezone.utc))
+            context = dataclasses.replace(
+                base_context, last_command=self._last_command, current_time=datetime.now(timezone.utc)
+            )
 
             # 執行策略
             command = self._strategy.execute(context)

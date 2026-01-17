@@ -131,11 +131,7 @@ class DeviceManager:
                 await device._emitter.start()
             group.start()
 
-        logger.info(
-            f"DeviceManager 已啟動: "
-            f"{len(self._standalone)} 個獨立設備, "
-            f"{len(self._groups)} 個群組"
-        )
+        logger.info(f"DeviceManager 已啟動: {len(self._standalone)} 個獨立設備, {len(self._groups)} 個群組")
 
     async def stop(self) -> None:
         """
@@ -212,9 +208,4 @@ class DeviceManager:
         return list(self._groups)
 
     def __repr__(self) -> str:
-        return (
-            f"<DeviceManager "
-            f"standalone={self.standalone_count} "
-            f"groups={self.group_count} "
-            f"running={self.is_running}>"
-        )
+        return f"<DeviceManager standalone={self.standalone_count} groups={self.group_count} running={self.is_running}>"

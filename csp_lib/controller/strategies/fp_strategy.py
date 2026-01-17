@@ -35,17 +35,17 @@ class FPConfig(ConfigMixin):
     f_base: float = 60.0
 
     # 頻率偏移量 (Hz)，需按升序排列
-    f1: float = -0.5   # 最低頻率偏移
+    f1: float = -0.5  # 最低頻率偏移
     f2: float = -0.25
     f3: float = -0.02  # 死區下限
-    f4: float = 0.02   # 死區上限
+    f4: float = 0.02  # 死區上限
     f5: float = 0.25
-    f6: float = 0.5    # 最高頻率偏移
+    f6: float = 0.5  # 最高頻率偏移
 
     # 功率百分比 (%)，需按降序排列
-    p1: float = 100.0   # f1 時的功率 (最大放電)
+    p1: float = 100.0  # f1 時的功率 (最大放電)
     p2: float = 52.0
-    p3: float = 9.0     # 死區內功率
+    p3: float = 9.0  # 死區內功率
     p4: float = -9.0
     p5: float = -52.0
     p6: float = -100.0  # f6 時的功率 (最大充電)

@@ -34,10 +34,10 @@ class QVConfig(ConfigMixin):
     """
 
     nominal_voltage: float = 380.0
-    v_set: float = 100.0        # 電壓設定值 (%)
-    droop: float = 5.0          # 下垂係數 (%)
-    v_deadband: float = 0.0     # 死區 (%)
-    q_max_ratio: float = 0.5    # Q 最大比值
+    v_set: float = 100.0  # 電壓設定值 (%)
+    droop: float = 5.0  # 下垂係數 (%)
+    v_deadband: float = 0.0  # 死區 (%)
+    q_max_ratio: float = 0.5  # Q 最大比值
 
     def validate(self) -> None:
         """驗證配置有效性"""

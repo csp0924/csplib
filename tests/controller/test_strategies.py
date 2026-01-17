@@ -316,4 +316,3 @@ class TestScheduleStrategy:
         await schedule.update_schedule(pv_strategy)
 
         assert schedule.execution_config.interval_seconds == 900
-

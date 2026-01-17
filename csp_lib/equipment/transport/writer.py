@@ -126,14 +126,18 @@ class ValidatedWriter:
             await self._client.write_single_register(address=address, value=int(encoded), unit_id=self._unit_id)
         elif function_code == FunctionCode.WRITE_MULTIPLE_COILS:
             if isinstance(encoded, list):
-                await self._client.write_multiple_coils(address=address, values=[bool(v) for v in encoded], unit_id=self._unit_id)
+                await self._client.write_multiple_coils(
+                    address=address, values=[bool(v) for v in encoded], unit_id=self._unit_id
+                )
             else:
                 await self._client.write_multiple_coils(address=address, values=[bool(encoded)], unit_id=self._unit_id)
         elif function_code == FunctionCode.WRITE_MULTIPLE_REGISTERS:
             if isinstance(encoded, list):
                 await self._client.write_multiple_registers(address=address, values=encoded, unit_id=self._unit_id)
             else:
-                await self._client.write_multiple_registers(address=address, values=[int(encoded)], unit_id=self._unit_id)
+                await self._client.write_multiple_registers(
+                    address=address, values=[int(encoded)], unit_id=self._unit_id
+                )
         else:
             raise ValueError(f"不支援的 Function Code: {function_code}")
 

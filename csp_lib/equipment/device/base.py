@@ -466,9 +466,7 @@ class AsyncModbusDevice:
                     self._client_connected = True
                     self._device_responsive = True
                     self._consecutive_failures = 0
-                    await self._emitter.emit_await(
-                        EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id)
-                    )
+                    await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
                 except Exception:
                     # 重連失敗，等待後重試
                     await asyncio.sleep(reconnect_interval)

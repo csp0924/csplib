@@ -164,16 +164,13 @@ class IslandModeStrategy(Strategy):
             if self._relay.sync_ok:
                 break
             logger.debug(
-                f"IslandModeStrategy: 等待同步中... "
-                f"counter={self._relay.sync_counter}, elapsed={elapsed:.1f}s"
+                f"IslandModeStrategy: 等待同步中... counter={self._relay.sync_counter}, elapsed={elapsed:.1f}s"
             )
             await asyncio.sleep(check_interval)
             elapsed += check_interval
 
         if not self._relay.sync_ok:
-            logger.critical(
-                f"IslandModeStrategy: 等待 sync_ok 超時 ({timeout}s)，失敗，請手動處理 ACB"
-            )
+            logger.critical(f"IslandModeStrategy: 等待 sync_ok 超時 ({timeout}s)，失敗，請手動處理 ACB")
         else:
             logger.info("IslandModeStrategy: sync_ok 確認，閉合 ACB")
             await self._relay.set_close()

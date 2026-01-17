@@ -133,6 +133,7 @@ class TestDeviceGroupSequentialLoop:
         def make_side_effect(device_id: str):
             async def _read():
                 read_order.append(device_id)
+
             return _read
 
         for device in group.devices:
@@ -145,7 +146,7 @@ class TestDeviceGroupSequentialLoop:
         # 驗證順序（連續三個應是正確順序）
         if len(read_order) >= 3:
             for i in range(0, len(read_order) - 2, 3):
-                assert read_order[i:i+3] == ["device_001", "device_002", "device_003"]
+                assert read_order[i : i + 3] == ["device_001", "device_002", "device_003"]
 
     @pytest.mark.asyncio
     async def test_single_device_error_does_not_affect_others(self, group: DeviceGroup):

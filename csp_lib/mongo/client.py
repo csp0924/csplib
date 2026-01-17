@@ -109,9 +109,7 @@ class MongoConfig:
         """驗證配置一致性"""
         # Replica Set 模式需同時提供 replica_hosts 和 replica_set
         if (self.replica_hosts is None) != (self.replica_set is None):
-            raise ValueError(
-                "Replica Set 模式需同時提供 replica_hosts 和 replica_set"
-            )
+            raise ValueError("Replica Set 模式需同時提供 replica_hosts 和 replica_set")
 
     @property
     def is_replica_set_mode(self) -> bool:
@@ -166,6 +164,7 @@ def create_mongo_client(config: MongoConfig) -> AsyncIOMotorClient:
     if config.username and config.password:
         # URL encode credentials in URI
         from urllib.parse import quote_plus
+
         uri = f"mongodb://{quote_plus(config.username)}:{quote_plus(config.password)}@{uri.replace('mongodb://', '')}"
         kwargs["authSource"] = config.auth_source
 
@@ -198,10 +197,7 @@ def create_mongo_client(config: MongoConfig) -> AsyncIOMotorClient:
     client = AsyncIOMotorClient(uri, **kwargs)
 
     mode = "Replica Set" if config.is_replica_set_mode else "Standalone"
-    logger.info(
-        f"MongoDB 客戶端已建立 ({mode}): {uri.split('@')[-1] if '@' in uri else uri} "
-        f"(TLS: {config.tls})"
-    )
+    logger.info(f"MongoDB 客戶端已建立 ({mode}): {uri.split('@')[-1] if '@' in uri else uri} (TLS: {config.tls})")
 
     return client
 

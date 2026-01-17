@@ -27,6 +27,3 @@ __all__ = [
     "ScheduleStrategy",
     "StopStrategy",
 ]
-
-
-

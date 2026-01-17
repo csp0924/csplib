@@ -256,4 +256,3 @@ class TestStrategyExecutor:
         assert strategy.last_context is not None
         assert strategy.last_context.last_command == Command()  # 執行時的 last
         assert strategy.last_context.current_time is not None
-

@@ -192,9 +192,7 @@ class TestDataUploadManagerReadComplete:
         return DataUploadManager(uploader=uploader)
 
     @pytest.mark.asyncio
-    async def test_on_read_complete_enqueues_data(
-        self, manager: DataUploadManager, uploader: MockUploader
-    ):
+    async def test_on_read_complete_enqueues_data(self, manager: DataUploadManager, uploader: MockUploader):
         """read_complete 應將資料加入 queue"""
         device = MockDevice("device_001")
         manager.subscribe(device, collection_name="device_data")
@@ -217,9 +215,7 @@ class TestDataUploadManagerReadComplete:
         assert call_args[1]["timestamp"] == timestamp
 
     @pytest.mark.asyncio
-    async def test_on_read_complete_caches_values(
-        self, manager: DataUploadManager, uploader: MockUploader
-    ):
+    async def test_on_read_complete_caches_values(self, manager: DataUploadManager, uploader: MockUploader):
         """read_complete 應快取值結構"""
         device = MockDevice("device_001")
         manager.subscribe(device, collection_name="device_data")
@@ -250,9 +246,7 @@ class TestDataUploadManagerDisconnected:
         return DataUploadManager(uploader=uploader)
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_enqueues_null_values(
-        self, manager: DataUploadManager, uploader: MockUploader
-    ):
+    async def test_on_disconnected_enqueues_null_values(self, manager: DataUploadManager, uploader: MockUploader):
         """disconnected 應上傳空值記錄"""
         device = MockDevice("device_001")
         manager.subscribe(device, collection_name="device_data")
@@ -283,9 +277,7 @@ class TestDataUploadManagerDisconnected:
         assert call_args[1]["humidity"] is None
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_preserves_nested_structure(
-        self, manager: DataUploadManager, uploader: MockUploader
-    ):
+    async def test_on_disconnected_preserves_nested_structure(self, manager: DataUploadManager, uploader: MockUploader):
         """disconnected 應保留巢狀結構"""
         device = MockDevice("device_001")
         manager.subscribe(device, collection_name="device_data")
@@ -320,9 +312,7 @@ class TestDataUploadManagerDisconnected:
         assert doc["errors"] == [None, None, None]
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_no_cache_skips_upload(
-        self, manager: DataUploadManager, uploader: MockUploader
-    ):
+    async def test_on_disconnected_no_cache_skips_upload(self, manager: DataUploadManager, uploader: MockUploader):
         """無快取時斷線應跳過上傳"""
         device = MockDevice("device_001")
         manager.subscribe(device, collection_name="device_data")
