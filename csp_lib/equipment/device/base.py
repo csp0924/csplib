@@ -260,8 +260,8 @@ class AsyncModbusDevice:
         """
         執行一次完整的讀取流程
 
-        包含：讀取點位、更新狀態、處理值變更事件、評估告警。
-        適合不需要定期讀取的場景（如：手動觸發讀取）。
+        包含：連線檢查（自動重連）、讀取點位、更新狀態、處理值變更事件、評估告警。
+        適合不需要定期讀取的場景（如：手動觸發讀取、群組順序讀取）。
 
         Returns:
             讀取到的點位值字典
@@ -269,6 +269,17 @@ class AsyncModbusDevice:
         Raises:
             Exception: 讀取失敗時拋出例外（會發送 EVENT_READ_ERROR）
         """
+        # 未連線時嘗試重連
+        if not self._client_connected:
+            try:
+                await self._client.connect()
+                self._client_connected = True
+                # 注意：_device_responsive 保持 False，等讀取成功後才設為 True 並發送 EVENT_CONNECTED
+                self._consecutive_failures = 0
+            except Exception:
+                # 重連失敗，拋出讓呼叫者處理
+                raise
+
         start_time = time.monotonic()
 
         try:
@@ -312,7 +323,7 @@ class AsyncModbusDevice:
                 ),
             )
 
-            # 達到斷線閾值，標記設備無回應
+            # 達到斷線閾值，標記設備無回應（Socket 仍可能連通）
             if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
                 self._device_responsive = False
                 await self._emitter.emit_await(
