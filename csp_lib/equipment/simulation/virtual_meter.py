@@ -171,7 +171,7 @@ class VirtualMeter:
         return self._reading
 
     @property
-    def curve_provider(self) -> TestCurveProvider:
+    def curve_provider(self) -> CurveProvider:
         """取得曲線提供者"""
         return self._curve_provider
 

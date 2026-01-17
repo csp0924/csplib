@@ -65,12 +65,12 @@ class FPConfig(ConfigMixin):
         """驗證配置有效性"""
         # 檢查頻率偏移升序
         offsets = [self.f1, self.f2, self.f3, self.f4, self.f5, self.f6]
-        if not all(x < y for x, y in zip(offsets, offsets[1:])):
+        if not all(x < y for x, y in zip(offsets, offsets[1:], strict=False)):
             raise ValueError("頻率偏移量必須按升序排列")
 
         # 檢查功率降序
         powers = [self.p1, self.p2, self.p3, self.p4, self.p5, self.p6]
-        if not all(x >= y for x, y in zip(powers, powers[1:])):
+        if not all(x >= y for x, y in zip(powers, powers[1:], strict=False)):
             raise ValueError("功率百分比必須按降序排列")
 
 
