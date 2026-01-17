@@ -31,6 +31,8 @@ class MockEmitter:
     def __init__(self):
         self.start = AsyncMock()
         self.stop = AsyncMock()
+        self.emit = lambda event, payload: None  # 非阻塞發送
+        self.emit_await = AsyncMock()  # 阻塞發送
 
 
 class MockDevice:
@@ -107,16 +109,17 @@ class TestDeviceManagerRegistration:
         assert manager.group_count == 2
         assert len(manager.all_devices) == 4
 
-    def test_register_group_validates_client(self):
-        """register_group 應驗證 Client"""
+    def test_register_group_allows_different_clients(self):
+        """不同 Client 應可建立群組（不再驗證）"""
         manager = DeviceManager()
         devices = [
             MockDevice("device_001", MockClient()),
             MockDevice("device_002", MockClient()),
         ]
 
-        with pytest.raises(ValueError):
-            manager.register_group(devices)
+        # 不應拋出異常
+        manager.register_group(devices)
+        assert manager.group_count == 1
 
 
 # ======================== Lifecycle Tests ========================
@@ -165,8 +168,9 @@ class TestDeviceManagerLifecycle:
 
         await manager.start()
 
-        # Client 應被連接
-        client.connect.assert_called_once()
+        # 各設備的 connect 應被呼叫
+        for device in devices:
+            device.connect.assert_called_once()
 
         # 群組應在運行
         assert manager.groups[0].is_running is True
@@ -183,8 +187,9 @@ class TestDeviceManagerLifecycle:
         await manager.start()
         await manager.stop()
 
-        # Client 應被斷開
-        client.disconnect.assert_called_once()
+        # 各設備的 disconnect 應被呼叫
+        for device in devices:
+            device.disconnect.assert_called_once()
 
         # 群組應停止
         assert manager.groups[0].is_running is False

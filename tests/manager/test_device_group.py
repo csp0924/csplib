@@ -3,8 +3,6 @@
 # DeviceGroup 單元測試
 #
 # 測試覆蓋：
-# - Client 驗證
-# - 連線/斷線
 # - 順序讀取循環
 # - 生命週期管理
 
@@ -32,6 +30,8 @@ class MockEmitter:
     def __init__(self):
         self.start = AsyncMock()
         self.stop = AsyncMock()
+        self.emit = lambda event, payload: None
+        self.emit_await = AsyncMock()
 
 
 class MockDevice:
@@ -45,41 +45,6 @@ class MockDevice:
         self._device_responsive = False
         self._consecutive_failures = 0
         self.read_once = AsyncMock()
-
-
-# ======================== Client Validation Tests ========================
-
-
-class TestDeviceGroupValidation:
-    """Client 驗證測試"""
-
-    def test_single_device_no_validation(self):
-        """單一設備不需驗證"""
-        device = MockDevice("device_001")
-        group = DeviceGroup(devices=[device])
-        assert len(group) == 1
-
-    def test_same_client_passes(self):
-        """相同 Client 應通過驗證"""
-        client = MockClient()
-        device1 = MockDevice("device_001", client)
-        device2 = MockDevice("device_002", client)
-
-        group = DeviceGroup(devices=[device1, device2])
-        assert len(group) == 2
-
-    def test_different_client_raises(self):
-        """不同 Client 應拋出 ValueError"""
-        device1 = MockDevice("device_001", MockClient())
-        device2 = MockDevice("device_002", MockClient())
-
-        with pytest.raises(ValueError, match="必須共用同一 Client"):
-            DeviceGroup(devices=[device1, device2])
-
-    def test_empty_devices(self):
-        """空設備列表應可建立"""
-        group = DeviceGroup(devices=[])
-        assert len(group) == 0
 
 
 # ======================== Lifecycle Tests ========================
@@ -102,35 +67,6 @@ class TestDeviceGroupLifecycle:
     @pytest.fixture
     def group(self, devices: list[MockDevice]) -> DeviceGroup:
         return DeviceGroup(devices=devices, interval=0.1)
-
-    @pytest.mark.asyncio
-    async def test_connect(self, group: DeviceGroup, shared_client: MockClient):
-        """connect 應連接 Client 並啟動各設備 emitter"""
-        await group.connect()
-
-        # Client 應被連接一次
-        shared_client.connect.assert_called_once()
-
-        # 各設備 emitter 應被啟動
-        for device in group.devices:
-            device._emitter.start.assert_called_once()
-            assert device._client_connected is True
-            assert device._device_responsive is True
-
-    @pytest.mark.asyncio
-    async def test_disconnect(self, group: DeviceGroup, shared_client: MockClient):
-        """disconnect 應斷開 Client 並停止各設備 emitter"""
-        await group.connect()
-        await group.disconnect()
-
-        # Client 應被斷開
-        shared_client.disconnect.assert_called_once()
-
-        # 各設備 emitter 應被停止
-        for device in group.devices:
-            device._emitter.stop.assert_called_once()
-            assert device._client_connected is False
-            assert device._device_responsive is False
 
     @pytest.mark.asyncio
     async def test_start_stop(self, group: DeviceGroup):
@@ -183,7 +119,7 @@ class TestDeviceGroupSequentialLoop:
     async def test_reads_all_devices(self, group: DeviceGroup):
         """應讀取所有設備"""
         group.start()
-        await asyncio.sleep(0.5)  # 3 devices × 0.1s sleep = 至少 0.3s
+        await asyncio.sleep(0.3)
         await group.stop()
 
         for device in group.devices:
@@ -203,11 +139,10 @@ class TestDeviceGroupSequentialLoop:
             device.read_once = AsyncMock(side_effect=make_side_effect(device.device_id))
 
         group.start()
-        await asyncio.sleep(0.5)  # 增加等待時間
+        await asyncio.sleep(0.3)
         await group.stop()
 
-        # 驗證順序
-        # 由於可能跑多輪，只驗證連續三個是正確順序
+        # 驗證順序（連續三個應是正確順序）
         if len(read_order) >= 3:
             for i in range(0, len(read_order) - 2, 3):
                 assert read_order[i:i+3] == ["device_001", "device_002", "device_003"]
@@ -219,7 +154,7 @@ class TestDeviceGroupSequentialLoop:
         group.devices[0].read_once = AsyncMock(side_effect=Exception("Read failed"))
 
         group.start()
-        await asyncio.sleep(0.5)  # 增加等待時間
+        await asyncio.sleep(0.3)
         await group.stop()
 
         # 其他設備仍應被讀取
@@ -261,3 +196,17 @@ class TestDeviceGroupProperties:
         repr_str = repr(group)
         assert "device_001" in repr_str
         assert "1.5s" in repr_str
+
+    def test_empty_devices(self):
+        """空設備列表應可建立"""
+        group = DeviceGroup(devices=[])
+        assert len(group) == 0
+
+    def test_different_clients_allowed(self):
+        """不同 Client 應可建立（不再驗證）"""
+        device1 = MockDevice("device_001", MockClient())
+        device2 = MockDevice("device_002", MockClient())
+
+        # 不應拋出異常
+        group = DeviceGroup(devices=[device1, device2])
+        assert len(group) == 2
