@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from csp_lib.core import get_logger
@@ -40,7 +40,7 @@ class ValueChangePayload:
     point_name: str
     old_value: Any
     new_value: Any
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class ConnectedPayload:
     """連線成功事件資料"""
 
     device_id: str
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ class ReadErrorPayload:
     device_id: str
     error: str
     consecutive_failures: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class WriteCompletePayload:
     device_id: str
     point_name: str
     value: Any
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ class WriteErrorPayload:
     point_name: str
     value: Any
     error: str
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,7 @@ class DisconnectPayload:
     device_id: str
     reason: str
     consecutive_failures: int
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -98,7 +98,7 @@ class DeviceAlarmPayload:
 
     device_id: str
     alarm_event: AlarmEvent
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass(frozen=True)
@@ -108,7 +108,7 @@ class ReadCompletePayload:
     device_id: str
     values: dict[str, Any]
     duration_ms: float
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DeviceEventEmitter:
@@ -288,7 +288,9 @@ class DeviceEventEmitter:
             try:
                 await handler(payload)
             except Exception:
-                logger.warning("事件處理失敗: event=%s, payload=%s", event, repr(payload), exc_info=True)
+                logger.opt(exception=True).warning(
+                    "事件處理失敗: event={}, payload={}", event, repr(payload)
+                )
 
 
 __all__ = [

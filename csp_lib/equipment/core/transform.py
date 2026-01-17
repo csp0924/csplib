@@ -243,6 +243,57 @@ class ByteExtractTransform:
 
 
 @dataclass(frozen=True)
+class PowerFactorTransform:
+    """
+    功率因數解碼轉換（Schneider PM5350 專用）
+
+    PM5350 使用特殊編碼表示功率因數與相位：
+        - Q1 (0° ~ 90°):   0 < x < 1   → PF = x, lagging
+        - Q2 (90° ~ 180°): -2 < x < -1 → PF = -2 - x, leading
+        - Q3 (180° ~ 270°): -1 < x < 0 → PF = x, lagging
+        - Q4 (270° ~ 360°): 1 < x < 2  → PF = 2 - x, leading
+        - Unity: |x| = 1 → PF = x
+
+    Attributes:
+        include_status: 是否回傳包含 pf/status 的字典（預設 False，只回傳 PF 值）
+
+    Returns:
+        如果 include_status=False: float (功率因數值)
+        如果 include_status=True: dict {"pf": float, "status": "leading"|"lagging"|"unity"}
+    """
+
+    include_status: bool = False
+
+    def apply(self, value: Any) -> float | dict[str, Any]:
+        if not isinstance(value, (int, float)):
+            raise TypeError(f"PowerFactorTransform 需要數值，收到: {type(value).__name__}")
+
+        reg_val = float(value)
+
+        # 判斷象限與解碼
+        if reg_val > 1:
+            # Q4: 1 < x < 2 → leading
+            pf_val = 2 - reg_val
+            status = "leading"
+        elif reg_val < -1:
+            # Q2: -2 < x < -1 → leading
+            pf_val = -2 - reg_val
+            status = "leading"
+        elif abs(reg_val) == 1:
+            # Unity
+            pf_val = reg_val
+            status = "unity"
+        else:
+            # Q1/Q3: -1 < x < 1 → lagging
+            pf_val = reg_val
+            status = "lagging"
+
+        if self.include_status:
+            return {"pf": pf_val, "status": status}
+        return pf_val
+
+
+@dataclass(frozen=True)
 class MultiFieldExtractTransform:
     """
     多位元欄位提取轉換
@@ -304,5 +355,6 @@ __all__ = [
     "ByteExtractTransform",
     "InverseTransform",
     "BitExtractTransform",
+    "PowerFactorTransform",
     "MultiFieldExtractTransform",
 ]

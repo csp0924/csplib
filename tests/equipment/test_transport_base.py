@@ -160,13 +160,20 @@ class TestPointGrouperMaxLengthLimit:
         return PointGrouper()
 
     def test_exceeds_max_length_splits(self, grouper: PointGrouper):
-        """超過最大長度時必須拆分成多個群組"""
+        """超過最大長度時必須拆分成多個群組，且每個群組內容正確"""
         # FC=3 最大長度為 125
         p1 = ReadPoint(name="p1", address=0, data_type=UInt16())
         p2 = ReadPoint(name="p2", address=200, data_type=UInt16())  # 200 + 1 - 0 = 201 > 125
         result = grouper.group([p1, p2])
 
         assert len(result) == 2
+        # 驗證每個群組包含正確的點位
+        assert result[0].points == (p1,)
+        assert result[0].start_address == 0
+        assert result[0].count == 1
+        assert result[1].points == (p2,)
+        assert result[1].start_address == 200
+        assert result[1].count == 1
 
     def test_exactly_max_length_single_register(self, grouper: PointGrouper):
         """剛好等於最大長度時應為一個群組（單一暫存器類型）"""

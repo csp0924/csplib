@@ -24,7 +24,6 @@ class TestModbusTcpConfig:
         assert config.host == "192.168.1.100"
         assert config.port == 502
         assert config.timeout == 0.5
-        assert config.unit_id == 1
         assert config.byte_order == ByteOrder.BIG_ENDIAN
         assert config.register_order == RegisterOrder.HIGH_FIRST
 
@@ -33,14 +32,12 @@ class TestModbusTcpConfig:
             host="10.0.0.1",
             port=5020,
             timeout=1.0,
-            unit_id=10,
             byte_order=ByteOrder.LITTLE_ENDIAN,
             register_order=RegisterOrder.LOW_FIRST,
         )
         assert config.host == "10.0.0.1"
         assert config.port == 5020
         assert config.timeout == 1.0
-        assert config.unit_id == 10
         assert config.byte_order == ByteOrder.LITTLE_ENDIAN
         assert config.register_order == RegisterOrder.LOW_FIRST
 
@@ -64,13 +61,7 @@ class TestModbusTcpConfig:
         with pytest.raises(ModbusConfigError):
             ModbusTcpConfig(host="localhost", timeout=0)
 
-    def test_unit_id_negative_raises(self):
-        with pytest.raises(ModbusConfigError):
-            ModbusTcpConfig(host="localhost", unit_id=-1)
 
-    def test_unit_id_too_high_raises(self):
-        with pytest.raises(ModbusConfigError):
-            ModbusTcpConfig(host="localhost", unit_id=256)
 
     def test_config_is_frozen(self):
         config = ModbusTcpConfig(host="localhost")
@@ -89,7 +80,6 @@ class TestModbusRtuConfig:
         assert config.stopbits == 1
         assert config.bytesize == 8
         assert config.timeout == 0.5
-        assert config.unit_id == 1
         assert config.byte_order == ByteOrder.BIG_ENDIAN
         assert config.register_order == RegisterOrder.HIGH_FIRST
 
@@ -101,7 +91,6 @@ class TestModbusRtuConfig:
             stopbits=2,
             bytesize=7,
             timeout=2.0,
-            unit_id=100,
         )
         assert config.port == "/dev/ttyUSB0"
         assert config.baudrate == 115200
@@ -109,7 +98,6 @@ class TestModbusRtuConfig:
         assert config.stopbits == 2
         assert config.bytesize == 7
         assert config.timeout == 2.0
-        assert config.unit_id == 100
 
     def test_empty_port_raises(self):
         with pytest.raises(ModbusConfigError):
@@ -135,14 +123,7 @@ class TestModbusRtuConfig:
         with pytest.raises(ModbusConfigError):
             ModbusRtuConfig(port="COM1", timeout=-1.0)
 
-    def test_unit_id_zero_raises(self):
-        # RTU 規範 unit_id 必須在 1-247
-        with pytest.raises(ModbusConfigError):
-            ModbusRtuConfig(port="COM1", unit_id=0)
 
-    def test_unit_id_too_high_raises(self):
-        with pytest.raises(ModbusConfigError):
-            ModbusRtuConfig(port="COM1", unit_id=248)
 
     def test_config_is_frozen(self):
         config = ModbusRtuConfig(port="COM1")

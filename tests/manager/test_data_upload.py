@@ -1,0 +1,339 @@
+# =============== Manager Data Tests - Upload ===============
+#
+# DataUploadManager 單元測試
+#
+# 測試覆蓋：
+# - subscribe/unsubscribe 設備訂閱
+# - read_complete 事件處理
+# - disconnected 事件處理（含巢狀結構）
+# - nullify_nested 工具函數
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from csp_lib.equipment.device.events import (
+    EVENT_DISCONNECTED,
+    EVENT_READ_COMPLETE,
+    DisconnectPayload,
+    ReadCompletePayload,
+)
+from csp_lib.manager.data.upload import DataUploadManager, nullify_nested
+
+
+class MockDevice:
+    """Mock AsyncModbusDevice for testing"""
+
+    def __init__(self, device_id: str):
+        self.device_id = device_id
+        self._handlers: dict[str, list] = {}
+
+    def on(self, event: str, handler):
+        if event not in self._handlers:
+            self._handlers[event] = []
+        self._handlers[event].append(handler)
+
+        def cancel():
+            if event in self._handlers and handler in self._handlers[event]:
+                self._handlers[event].remove(handler)
+
+        return cancel
+
+    async def emit(self, event: str, payload):
+        """Simulate event emission for testing"""
+        for handler in self._handlers.get(event, []):
+            await handler(payload)
+
+
+class MockUploader:
+    """Mock MongoBatchUploader for testing"""
+
+    def __init__(self):
+        self.enqueue = AsyncMock()
+        self.register_collection = MagicMock()
+
+
+# ======================== nullify_nested Tests ========================
+
+
+class TestNullifyNested:
+    """nullify_nested 工具函數測試"""
+
+    def test_primitive_value(self):
+        """原始值應轉為 None"""
+        assert nullify_nested(25.5) is None
+        assert nullify_nested(100) is None
+        assert nullify_nested("text") is None
+        assert nullify_nested(True) is None
+
+    def test_flat_dict(self):
+        """扁平 dict 應保留結構，值轉為 None"""
+        result = nullify_nested({"a": 1, "b": 2, "c": 3})
+        assert result == {"a": None, "b": None, "c": None}
+
+    def test_flat_list(self):
+        """扁平 list 應保留長度，值轉為 None"""
+        result = nullify_nested([1, 2, 3])
+        assert result == [None, None, None]
+
+    def test_nested_dict(self):
+        """巢狀 dict 應遞歸處理"""
+        result = nullify_nested({"status": {"running": True, "mode": 2}})
+        assert result == {"status": {"running": None, "mode": None}}
+
+    def test_nested_list(self):
+        """巢狀 list 應遞歸處理"""
+        result = nullify_nested([[1, 2], [3, 4]])
+        assert result == [[None, None], [None, None]]
+
+    def test_mixed_structure(self):
+        """混合結構應正確處理"""
+        value = {
+            "temperature": 25.5,
+            "status": {"is_running": True, "mode": 2},
+            "errors": [1, 2, 3],
+            "config": {"limits": [10, 20], "name": "device1"},
+        }
+        result = nullify_nested(value)
+        expected = {
+            "temperature": None,
+            "status": {"is_running": None, "mode": None},
+            "errors": [None, None, None],
+            "config": {"limits": [None, None], "name": None},
+        }
+        assert result == expected
+
+    def test_empty_structures(self):
+        """空結構應保持空"""
+        assert nullify_nested({}) == {}
+        assert nullify_nested([]) == []
+
+
+# ======================== Subscribe/Unsubscribe Tests ========================
+
+
+class TestDataUploadManagerSubscription:
+    """訂閱/取消訂閱測試"""
+
+    @pytest.fixture
+    def uploader(self) -> MockUploader:
+        return MockUploader()
+
+    @pytest.fixture
+    def manager(self, uploader: MockUploader) -> DataUploadManager:
+        return DataUploadManager(uploader=uploader)
+
+    def test_subscribe_device(self, manager: DataUploadManager, uploader: MockUploader):
+        """subscribe 應註冊事件處理器"""
+        device = MockDevice("device_001")
+
+        manager.subscribe(device, collection_name="device_data")
+
+        # 應有 2 個事件被註冊
+        assert len(device._handlers.get(EVENT_READ_COMPLETE, [])) == 1
+        assert len(device._handlers.get(EVENT_DISCONNECTED, [])) == 1
+
+        # 應註冊 collection
+        uploader.register_collection.assert_called_once_with("device_data")
+
+    def test_subscribe_idempotent(self, manager: DataUploadManager):
+        """重複 subscribe 同一設備應無效果"""
+        device = MockDevice("device_001")
+
+        manager.subscribe(device, collection_name="device_data")
+        manager.subscribe(device, collection_name="device_data")  # 第二次
+
+        # 仍只有 1 個處理器
+        assert len(device._handlers.get(EVENT_READ_COMPLETE, [])) == 1
+
+    def test_unsubscribe_device(self, manager: DataUploadManager):
+        """unsubscribe 應移除所有事件處理器"""
+        device = MockDevice("device_001")
+
+        manager.subscribe(device, collection_name="device_data")
+        manager.unsubscribe(device)
+
+        # 所有處理器應被移除
+        assert len(device._handlers.get(EVENT_READ_COMPLETE, [])) == 0
+        assert len(device._handlers.get(EVENT_DISCONNECTED, [])) == 0
+
+    def test_unsubscribe_unsubscribed_no_error(self, manager: DataUploadManager):
+        """取消訂閱未訂閱的設備不應報錯"""
+        device = MockDevice("device_001")
+        manager.unsubscribe(device)  # 不應拋錯
+
+    def test_subscribe_multiple_devices(self, manager: DataUploadManager):
+        """應能訂閱多個設備"""
+        device1 = MockDevice("device_001")
+        device2 = MockDevice("device_002")
+
+        manager.subscribe(device1, collection_name="device1_data")
+        manager.subscribe(device2, collection_name="device2_data")
+
+        assert len(device1._handlers.get(EVENT_READ_COMPLETE, [])) == 1
+        assert len(device2._handlers.get(EVENT_READ_COMPLETE, [])) == 1
+
+
+# ======================== Read Complete Event Tests ========================
+
+
+class TestDataUploadManagerReadComplete:
+    """read_complete 事件測試"""
+
+    @pytest.fixture
+    def uploader(self) -> MockUploader:
+        return MockUploader()
+
+    @pytest.fixture
+    def manager(self, uploader: MockUploader) -> DataUploadManager:
+        return DataUploadManager(uploader=uploader)
+
+    @pytest.mark.asyncio
+    async def test_on_read_complete_enqueues_data(
+        self, manager: DataUploadManager, uploader: MockUploader
+    ):
+        """read_complete 應將資料加入 queue"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="device_data")
+
+        timestamp = datetime.now(timezone.utc)
+        payload = ReadCompletePayload(
+            device_id="device_001",
+            values={"temperature": 25.5, "humidity": 60},
+            duration_ms=50.0,
+            timestamp=timestamp,
+        )
+        await device.emit(EVENT_READ_COMPLETE, payload)
+
+        uploader.enqueue.assert_called_once()
+        call_args = uploader.enqueue.call_args[0]
+        assert call_args[0] == "device_data"
+        assert call_args[1]["device_id"] == "device_001"
+        assert call_args[1]["temperature"] == 25.5
+        assert call_args[1]["humidity"] == 60
+        assert call_args[1]["timestamp"] == timestamp
+
+    @pytest.mark.asyncio
+    async def test_on_read_complete_caches_values(
+        self, manager: DataUploadManager, uploader: MockUploader
+    ):
+        """read_complete 應快取值結構"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="device_data")
+
+        payload = ReadCompletePayload(
+            device_id="device_001",
+            values={"temperature": 25.5},
+            duration_ms=50.0,
+        )
+        await device.emit(EVENT_READ_COMPLETE, payload)
+
+        # 檢查快取
+        assert manager._last_values["device_001"] == {"temperature": 25.5}
+
+
+# ======================== Disconnected Event Tests ========================
+
+
+class TestDataUploadManagerDisconnected:
+    """disconnected 事件測試"""
+
+    @pytest.fixture
+    def uploader(self) -> MockUploader:
+        return MockUploader()
+
+    @pytest.fixture
+    def manager(self, uploader: MockUploader) -> DataUploadManager:
+        return DataUploadManager(uploader=uploader)
+
+    @pytest.mark.asyncio
+    async def test_on_disconnected_enqueues_null_values(
+        self, manager: DataUploadManager, uploader: MockUploader
+    ):
+        """disconnected 應上傳空值記錄"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="device_data")
+
+        # 先讀取一次建立快取
+        read_payload = ReadCompletePayload(
+            device_id="device_001",
+            values={"temperature": 25.5, "humidity": 60},
+            duration_ms=50.0,
+        )
+        await device.emit(EVENT_READ_COMPLETE, read_payload)
+
+        uploader.enqueue.reset_mock()
+
+        # 斷線
+        disconnect_payload = DisconnectPayload(
+            device_id="device_001",
+            reason="timeout",
+            consecutive_failures=5,
+        )
+        await device.emit(EVENT_DISCONNECTED, disconnect_payload)
+
+        uploader.enqueue.assert_called_once()
+        call_args = uploader.enqueue.call_args[0]
+        assert call_args[0] == "device_data"
+        assert call_args[1]["device_id"] == "device_001"
+        assert call_args[1]["temperature"] is None
+        assert call_args[1]["humidity"] is None
+
+    @pytest.mark.asyncio
+    async def test_on_disconnected_preserves_nested_structure(
+        self, manager: DataUploadManager, uploader: MockUploader
+    ):
+        """disconnected 應保留巢狀結構"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="device_data")
+
+        # 先讀取一次建立快取（含巢狀結構）
+        read_payload = ReadCompletePayload(
+            device_id="device_001",
+            values={
+                "temperature": 25.5,
+                "status": {"running": True, "mode": 2},
+                "errors": [1, 2, 3],
+            },
+            duration_ms=50.0,
+        )
+        await device.emit(EVENT_READ_COMPLETE, read_payload)
+
+        uploader.enqueue.reset_mock()
+
+        # 斷線
+        disconnect_payload = DisconnectPayload(
+            device_id="device_001",
+            reason="timeout",
+            consecutive_failures=5,
+        )
+        await device.emit(EVENT_DISCONNECTED, disconnect_payload)
+
+        call_args = uploader.enqueue.call_args[0]
+        doc = call_args[1]
+
+        assert doc["temperature"] is None
+        assert doc["status"] == {"running": None, "mode": None}
+        assert doc["errors"] == [None, None, None]
+
+    @pytest.mark.asyncio
+    async def test_on_disconnected_no_cache_skips_upload(
+        self, manager: DataUploadManager, uploader: MockUploader
+    ):
+        """無快取時斷線應跳過上傳"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="device_data")
+
+        # 直接斷線（無先前讀取）
+        disconnect_payload = DisconnectPayload(
+            device_id="device_001",
+            reason="timeout",
+            consecutive_failures=5,
+        )
+        await device.emit(EVENT_DISCONNECTED, disconnect_payload)
+
+        # 不應呼叫 enqueue（因為無快取結構）
+        uploader.enqueue.assert_not_called()

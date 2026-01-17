@@ -21,6 +21,7 @@ from .transform import (
     EnumMapTransform,
     InverseTransform,
     MultiFieldExtractTransform,
+    PowerFactorTransform,
     RoundTransform,
     ScaleTransform,
     TransformStep,
@@ -45,6 +46,7 @@ __all__ = [
     "ByteExtractTransform",
     "InverseTransform",
     "BitExtractTransform",
+    "PowerFactorTransform",
     "MultiFieldExtractTransform",
     # Pipeline
     "ProcessingPipeline",

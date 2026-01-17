@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from csp_lib.equipment.alarm import AlarmLevel
 from csp_lib.manager.alarm.schema import AlarmRecord, AlarmStatus, AlarmType
@@ -58,7 +58,7 @@ class TestAlarmRecord:
 
     def test_create_full(self):
         """建立完整 AlarmRecord"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         record = AlarmRecord(
             alarm_key="device_001:device_alarm:OVER_TEMP",
             device_id="device_001",
@@ -89,7 +89,7 @@ class TestAlarmRecord:
 
     def test_to_document(self):
         """to_document 應正確轉換為 dict"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         record = AlarmRecord(
             alarm_key="device_001:disconnect:DISCONNECT",
             device_id="device_001",
@@ -118,7 +118,7 @@ class TestAlarmRecord:
 
     def test_from_document(self):
         """from_document 應正確從 dict 建立"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         doc = {
             "_id": "mongo_object_id_12345",  # MongoDB 自動產生
             "alarm_key": "device_001:disconnect:DISCONNECT",
@@ -168,7 +168,7 @@ class TestAlarmRecord:
 
     def test_roundtrip(self):
         """to_document / from_document 循環轉換應保持一致"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         original = AlarmRecord(
             alarm_key="device_001:device_alarm:OVER_TEMP",
             device_id="device_001",

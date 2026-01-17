@@ -303,7 +303,7 @@ class TestGroupReaderRead:
         result = await reader.read(group)
 
         assert result == {"value": 500}
-        mock_client.read_holding_registers.assert_called_once_with(100, 1)
+        mock_client.read_holding_registers.assert_called_once_with(100, 1, 1)
 
     @pytest.mark.asyncio
     async def test_read_input_registers(self, reader: GroupReader, mock_client: AsyncMock):
@@ -320,7 +320,7 @@ class TestGroupReaderRead:
         result = await reader.read(group)
 
         assert result == {"sensor": 1234}
-        mock_client.read_input_registers.assert_called_once_with(200, 1)
+        mock_client.read_input_registers.assert_called_once_with(200, 1, 1)
 
     @pytest.mark.asyncio
     async def test_read_coils(self, reader: GroupReader, mock_client: AsyncMock):
@@ -337,7 +337,7 @@ class TestGroupReaderRead:
         result = await reader.read(group)
 
         assert result == {"switch": True}
-        mock_client.read_coils.assert_called_once_with(0, 1)
+        mock_client.read_coils.assert_called_once_with(0, 1, 1)
 
     @pytest.mark.asyncio
     async def test_read_discrete_inputs(self, reader: GroupReader, mock_client: AsyncMock):
@@ -354,7 +354,7 @@ class TestGroupReaderRead:
         result = await reader.read(group)
 
         assert result == {"alarm": False}
-        mock_client.read_discrete_inputs.assert_called_once_with(10, 1)
+        mock_client.read_discrete_inputs.assert_called_once_with(10, 1, 1)
 
     @pytest.mark.asyncio
     async def test_read_unsupported_function_code_raises(self, reader: GroupReader):
@@ -381,7 +381,7 @@ class TestGroupReaderAddressOffset:
         await reader_with_offset.read(group)
 
         # 100 + 1 = 101
-        mock_client.read_holding_registers.assert_called_once_with(101, 1)
+        mock_client.read_holding_registers.assert_called_once_with(101, 1, 1)
 
 
 # ======================== Read Many Tests ========================

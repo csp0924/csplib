@@ -3,7 +3,7 @@
 # 測試 StrategyExecutor 執行器
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -32,6 +32,7 @@ class MockStrategy(Strategy):
         self.execute_count = 0
         self.activated = False
         self.deactivated = False
+        self.last_context: StrategyContext | None = None
 
     @property
     def execution_config(self) -> ExecutionConfig:
@@ -42,10 +43,10 @@ class MockStrategy(Strategy):
         self.last_context = context
         return self._return_command
 
-    def on_activate(self):
+    async def on_activate(self):
         self.activated = True
 
-    def on_deactivate(self):
+    async def on_deactivate(self):
         self.deactivated = True
 
 
@@ -63,26 +64,28 @@ class TestStrategyExecutor:
         assert executor.last_command == Command()
         assert executor.is_running is False
 
-    def test_set_strategy_calls_lifecycle_hooks(self):
+    @pytest.mark.asyncio
+    async def test_set_strategy_calls_lifecycle_hooks(self):
         """set_strategy 應呼叫生命週期 hooks"""
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy1 = MockStrategy()
-        executor.set_strategy(strategy1)
+        await executor.set_strategy(strategy1)
         assert strategy1.activated is True
 
         strategy2 = MockStrategy()
-        executor.set_strategy(strategy2)
+        await executor.set_strategy(strategy2)
         assert strategy1.deactivated is True
         assert strategy2.activated is True
 
-    def test_set_strategy_to_none(self):
+    @pytest.mark.asyncio
+    async def test_set_strategy_to_none(self):
         """set_strategy(None) 應停用當前策略"""
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy = MockStrategy()
-        executor.set_strategy(strategy)
-        executor.set_strategy(None)
+        await executor.set_strategy(strategy)
+        await executor.set_strategy(None)
 
         assert strategy.deactivated is True
         assert executor.current_strategy is None
@@ -93,7 +96,7 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy = MockStrategy(return_command=Command(p_target=100.0))
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         cmd = await executor.execute_once()
 
@@ -116,7 +119,7 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy = MockStrategy(return_command=Command(p_target=100.0))
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         # 第一次執行
         await executor.execute_once()
@@ -125,6 +128,7 @@ class TestStrategyExecutor:
         await executor.execute_once()
 
         # 檢查第二次執行時的 context.last_command
+        assert strategy.last_context is not None
         assert strategy.last_context.last_command.p_target == 100.0
 
     @pytest.mark.asyncio
@@ -133,12 +137,13 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy = MockStrategy()
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
-        before = datetime.now()
+        before = datetime.now(timezone.utc)
         await executor.execute_once()
-        after = datetime.now()
+        after = datetime.now(timezone.utc)
 
+        assert strategy.last_context is not None
         assert before <= strategy.last_context.current_time <= after
 
     @pytest.mark.asyncio
@@ -148,7 +153,7 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: StrategyContext(), on_command=callback)
 
         strategy = MockStrategy(return_command=Command(p_target=200.0))
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         await executor.execute_once()
 
@@ -163,7 +168,7 @@ class TestStrategyExecutor:
 
         # 先設定一個正常策略執行一次
         normal_strategy = MockStrategy(return_command=Command(p_target=100.0))
-        executor.set_strategy(normal_strategy)
+        await executor.set_strategy(normal_strategy)
         await executor.execute_once()
 
         # 換成會拋出異常的策略
@@ -172,7 +177,7 @@ class TestStrategyExecutor:
                 raise RuntimeError("Test error")
 
         failing_strategy = FailingStrategy()
-        executor.set_strategy(failing_strategy)
+        await executor.set_strategy(failing_strategy)
 
         cmd = await executor.execute_once()
 
@@ -190,7 +195,7 @@ class TestStrategyExecutor:
             mode=ExecutionMode.PERIODIC,
             interval=10,  # 長週期，測試 stop() 能中斷
         )
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         # 在另一個 task 中執行 run
         async def run_executor():
@@ -214,7 +219,7 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         strategy = MockStrategy(return_command=Command(p_target=100.0), mode=ExecutionMode.TRIGGERED)
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         # 啟動 executor
         task = asyncio.create_task(executor.run())
@@ -239,7 +244,7 @@ class TestStrategyExecutor:
         executor = StrategyExecutor(context_provider=lambda: base_context)
 
         strategy = MockStrategy()
-        executor.set_strategy(strategy)
+        await executor.set_strategy(strategy)
 
         await executor.execute_once()
 
@@ -248,5 +253,7 @@ class TestStrategyExecutor:
         assert base_context.current_time is None  # 原始值
 
         # 策略收到的 context 應有新值
+        assert strategy.last_context is not None
         assert strategy.last_context.last_command == Command()  # 執行時的 last
         assert strategy.last_context.current_time is not None
+

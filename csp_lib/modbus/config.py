@@ -21,11 +21,14 @@ class ModbusTcpConfig:
 
     使用 frozen dataclass 確保設定不可變。
 
+    Note:
+        unit_id 已移至設備層級 (DeviceConfig)，
+        讓多個設備可共用同一個 Client 連線。
+
     Attributes:
         host: 目標主機位址
         port: 連接埠號，預設 502
         timeout: 通訊逾時秒數，預設 0.5
-        unit_id: 設備位址 (Unit ID)，預設 1
         byte_order: 位元組順序，預設大端序
         register_order: 暫存器順序，預設高位優先
     """
@@ -33,7 +36,6 @@ class ModbusTcpConfig:
     host: str
     port: int = 502
     timeout: float = 0.5
-    unit_id: int = 1
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
     register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
 
@@ -45,8 +47,6 @@ class ModbusTcpConfig:
             raise ModbusConfigError(f"port 必須在 1-65535 範圍內，收到: {self.port}")
         if self.timeout <= 0:
             raise ModbusConfigError(f"timeout 必須為正數，收到: {self.timeout}")
-        if not 0 <= self.unit_id <= 255:
-            raise ModbusConfigError(f"unit_id 必須在 0-255 範圍內，收到: {self.unit_id}")
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,10 @@ class ModbusRtuConfig:
 
     使用 frozen dataclass 確保設定不可變。
 
+    Note:
+        unit_id 已移至設備層級 (DeviceConfig)，
+        讓多個設備可共用同一個串口連線。
+
     Attributes:
         port: 串口名稱 (e.g., "COM1", "/dev/ttyUSB0")
         baudrate: 鮑率，預設 9600
@@ -63,7 +67,6 @@ class ModbusRtuConfig:
         stopbits: 停止位元數，預設 1
         bytesize: 資料位元數，預設 8
         timeout: 通訊逾時秒數，預設 0.5
-        unit_id: 設備位址 (Slave ID)，預設 1
         byte_order: 位元組順序，預設大端序
         register_order: 暫存器順序，預設高位優先
     """
@@ -74,7 +77,6 @@ class ModbusRtuConfig:
     stopbits: int = 1
     bytesize: int = 8
     timeout: float = 0.5
-    unit_id: int = 1
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
     register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
 
@@ -90,8 +92,6 @@ class ModbusRtuConfig:
             raise ModbusConfigError(f"bytesize 必須為 5, 6, 7 或 8，收到: {self.bytesize}")
         if self.timeout <= 0:
             raise ModbusConfigError(f"timeout 必須為正數，收到: {self.timeout}")
-        if not 1 <= self.unit_id <= 247:
-            raise ModbusConfigError(f"unit_id 必須在 1-247 範圍內 (RTU 規範)，收到: {self.unit_id}")
 
 
 __all__ = [

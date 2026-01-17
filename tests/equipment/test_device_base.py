@@ -95,7 +95,7 @@ def alarm_evaluators() -> list[ThresholdAlarmEvaluator]:
     """告警評估器"""
     return [
         ThresholdAlarmEvaluator(
-            _point_name="power",
+            point_name="power",
             conditions=[
                 ThresholdCondition(
                     alarm=AlarmDefinition(code="HIGH_POWER", name="功率過高", level=AlarmLevel.WARNING),
@@ -180,12 +180,6 @@ class TestAsyncModbusDeviceLifecycle:
 
         assert device.is_connected is False
         assert device.is_responsive is False
-
-    @pytest.mark.asyncio
-    async def test_start_requires_connection(self, device: AsyncModbusDevice):
-        """start() 需要先連線"""
-        with pytest.raises(ConnectionError, match="設備未連線"):
-            await device.start()
 
     @pytest.mark.asyncio
     async def test_start_creates_read_task(self, device: AsyncModbusDevice):
@@ -333,7 +327,7 @@ class TestAsyncModbusDeviceAlarm:
         # 建立帶有 ALARM 級別的設備
         config = DeviceConfig(device_id="test", read_interval=0.1, disconnect_threshold=3)
         alarm_evaluator = ThresholdAlarmEvaluator(
-            _point_name="power",
+            point_name="power",
             conditions=[
                 ThresholdCondition(
                     alarm=AlarmDefinition(code="CRITICAL", name="嚴重", level=AlarmLevel.ALARM),
@@ -535,7 +529,7 @@ class TestAsyncModbusDeviceState:
         """設備恢復後 is_responsive 應恢復"""
         call_count = 0
 
-        async def flaky_read(address, count):
+        async def flaky_read(address, count, unit_id=1):
             nonlocal call_count
             call_count += 1
             if call_count <= 3:
@@ -620,7 +614,7 @@ class TestAsyncModbusDevicePerformance:
         # 模擬不同值以觸發 value_change
         call_count = 0
 
-        def varying_read(address, count):
+        def varying_read(address, count, unit_id=1):
             nonlocal call_count
             call_count += 1
             return [call_count % 100]

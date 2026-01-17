@@ -48,19 +48,19 @@ class Strategy(ABC):
         """
         pass
 
-    def on_activate(self) -> None:
+    async def on_activate(self) -> None:
         """
         策略啟用時呼叫 (可選覆寫)
 
-        用途：初始化內部狀態、記錄日誌等
+        用途：初始化內部狀態、執行啟動動作等
         """
         pass
 
-    def on_deactivate(self) -> None:
+    async def on_deactivate(self) -> None:
         """
         策略停用時呼叫 (可選覆寫)
 
-        用途：清理資源、保存狀態等
+        用途：清理資源、執行收尾動作等
         """
         pass
 
