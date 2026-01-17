@@ -1,6 +1,4 @@
-"""
-
-"""
+""" """
 
 from __future__ import annotations
 
@@ -14,12 +12,14 @@ from csp_lib.equipment.alarm import AlarmLevel
 
 class AlarmType(str, Enum):
     """告警類型"""
-    DISCONNECT = "disconnect"      # 設備斷線
+
+    DISCONNECT = "disconnect"  # 設備斷線
     DEVICE_ALARM = "device_alarm"  # 設備內部告警
 
 
 class AlarmStatus(str, Enum):
     """告警狀態"""
+
     ACTIVE = "active"
     RESOLVED = "resolved"
 
@@ -27,24 +27,24 @@ class AlarmStatus(str, Enum):
 @dataclass
 class AlarmRecord:
     """告警記錄 (MongoDB Document)"""
-    
+
     # === 唯一識別 ===
-    alarm_key: str              # 業務唯一鍵: "<device_id>:<alarm_type>:<alarm_code>"
-    
+    alarm_key: str  # 業務唯一鍵: "<device_id>:<alarm_type>:<alarm_code>"
+
     # === 告警來源 ===
-    device_id: str              # 設備識別碼
-    alarm_type: AlarmType       # 告警類型: DISCONNECT | DEVICE_ALARM
-    alarm_code: str = ""        # 告警代碼 (e.g., "OVER_TEMP", "DISCONNECT")
-    
+    device_id: str  # 設備識別碼
+    alarm_type: AlarmType  # 告警類型: DISCONNECT | DEVICE_ALARM
+    alarm_code: str = ""  # 告警代碼 (e.g., "OVER_TEMP", "DISCONNECT")
+
     # === 告警資訊 ===
-    name: str = ""              # 告警名稱
+    name: str = ""  # 告警名稱
     level: AlarmLevel = AlarmLevel.INFO  # 告警等級
-    description: str = ""       # 描述
-    
+    description: str = ""  # 描述
+
     # === 時間戳記 ===
     occurred_at: datetime | None = None  # 發生時間
     resolved_at: datetime | None = None  # 解除時間 (None = 進行中)
-    
+
     # === 狀態 ===
     status: AlarmStatus = AlarmStatus.ACTIVE  # ACTIVE | RESOLVED
 

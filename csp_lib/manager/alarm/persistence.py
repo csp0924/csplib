@@ -1,6 +1,8 @@
 """告警持久化管理器"""
+
 from datetime import datetime
-from typing import Callable, Sequence
+from typing import Callable
+
 from csp_lib.core import get_logger
 from csp_lib.equipment.alarm import AlarmLevel
 from csp_lib.equipment.device import AsyncModbusDevice
@@ -13,10 +15,12 @@ from csp_lib.equipment.device.events import (
     DeviceAlarmPayload,
     DisconnectPayload,
 )
+
 from .repository import AlarmRepository
 from .schema import AlarmRecord, AlarmType
 
 logger = get_logger(__name__)
+
 
 class AlarmPersistenceManager:
     """
@@ -73,7 +77,7 @@ class AlarmPersistenceManager:
         )
         await self._create_alarm(record)
 
-    async def _on_connected(self, payload: ConnectedPayload) -> None: 
+    async def _on_connected(self, payload: ConnectedPayload) -> None:
         key = AlarmRecord.make_key(payload.device_id, AlarmType.DISCONNECT, self.DISCONNECT_CODE)
         await self._resolve_alarm(key, payload.timestamp)
 
@@ -89,7 +93,7 @@ class AlarmPersistenceManager:
             occurred_at=payload.timestamp,
         )
         await self._create_alarm(record)
-    
+
     async def _on_alarm_cleared(self, payload: DeviceAlarmPayload) -> None:
         alarm = payload.alarm_event.alarm
         key = AlarmRecord.make_key(payload.device_id, AlarmType.DEVICE_ALARM, alarm.code)
@@ -108,6 +112,3 @@ class AlarmPersistenceManager:
         if success:
             logger.info(f"告警持久化管理器已解除告警: {alarm_key}")
         # TODO: 發送告警通知
-
-
-

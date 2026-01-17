@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
 from csp_lib.equipment.alarm import AlarmLevel
 from csp_lib.manager.alarm.schema import AlarmRecord, AlarmStatus, AlarmType
 

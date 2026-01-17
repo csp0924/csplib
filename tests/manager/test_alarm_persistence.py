@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,7 +26,7 @@ from csp_lib.equipment.device.events import (
     DisconnectPayload,
 )
 from csp_lib.manager.alarm.persistence import AlarmPersistenceManager
-from csp_lib.manager.alarm.schema import AlarmRecord, AlarmStatus, AlarmType
+from csp_lib.manager.alarm.schema import AlarmRecord, AlarmType
 
 
 class MockDevice:
@@ -144,9 +144,7 @@ class TestAlarmPersistenceManagerDisconnect:
         return AlarmPersistenceManager(repository=repository)
 
     @pytest.mark.asyncio
-    async def test_on_disconnected_creates_alarm(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_on_disconnected_creates_alarm(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """斷線事件應建立 DISCONNECT 告警"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -170,9 +168,7 @@ class TestAlarmPersistenceManagerDisconnect:
         assert record.description == "Connection timeout"
 
     @pytest.mark.asyncio
-    async def test_on_connected_resolves_alarm(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_on_connected_resolves_alarm(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """重連事件應解除 DISCONNECT 告警"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -203,9 +199,7 @@ class TestAlarmPersistenceManagerDeviceAlarm:
         return AlarmPersistenceManager(repository=repository)
 
     @pytest.mark.asyncio
-    async def test_on_alarm_triggered_creates_alarm(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_on_alarm_triggered_creates_alarm(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """告警觸發事件應建立告警記錄"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -232,9 +226,7 @@ class TestAlarmPersistenceManagerDeviceAlarm:
         assert record.description == "設備溫度超過閾值"
 
     @pytest.mark.asyncio
-    async def test_on_alarm_cleared_resolves_alarm(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_on_alarm_cleared_resolves_alarm(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """告警解除事件應解除告警記錄"""
         device = MockDevice("device_001")
         manager.subscribe(device)
@@ -267,9 +259,7 @@ class TestAlarmPersistenceManagerLogging:
         return AlarmPersistenceManager(repository=repository)
 
     @pytest.mark.asyncio
-    async def test_create_alarm_logs_when_new(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_create_alarm_logs_when_new(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """新增告警時應記錄 log"""
         repository.upsert.return_value = ("mock_id", True)  # is_new = True
 
@@ -311,9 +301,7 @@ class TestAlarmPersistenceManagerLogging:
             assert "訂閱" in str(calls[0])
 
     @pytest.mark.asyncio
-    async def test_resolve_alarm_logs_when_success(
-        self, manager: AlarmPersistenceManager, repository: MockRepository
-    ):
+    async def test_resolve_alarm_logs_when_success(self, manager: AlarmPersistenceManager, repository: MockRepository):
         """解除告警成功時應記錄 log"""
         repository.resolve.return_value = True
 
