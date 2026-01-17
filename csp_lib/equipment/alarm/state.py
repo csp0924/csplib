@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from .definition import AlarmDefinition, AlarmLevel
@@ -26,7 +26,7 @@ class AlarmEvent:
 
     event_type: AlarmEventType
     alarm: AlarmDefinition
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -64,7 +64,7 @@ class AlarmState:
         """
         if self.activated_at is None:
             return None
-        end_time = self.cleared_at if self.cleared_at else datetime.now()
+        end_time = self.cleared_at if self.cleared_at else datetime.now(timezone.utc)
         return (end_time - self.activated_at).total_seconds()
 
     def update(self, is_triggered: bool) -> AlarmEvent | None:
@@ -80,7 +80,7 @@ class AlarmState:
             告警事件（如果狀態變化），否則 None
         """
         hysteresis = self.definition.hysteresis
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         if is_triggered:
             # 觸發中
@@ -110,7 +110,7 @@ class AlarmState:
     def force_clear(self) -> AlarmEvent | None:
         """強制清除告警"""
         if self.is_active:
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             self.is_active = False
             self.activate_count = 0
             self.clear_count = 0

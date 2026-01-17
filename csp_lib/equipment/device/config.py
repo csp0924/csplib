@@ -17,6 +17,7 @@ class DeviceConfig:
         unit_id: Modbus 設備位址 (0-255)
         address_offset: 位址偏移（PLC 1-based: offset=1）
         read_interval: 讀取間隔（秒）
+        reconnect_interval: 重連間隔（秒）
         disconnect_threshold: 連續失敗次數閾值，達到後視為斷線
         max_concurrent_reads: 最大並行讀取數（0=不限制）
     """
@@ -25,6 +26,7 @@ class DeviceConfig:
     unit_id: int = 1
     address_offset: int = 0
     read_interval: float = 1.0
+    reconnect_interval: float = 5.0
     disconnect_threshold: int = 5
     max_concurrent_reads: int = 1
 

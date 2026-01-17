@@ -28,9 +28,9 @@ class ScheduleStrategy(Strategy):
         schedule = ScheduleStrategy()
 
         # 由外部排程更新器呼叫
-        schedule.update_schedule(pq_strategy)  # 切換到 PQ 模式
-        schedule.update_schedule(pv_strategy)  # 切換到 PVSmooth
-        schedule.update_schedule(None)         # 無排程 → StopStrategy
+        await schedule.update_schedule(pq_strategy)  # 切換到 PQ 模式
+        await schedule.update_schedule(pv_strategy)  # 切換到 PVSmooth
+        await schedule.update_schedule(None)         # 無排程 → StopStrategy
     """
 
     def __init__(self, fallback: Optional[Strategy] = None):
@@ -58,7 +58,7 @@ class ScheduleStrategy(Strategy):
         # 使用當前策略的執行配置
         return self.current_strategy.execution_config
 
-    def update_schedule(self, strategy: Optional[Strategy]) -> None:
+    async def update_schedule(self, strategy: Optional[Strategy]) -> None:
         """
         更新排程策略
 
@@ -71,13 +71,13 @@ class ScheduleStrategy(Strategy):
 
         if old_strategy is not None:
             logger.info(f"ScheduleStrategy: 停用 {old_strategy}")
-            old_strategy.on_deactivate()
+            await old_strategy.on_deactivate()
 
         self._current_strategy = strategy
 
         if strategy is not None:
             logger.info(f"ScheduleStrategy: 啟用 {strategy}")
-            strategy.on_activate()
+            await strategy.on_activate()
         else:
             logger.info(f"ScheduleStrategy: 使用 fallback ({self._fallback})")
 
@@ -88,16 +88,16 @@ class ScheduleStrategy(Strategy):
         active = self.current_strategy
         return active.execute(context)
 
-    def on_activate(self) -> None:
+    async def on_activate(self) -> None:
         """啟用排程策略"""
         logger.info("ScheduleStrategy: 排程策略啟用")
-        self.current_strategy.on_activate()
+        await self.current_strategy.on_activate()
 
-    def on_deactivate(self) -> None:
+    async def on_deactivate(self) -> None:
         """停用排程策略"""
         logger.info("ScheduleStrategy: 排程策略停用")
         if self._current_strategy is not None:
-            self._current_strategy.on_deactivate()
+            await self._current_strategy.on_deactivate()
 
     def __str__(self) -> str:
         if self._current_strategy:

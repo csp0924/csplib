@@ -7,6 +7,7 @@ from .aggregator import (
     CoilToBitmaskAggregator,
     ComputedValueAggregator,
 )
+from .can_parser import CANField, CANFrameParser
 from .decoder import ModbusDecoder, ModbusEncoder
 
 __all__ = [
@@ -17,4 +18,7 @@ __all__ = [
     "CoilToBitmaskAggregator",
     "ComputedValueAggregator",
     "AggregatorPipeline",
+    # CAN Parser
+    "CANField",
+    "CANFrameParser",
 ]

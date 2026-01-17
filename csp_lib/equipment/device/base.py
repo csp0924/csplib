@@ -11,6 +11,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from csp_lib.equipment.alarm import AlarmEvaluator, AlarmEventType, AlarmState, AlarmStateManager
+from csp_lib.equipment.processing import AggregatorPipeline
 from csp_lib.equipment.transport import (
     GroupReader,
     PointGrouper,
@@ -60,7 +61,15 @@ class AsyncModbusDevice:
         - 事件驅動通知
         - 動態點位排程
         - 設備寫入管理
+        - 高階 Action 指令支援
+
+    Class Attributes:
+        ACTIONS: 動作名稱對應方法名稱的映射，子類別可覆寫。
+            例如: {"start": "set_generator_on", "stop": "set_generator_off"}
     """
+
+    # 子類別可覆寫，定義支援的 action -> method 映射
+    ACTIONS: dict[str, str] = {}
 
     def __init__(
         self,
@@ -70,6 +79,7 @@ class AsyncModbusDevice:
         rotating_points: Sequence[Sequence[ReadPoint]] = (),
         write_points: Sequence[WritePoint] = (),
         alarm_evaluators: Sequence[AlarmEvaluator] = (),
+        aggregator_pipeline: AggregatorPipeline | None = None,
     ):
         self._config = config
         self._client = client
@@ -84,9 +94,14 @@ class AsyncModbusDevice:
         # 通訊用元件
         self._reader = GroupReader(
             client=client,
+            unit_id=config.unit_id,
             address_offset=config.address_offset,
         )
-        self._writer = ValidatedWriter(client=client, address_offset=config.address_offset)
+        self._writer = ValidatedWriter(
+            client=client,
+            unit_id=config.unit_id,
+            address_offset=config.address_offset,
+        )
 
         # 寫入點位查詢表
         self._write_points = {write_point.name: write_point for write_point in write_points}
@@ -96,6 +111,9 @@ class AsyncModbusDevice:
         self._alarm_evaluators = list(alarm_evaluators)
         for evaluator in self._alarm_evaluators:
             self._alarm_manager.register_alarms(evaluator.get_alarms())
+
+        # 設備層級聚合處理
+        self._aggregator_pipeline = aggregator_pipeline
 
         # 事件
         self._emitter = DeviceEventEmitter()
@@ -199,14 +217,13 @@ class AsyncModbusDevice:
         """
         啟動定期讀取循環
 
-        Raises:
-            ConnectionError: 設備未連線
+        即使未連線也可啟動，read_loop 會自動嘗試連線。
         """
-        if not self._client_connected:
-            raise ConnectionError("設備未連線（Client 尚未連線）")
-
         if self._read_task is not None and not self._read_task.done():
             return
+
+        # 確保 emitter 已啟動
+        await self._emitter.start()
 
         self._stop_event.clear()
         self._read_task = asyncio.create_task(self._read_loop())
@@ -239,13 +256,86 @@ class AsyncModbusDevice:
 
     # =============== Transport ===============
 
-    async def read_all(self) -> dict[str, Any]:
-        """讀取所有點位（使用排程器預計算分組）"""
-        groups = self._scheduler.get_next_groups()
-        if not groups:
-            return {}
-        result = await self._reader.read_many(groups)
-        return result
+    async def read_once(self) -> dict[str, Any]:
+        """
+        執行一次完整的讀取流程
+
+        包含：連線檢查（自動重連）、讀取點位、更新狀態、處理值變更事件、評估告警。
+        適合不需要定期讀取的場景（如：手動觸發讀取、群組順序讀取）。
+
+        Returns:
+            讀取到的點位值字典
+
+        Raises:
+            Exception: 讀取失敗時拋出例外（會發送 EVENT_READ_ERROR）
+        """
+        # 未連線時嘗試重連
+        if not self._client_connected:
+            try:
+                await self._client.connect()
+                self._client_connected = True
+                # 注意：_device_responsive 保持 False，等讀取成功後才設為 True 並發送 EVENT_CONNECTED
+                self._consecutive_failures = 0
+            except Exception:
+                # 重連失敗，拋出讓呼叫者處理
+                raise
+
+        start_time = time.monotonic()
+
+        try:
+            values = await self._read_all()
+            self._consecutive_failures = 0
+
+            # 設備恢復回應
+            if not self._device_responsive:
+                self._device_responsive = True
+                await self._emitter.emit_await(
+                    EVENT_CONNECTED,
+                    ConnectedPayload(device_id=self._config.device_id),
+                )
+
+            # 更新值並發送變更事件
+            await self._process_values(values)
+
+            # 執行告警評估
+            await self._evaluate_alarm(values)
+
+            duration_ms = (time.monotonic() - start_time) * 1000
+            self._emitter.emit(
+                EVENT_READ_COMPLETE,
+                ReadCompletePayload(
+                    device_id=self._config.device_id,
+                    values=values,
+                    duration_ms=duration_ms,
+                ),
+            )
+
+            return values
+
+        except Exception as e:
+            self._consecutive_failures += 1
+            self._emitter.emit(
+                EVENT_READ_ERROR,
+                ReadErrorPayload(
+                    device_id=self._config.device_id,
+                    error=str(e),
+                    consecutive_failures=self._consecutive_failures,
+                ),
+            )
+
+            # 達到斷線閾值，標記設備無回應（Socket 仍可能連通）
+            if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
+                self._device_responsive = False
+                await self._emitter.emit_await(
+                    EVENT_DISCONNECTED,
+                    DisconnectPayload(
+                        device_id=self._config.device_id,
+                        reason=str(e),
+                        consecutive_failures=self._consecutive_failures,
+                    ),
+                )
+
+            raise
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""
@@ -275,6 +365,61 @@ class AsyncModbusDevice:
 
         return result
 
+    async def execute_action(self, action: str, **params: Any) -> WriteResult:
+        """
+        執行高階動作
+
+        根據 ACTIONS 映射呼叫對應的方法。
+
+        Args:
+            action: 動作名稱（如 "start", "stop"）
+            **params: 傳遞給方法的參數
+
+        Returns:
+            WriteResult：成功時 status=SUCCESS，失敗時包含錯誤訊息
+
+        Raises:
+            不拋出異常，所有錯誤透過 WriteResult 回傳
+        """
+        method_name = self.ACTIONS.get(action)
+        if method_name is None:
+            return WriteResult(
+                status=WriteStatus.VALIDATION_FAILED,
+                point_name=action,
+                value=None,
+                error_message=f"Action '{action}' not supported. Available: {list(self.ACTIONS.keys())}",
+            )
+
+        method = getattr(self, method_name, None)
+        if method is None or not callable(method):
+            return WriteResult(
+                status=WriteStatus.VALIDATION_FAILED,
+                point_name=action,
+                value=None,
+                error_message=f"Method '{method_name}' not found for action '{action}'",
+            )
+
+        try:
+            # 傳遞參數給 action 方法
+            await method(**params)
+            return WriteResult(
+                status=WriteStatus.SUCCESS,
+                point_name=action,
+                value=params if params else None,
+            )
+        except Exception as e:
+            return WriteResult(
+                status=WriteStatus.WRITE_FAILED,
+                point_name=action,
+                value=params if params else None,
+                error_message=str(e),
+            )
+
+    @property
+    def available_actions(self) -> list[str]:
+        """取得支援的動作列表"""
+        return list(self.ACTIONS.keys())
+
     # =============== Events ================
 
     def on(self, event: str, handler: AsyncHandler) -> Callable[[], None]:
@@ -296,60 +441,41 @@ class AsyncModbusDevice:
 
     # =============== Private ===============
 
+    async def _read_all(self) -> dict[str, Any]:
+        """讀取所有點位（使用排程器預計算分組）"""
+        groups = self._scheduler.get_next_groups()
+        if not groups:
+            return {}
+        raw_values = await self._reader.read_many(groups)
+        if self._aggregator_pipeline:
+            return self._aggregator_pipeline.process(raw_values)
+        return raw_values
+
     async def _read_loop(self) -> None:
-        """讀取循環"""
+        """讀取循環（含自動重連）"""
         interval = self._config.read_interval
+        reconnect_interval = self._config.reconnect_interval
 
         while not self._stop_event.is_set():
             start_time = time.monotonic()
 
-            try:
-                values = await self.read_all()
-                self._consecutive_failures = 0
-
-                # 設備恢復回應
-                if not self._device_responsive:
+            # 未連線時嘗試重連
+            if not self._client_connected:
+                try:
+                    await self._client.connect()
+                    self._client_connected = True
                     self._device_responsive = True
-                    await self._emitter.emit_await(
-                        EVENT_CONNECTED,
-                        ConnectedPayload(device_id=self._config.device_id),
-                    )
+                    self._consecutive_failures = 0
+                    await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
+                except Exception:
+                    # 重連失敗，等待後重試
+                    await asyncio.sleep(reconnect_interval)
+                    continue
 
-                # 更新值並發送變更事件
-                await self._process_values(values)
-
-                # 執行告警評估
-                await self._evaluate_alarm(values)
-
-                duration_ms = (time.monotonic() - start_time) * 1000
-                self._emitter.emit(
-                    EVENT_READ_COMPLETE,
-                    ReadCompletePayload(
-                        device_id=self._config.device_id,
-                        values=values,
-                        duration_ms=duration_ms,
-                    ),
-                )
-            except Exception as e:
-                self._consecutive_failures += 1
-                self._emitter.emit(
-                    EVENT_READ_ERROR,
-                    ReadErrorPayload(
-                        device_id=self._config.device_id, error=str(e), consecutive_failures=self._consecutive_failures
-                    ),
-                )
-
-                # 達到斷線閾值，標記設備無回應
-                if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
-                    self._device_responsive = False
-                    await self._emitter.emit_await(
-                        EVENT_DISCONNECTED,
-                        DisconnectPayload(
-                            device_id=self._config.device_id,
-                            reason=str(e),
-                            consecutive_failures=self._consecutive_failures,
-                        ),
-                    )
+            try:
+                await self.read_once()
+            except Exception:
+                pass  # read_once 已處理錯誤事件
 
             elapsed = time.monotonic() - start_time
             sleep_time = max(0, interval - elapsed)

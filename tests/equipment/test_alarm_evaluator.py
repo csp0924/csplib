@@ -134,7 +134,7 @@ class TestBitMaskAlarmEvaluator:
     def test_point_name(self, bit0_alarm):
         """point_name 屬性"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault_register",
+            point_name="fault_register",
             bit_alarms={0: bit0_alarm},
         )
         assert evaluator.point_name == "fault_register"
@@ -142,7 +142,7 @@ class TestBitMaskAlarmEvaluator:
     def test_single_bit_triggered(self, bit0_alarm):
         """單一位元觸發"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate(0b0001)  # bit 0 = 1
@@ -151,7 +151,7 @@ class TestBitMaskAlarmEvaluator:
     def test_single_bit_not_triggered(self, bit0_alarm):
         """單一位元未觸發"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate(0b0010)  # bit 0 = 0
@@ -160,7 +160,7 @@ class TestBitMaskAlarmEvaluator:
     def test_multiple_bits(self, bit0_alarm, bit1_alarm, bit7_alarm):
         """多位元評估"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={
                 0: bit0_alarm,
                 1: bit1_alarm,
@@ -176,7 +176,7 @@ class TestBitMaskAlarmEvaluator:
     def test_partial_bits(self, bit0_alarm, bit1_alarm, bit7_alarm):
         """部分位元觸發"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={
                 0: bit0_alarm,
                 1: bit1_alarm,
@@ -192,7 +192,7 @@ class TestBitMaskAlarmEvaluator:
     def test_value_none(self, bit0_alarm):
         """值為 None 返回空字典"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate(None)
@@ -201,7 +201,7 @@ class TestBitMaskAlarmEvaluator:
     def test_value_string_convertible(self, bit0_alarm):
         """字串可轉換為整數"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate("1")
@@ -210,7 +210,7 @@ class TestBitMaskAlarmEvaluator:
     def test_value_string_not_convertible(self, bit0_alarm):
         """字串無法轉換返回空字典"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate("not_a_number")
@@ -219,7 +219,7 @@ class TestBitMaskAlarmEvaluator:
     def test_value_float(self, bit0_alarm):
         """浮點數可轉換"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={0: bit0_alarm},
         )
         result = evaluator.evaluate(1.9)  # int(1.9) = 1
@@ -228,7 +228,7 @@ class TestBitMaskAlarmEvaluator:
     def test_get_alarms(self, bit0_alarm, bit1_alarm):
         """取得所有告警定義"""
         evaluator = BitMaskAlarmEvaluator(
-            _point_name="fault",
+            point_name="fault",
             bit_alarms={
                 0: bit0_alarm,
                 1: bit1_alarm,
@@ -249,7 +249,7 @@ class TestTableAlarmEvaluator:
     def test_point_name(self, fault_code_1_alarm):
         """point_name 屬性"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={1: fault_code_1_alarm},
         )
         assert evaluator.point_name == "error_code"
@@ -257,7 +257,7 @@ class TestTableAlarmEvaluator:
     def test_value_matched(self, fault_code_1_alarm, fault_code_2_alarm):
         """值匹配表中項目"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={
                 1: fault_code_1_alarm,
                 2: fault_code_2_alarm,
@@ -270,7 +270,7 @@ class TestTableAlarmEvaluator:
     def test_value_not_matched(self, fault_code_1_alarm, fault_code_2_alarm):
         """值不在表中"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={
                 1: fault_code_1_alarm,
                 2: fault_code_2_alarm,
@@ -283,7 +283,7 @@ class TestTableAlarmEvaluator:
     def test_value_zero(self, fault_code_1_alarm):
         """值為 0（通常表示無錯誤）"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={1: fault_code_1_alarm},
         )
         result = evaluator.evaluate(0)
@@ -292,7 +292,7 @@ class TestTableAlarmEvaluator:
     def test_value_none(self, fault_code_1_alarm):
         """值為 None 返回空字典"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={1: fault_code_1_alarm},
         )
         result = evaluator.evaluate(None)
@@ -301,7 +301,7 @@ class TestTableAlarmEvaluator:
     def test_value_string_convertible(self, fault_code_1_alarm):
         """字串可轉換"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={1: fault_code_1_alarm},
         )
         result = evaluator.evaluate("1")
@@ -310,7 +310,7 @@ class TestTableAlarmEvaluator:
     def test_value_string_not_convertible(self, fault_code_1_alarm):
         """字串無法轉換返回全 False"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={1: fault_code_1_alarm},
         )
         result = evaluator.evaluate("invalid")
@@ -319,7 +319,7 @@ class TestTableAlarmEvaluator:
     def test_get_alarms(self, fault_code_1_alarm, fault_code_2_alarm):
         """取得所有告警定義"""
         evaluator = TableAlarmEvaluator(
-            _point_name="error_code",
+            point_name="error_code",
             table={
                 1: fault_code_1_alarm,
                 2: fault_code_2_alarm,
@@ -340,7 +340,7 @@ class TestThresholdAlarmEvaluator:
     def test_point_name(self, high_temp_alarm):
         """point_name 屬性"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         assert evaluator.point_name == "temperature"
@@ -348,7 +348,7 @@ class TestThresholdAlarmEvaluator:
     def test_single_condition_triggered(self, high_temp_alarm):
         """單一條件觸發"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate(50.0)
@@ -357,7 +357,7 @@ class TestThresholdAlarmEvaluator:
     def test_single_condition_not_triggered(self, high_temp_alarm):
         """單一條件未觸發"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate(40.0)
@@ -366,7 +366,7 @@ class TestThresholdAlarmEvaluator:
     def test_multiple_conditions(self, high_temp_alarm, low_temp_alarm):
         """多條件評估"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[
                 ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0),
                 ThresholdCondition(alarm=low_temp_alarm, operator=Operator.LT, value=0.0),
@@ -390,7 +390,7 @@ class TestThresholdAlarmEvaluator:
     def test_value_none(self, high_temp_alarm):
         """值為 None 返回空字典"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate(None)
@@ -399,7 +399,7 @@ class TestThresholdAlarmEvaluator:
     def test_value_string_convertible(self, high_temp_alarm):
         """字串可轉換"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate("50.5")
@@ -408,7 +408,7 @@ class TestThresholdAlarmEvaluator:
     def test_value_string_not_convertible(self, high_temp_alarm):
         """字串無法轉換返回空字典"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate("not_a_number")
@@ -417,7 +417,7 @@ class TestThresholdAlarmEvaluator:
     def test_value_integer(self, high_temp_alarm):
         """整數值"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         result = evaluator.evaluate(50)
@@ -426,7 +426,7 @@ class TestThresholdAlarmEvaluator:
     def test_get_alarms(self, high_temp_alarm, low_temp_alarm):
         """取得所有告警定義"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[
                 ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0),
                 ThresholdCondition(alarm=low_temp_alarm, operator=Operator.LT, value=0.0),
@@ -440,7 +440,7 @@ class TestThresholdAlarmEvaluator:
     def test_empty_conditions(self):
         """空條件列表"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[],
         )
         result = evaluator.evaluate(50.0)
@@ -455,18 +455,18 @@ class TestAlarmEvaluatorProtocol:
 
     def test_bitmask_is_evaluator(self, bit0_alarm):
         """BitMaskAlarmEvaluator 是 AlarmEvaluator"""
-        evaluator = BitMaskAlarmEvaluator(_point_name="test", bit_alarms={0: bit0_alarm})
+        evaluator = BitMaskAlarmEvaluator(point_name="test", bit_alarms={0: bit0_alarm})
         assert isinstance(evaluator, AlarmEvaluator)
 
     def test_table_is_evaluator(self, fault_code_1_alarm):
         """TableAlarmEvaluator 是 AlarmEvaluator"""
-        evaluator = TableAlarmEvaluator(_point_name="test", table={1: fault_code_1_alarm})
+        evaluator = TableAlarmEvaluator(point_name="test", table={1: fault_code_1_alarm})
         assert isinstance(evaluator, AlarmEvaluator)
 
     def test_threshold_is_evaluator(self, high_temp_alarm):
         """ThresholdAlarmEvaluator 是 AlarmEvaluator"""
         evaluator = ThresholdAlarmEvaluator(
-            _point_name="test",
+            point_name="test",
             conditions=[ThresholdCondition(alarm=high_temp_alarm, operator=Operator.GT, value=45.0)],
         )
         assert isinstance(evaluator, AlarmEvaluator)

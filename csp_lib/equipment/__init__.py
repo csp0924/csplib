@@ -8,7 +8,7 @@
 #   - processing: 解碼與聚合處理
 #   - transport: 讀取分組與排程
 
-from . import alarm, core, device, processing, transport
+from . import alarm, core, device, processing, simulation, transport
 
 __all__ = [
     "alarm",
@@ -16,4 +16,5 @@ __all__ = [
     "device",
     "processing",
     "transport",
+    "simulation",
 ]

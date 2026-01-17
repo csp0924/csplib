@@ -52,9 +52,9 @@ def mock_client() -> AsyncMock:
     """建立 Mock Modbus 客戶端"""
     client = AsyncMock()
     client.write_single_coil = AsyncMock()
-    client.write_coils = AsyncMock()
-    client.write_register = AsyncMock()
-    client.write_registers = AsyncMock()
+    client.write_multiple_coils = AsyncMock()
+    client.write_single_register = AsyncMock()
+    client.write_multiple_registers = AsyncMock()
     client.read_coils = AsyncMock(return_value=[True])
     client.read_holding_registers = AsyncMock(return_value=[100])
     return client
@@ -122,7 +122,7 @@ class TestValidatedWriterBasicWrite:
         assert result.status == WriteStatus.SUCCESS
         assert result.point_name == "power"
         assert result.value == 500
-        mock_client.write_register.assert_called_once_with(address=100, value=500)
+        mock_client.write_single_register.assert_called_once_with(address=100, value=500, unit_id=1)
 
     @pytest.mark.asyncio
     async def test_write_multiple_registers_success(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -136,9 +136,10 @@ class TestValidatedWriterBasicWrite:
         result = await writer.write(point, 100000)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_registers.assert_called_once()
-        call_args = mock_client.write_registers.call_args
+        mock_client.write_multiple_registers.assert_called_once()
+        call_args = mock_client.write_multiple_registers.call_args
         assert call_args.kwargs["address"] == 100
+        assert call_args.kwargs["unit_id"] == 1
         # Int32 應編碼為 2 個暫存器
         assert len(call_args.kwargs["values"]) == 2
 
@@ -154,7 +155,7 @@ class TestValidatedWriterBasicWrite:
         result = await writer.write(point, 1)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_single_coil.assert_called_once_with(address=0, value=True)
+        mock_client.write_single_coil.assert_called_once_with(address=0, value=True, unit_id=1)
 
     @pytest.mark.asyncio
     async def test_write_multiple_coils_success(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -168,7 +169,7 @@ class TestValidatedWriterBasicWrite:
         result = await writer.write(point, 1)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_coils.assert_called_once()
+        mock_client.write_multiple_coils.assert_called_once()
 
 
 # ======================== Address Offset Tests ========================
@@ -189,7 +190,7 @@ class TestValidatedWriterAddressOffset:
         await writer_with_offset.write(point, 500)
 
         # 100 + 1 = 101
-        mock_client.write_register.assert_called_once_with(address=101, value=500)
+        mock_client.write_single_register.assert_called_once_with(address=101, value=500, unit_id=1)
 
     @pytest.mark.asyncio
     async def test_offset_applied_to_readback(self, writer_with_offset: ValidatedWriter, mock_client: AsyncMock):
@@ -204,7 +205,7 @@ class TestValidatedWriterAddressOffset:
         )
         await writer_with_offset.write(point, 500, verify=True)
 
-        mock_client.read_holding_registers.assert_called_once_with(101, 1)
+        mock_client.read_holding_registers.assert_called_once_with(101, 1, 1)
 
 
 # ======================== Validation Tests ========================
@@ -229,7 +230,7 @@ class TestValidatedWriterValidation:
 
         assert result.status == WriteStatus.VALIDATION_FAILED
         assert "值超出範圍" in result.error_message
-        mock_client.write_register.assert_not_called()
+        mock_client.write_single_register.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_validation_get_error_message_receives_value(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -265,7 +266,7 @@ class TestValidatedWriterValidation:
         result = await writer.write(point, 500)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_register.assert_called_once()
+        mock_client.write_single_register.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_no_validator_skips_validation(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -292,7 +293,7 @@ class TestValidatedWriterExceptions:
     @pytest.mark.asyncio
     async def test_write_exception_returns_failed_status(self, writer: ValidatedWriter, mock_client: AsyncMock):
         """寫入異常時應回傳 WRITE_FAILED 狀態"""
-        mock_client.write_register.side_effect = Exception("連線逾時")
+        mock_client.write_single_register.side_effect = Exception("連線逾時")
         point = WritePoint(
             name="power",
             address=100,
@@ -341,7 +342,7 @@ class TestValidatedWriterVerification:
         result = await writer.write(point, 500, verify=True)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.read_holding_registers.assert_called_once_with(100, 1)
+        mock_client.read_holding_registers.assert_called_once_with(100, 1, 1)
 
     @pytest.mark.asyncio
     async def test_verify_success_coil(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -357,7 +358,7 @@ class TestValidatedWriterVerification:
         result = await writer.write(point, 1, verify=True)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.read_coils.assert_called_once_with(0, 1)
+        mock_client.read_coils.assert_called_once_with(0, 1, 1)
 
     @pytest.mark.asyncio
     async def test_verify_mismatch_returns_failed(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -460,7 +461,7 @@ class TestValidatedWriterEncoding:
         result = await writer.write(point, 0)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_register.assert_called_once_with(address=100, value=0)
+        mock_client.write_single_register.assert_called_once_with(address=100, value=0, unit_id=1)
 
     @pytest.mark.asyncio
     async def test_write_max_uint16_value(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -475,7 +476,7 @@ class TestValidatedWriterEncoding:
         result = await writer.write(point, 65535)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_register.assert_called_once_with(address=100, value=65535)
+        mock_client.write_single_register.assert_called_once_with(address=100, value=65535, unit_id=1)
 
     @pytest.mark.asyncio
     async def test_write_float32(self, writer: ValidatedWriter, mock_client: AsyncMock):
@@ -490,8 +491,9 @@ class TestValidatedWriterEncoding:
         result = await writer.write(point, 25.5)
 
         assert result.status == WriteStatus.SUCCESS
-        call_args = mock_client.write_registers.call_args
+        call_args = mock_client.write_multiple_registers.call_args
         assert len(call_args.kwargs["values"]) == 2
+        assert call_args.kwargs["unit_id"] == 1
 
 
 # ======================== Default FunctionCode Tests ========================
@@ -513,4 +515,4 @@ class TestValidatedWriterDefaultFunctionCode:
         result = await writer.write(point, 500)
 
         assert result.status == WriteStatus.SUCCESS
-        mock_client.write_registers.assert_called_once()
+        mock_client.write_multiple_registers.assert_called_once()

@@ -18,12 +18,14 @@ from .definition import AlarmDefinition
 
 
 class AlarmEvaluator(ABC):
-    """告警評估器抽象基底"""
+    """
+    告警評估器抽象基底
 
-    @property
-    @abstractmethod
-    def point_name(self) -> str:
-        """關聯的點位名稱"""
+    Attributes:
+        point_name: 關聯的點位名稱（由子類別定義）
+    """
+
+    point_name: str  # 子類別需定義此欄位
 
     @abstractmethod
     def evaluate(self, value: Any) -> dict[str, bool]:
@@ -55,16 +57,12 @@ class BitMaskAlarmEvaluator(AlarmEvaluator):
     檢查暫存器值的特定位元是否為 1。
 
     Attributes:
-        _point_name: 關聯的點位名稱
+        point_name: 關聯的點位名稱
         bit_alarms: {位元位置: 告警定義} 字典
     """
 
-    _point_name: str
+    point_name: str
     bit_alarms: dict[int, AlarmDefinition]
-
-    @property
-    def point_name(self) -> str:
-        return self._point_name
 
     def evaluate(self, value: Any) -> dict[str, bool]:
         """
@@ -108,16 +106,12 @@ class TableAlarmEvaluator(AlarmEvaluator):
     根據值查表判斷告警。
 
     Attributes:
-        _point_name: 關聯的點位名稱
+        point_name: 關聯的點位名稱
         table: {值: 告警定義} 字典
     """
 
-    _point_name: str
+    point_name: str
     table: dict[int, AlarmDefinition]
-
-    @property
-    def point_name(self) -> str:
-        return self._point_name
 
     def evaluate(self, value: Any) -> dict[str, bool]:
         """
@@ -200,12 +194,12 @@ class ThresholdAlarmEvaluator(AlarmEvaluator):
     根據數值與閾值比較判斷告警。
 
     Attributes:
-        _point_name: 關聯的點位名稱
+        point_name: 關聯的點位名稱
         conditions: 閾值條件列表
 
     使用範例：
         ThresholdAlarmEvaluator(
-            _point_name="temperature",
+            point_name="temperature",
             conditions=[
                 ThresholdCondition(
                     alarm=AlarmDefinition("HIGH_TEMP", "溫度過高"),
@@ -216,12 +210,8 @@ class ThresholdAlarmEvaluator(AlarmEvaluator):
         )
     """
 
-    _point_name: str
+    point_name: str
     conditions: list[ThresholdCondition]
-
-    @property
-    def point_name(self) -> str:
-        return self._point_name
 
     def evaluate(self, value: Any) -> dict[str, bool]:
         """

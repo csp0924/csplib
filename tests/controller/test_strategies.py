@@ -4,6 +4,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from csp_lib.controller.core import (
     Command,
     ExecutionMode,
@@ -244,12 +246,13 @@ class TestScheduleStrategy:
         assert cmd.p_target == 0.0
         assert cmd.q_target == 0.0
 
-    def test_update_schedule_changes_strategy(self):
+    @pytest.mark.asyncio
+    async def test_update_schedule_changes_strategy(self):
         """update_schedule 應切換內部策略"""
         schedule = ScheduleStrategy()
         pq_strategy = PQModeStrategy(PQModeConfig(p=100.0, q=50.0))
 
-        schedule.update_schedule(pq_strategy)
+        await schedule.update_schedule(pq_strategy)
 
         ctx = StrategyContext()
         cmd = schedule.execute(ctx)
@@ -257,42 +260,51 @@ class TestScheduleStrategy:
         assert cmd.p_target == 100.0
         assert cmd.q_target == 50.0
 
-    def test_update_schedule_to_none_uses_fallback(self):
+    @pytest.mark.asyncio
+    async def test_update_schedule_to_none_uses_fallback(self):
         """設為 None 應回到 fallback"""
         schedule = ScheduleStrategy()
         pq_strategy = PQModeStrategy(PQModeConfig(p=100.0))
 
-        schedule.update_schedule(pq_strategy)
-        schedule.update_schedule(None)
+        await schedule.update_schedule(pq_strategy)
+        await schedule.update_schedule(None)
 
         ctx = StrategyContext()
         cmd = schedule.execute(ctx)
 
         assert cmd.p_target == 0.0  # StopStrategy
 
-    def test_has_schedule_property(self):
+    @pytest.mark.asyncio
+    async def test_has_schedule_property(self):
         """has_schedule 應正確反映狀態"""
         schedule = ScheduleStrategy()
         assert schedule.has_schedule is False
 
-        schedule.update_schedule(PQModeStrategy())
+        await schedule.update_schedule(PQModeStrategy())
         assert schedule.has_schedule is True
 
-        schedule.update_schedule(None)
+        await schedule.update_schedule(None)
         assert schedule.has_schedule is False
 
-    def test_lifecycle_hooks_called(self):
+    @pytest.mark.asyncio
+    async def test_lifecycle_hooks_called(self):
         """切換策略時應呼叫生命週期 hooks"""
+        from unittest.mock import AsyncMock
+
         schedule = ScheduleStrategy()
 
         mock_strategy = MagicMock()
-        schedule.update_schedule(mock_strategy)
-        mock_strategy.on_activate.assert_called_once()
+        mock_strategy.on_activate = AsyncMock()
+        mock_strategy.on_deactivate = AsyncMock()
 
-        schedule.update_schedule(None)
-        mock_strategy.on_deactivate.assert_called_once()
+        await schedule.update_schedule(mock_strategy)
+        mock_strategy.on_activate.assert_awaited_once()
 
-    def test_execution_config_delegates_to_current(self):
+        await schedule.update_schedule(None)
+        mock_strategy.on_deactivate.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_execution_config_delegates_to_current(self):
         """execution_config 應來自當前策略"""
         schedule = ScheduleStrategy()
 
@@ -301,6 +313,6 @@ class TestScheduleStrategy:
 
         # 切換到 PVSmooth (interval=900)
         pv_strategy = PVSmoothStrategy(interval_seconds=900)
-        schedule.update_schedule(pv_strategy)
+        await schedule.update_schedule(pv_strategy)
 
         assert schedule.execution_config.interval_seconds == 900

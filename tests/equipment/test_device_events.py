@@ -195,6 +195,7 @@ class TestDeviceEventEmitterEmit:
     async def test_emit_enqueues_event(self):
         """emit() 應將事件放入佇列"""
         emitter = DeviceEventEmitter()
+        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
 
         emitter.emit(EVENT_CONNECTED, {"test": True})
 
@@ -245,6 +246,7 @@ class TestDeviceEventEmitterEmit:
     async def test_emit_queue_full_drops_event(self):
         """佇列滿時 emit() 應丟棄事件"""
         emitter = DeviceEventEmitter(max_queue_size=2)
+        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
 
         emitter.emit(EVENT_CONNECTED, 1)
         emitter.emit(EVENT_CONNECTED, 2)
