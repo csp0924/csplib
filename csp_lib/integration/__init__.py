@@ -15,6 +15,7 @@ from .data_feed import DeviceDataFeed
 from .loop import GridControlLoop, GridControlLoopConfig
 from .registry import DeviceRegistry
 from .schema import AggregateFunc, CommandMapping, ContextMapping, DataFeedMapping
+from .system_controller import SystemController, SystemControllerConfig
 
 __all__ = [
     "DeviceRegistry",
@@ -27,4 +28,6 @@ __all__ = [
     "DeviceDataFeed",
     "GridControlLoop",
     "GridControlLoopConfig",
+    "SystemController",
+    "SystemControllerConfig",
 ]
