@@ -5,11 +5,12 @@
       "Bash(find:*)",
       "Bash(ls:*)",
       "Bash(xargs:*)",
-      "Bash(python3:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run ruff check:*)",
       "Bash(uv run ruff format:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(git stash:*)",
+      "Bash(git status:*)"
     ]
   }
 }
