@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Optional
 
 from loguru import logger as _root_logger
 
+from .errors import AlarmError, CommunicationError, ConfigurationError, DeviceConnectionError, DeviceError
+from .health import HealthCheckable, HealthReport, HealthStatus
 from .lifecycle import AsyncLifecycleMixin
 
 if TYPE_CHECKING:
@@ -192,4 +194,14 @@ __all__ = [
     "configure_logging",
     "logger",
     "AsyncLifecycleMixin",
+    # Errors
+    "DeviceError",
+    "DeviceConnectionError",
+    "CommunicationError",
+    "AlarmError",
+    "ConfigurationError",
+    # Health
+    "HealthStatus",
+    "HealthReport",
+    "HealthCheckable",
 ]

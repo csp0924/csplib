@@ -283,6 +283,129 @@ class TestModeManagerCallback:
         await mm.set_base_mode("pq")
 
 
+class TestModeManagerMultiBaseMode:
+    @pytest.mark.asyncio
+    async def test_add_base_mode(self):
+        mm = ModeManager()
+        s1 = MockStrategy("pq")
+        s2 = MockStrategy("qv")
+        mm.register("pq", s1, 20)
+        mm.register("qv", s2, 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        assert mm.base_mode_names == ["pq", "qv"]  # priority 降序
+
+    @pytest.mark.asyncio
+    async def test_remove_base_mode(self):
+        mm = ModeManager()
+        mm.register("pq", MockStrategy(), 20)
+        mm.register("qv", MockStrategy(), 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        await mm.remove_base_mode("pq")
+        assert mm.base_mode_names == ["qv"]
+
+    @pytest.mark.asyncio
+    async def test_remove_base_mode_not_active_raises(self):
+        mm = ModeManager()
+        with pytest.raises(KeyError, match="not active"):
+            await mm.remove_base_mode("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_add_base_mode_not_registered_raises(self):
+        mm = ModeManager()
+        with pytest.raises(KeyError, match="not registered"):
+            await mm.add_base_mode("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_add_base_mode_duplicate_ignored(self):
+        mm = ModeManager()
+        mm.register("pq", MockStrategy(), 20)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("pq")  # should not raise
+        assert mm.base_mode_names == ["pq"]
+
+    @pytest.mark.asyncio
+    async def test_base_strategies_ordered_by_priority(self):
+        mm = ModeManager()
+        s_low = MockStrategy("low")
+        s_high = MockStrategy("high")
+        mm.register("low", s_low, 10)
+        mm.register("high", s_high, 50)
+        await mm.add_base_mode("low")
+        await mm.add_base_mode("high")
+        strategies = mm.base_strategies
+        assert strategies == [s_high, s_low]
+
+    @pytest.mark.asyncio
+    async def test_multi_base_effective_strategy_none(self):
+        """多 base mode 時 effective_strategy 返回 None"""
+        mm = ModeManager()
+        mm.register("pq", MockStrategy(), 20)
+        mm.register("qv", MockStrategy(), 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        assert mm.effective_strategy is None
+        assert mm.effective_mode is None
+
+    @pytest.mark.asyncio
+    async def test_set_base_mode_clears_list(self):
+        """set_base_mode 向下相容：清除列表設單一 base"""
+        mm = ModeManager()
+        s = MockStrategy()
+        mm.register("pq", s, 20)
+        mm.register("qv", MockStrategy(), 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        await mm.set_base_mode("pq")
+        assert mm.base_mode_names == ["pq"]
+        assert mm.effective_strategy is s
+
+    @pytest.mark.asyncio
+    async def test_callback_on_add_base_mode(self):
+        callback = AsyncMock()
+        mm = ModeManager(on_strategy_change=callback)
+        s1 = MockStrategy("pq")
+        s2 = MockStrategy("qv")
+        mm.register("pq", s1, 20)
+        mm.register("qv", s2, 10)
+
+        await mm.add_base_mode("pq")
+        # None → s1 (single base)
+        callback.assert_awaited_once_with(None, s1)
+        callback.reset_mock()
+
+        await mm.add_base_mode("qv")
+        # s1 → None (multi base)
+        callback.assert_awaited_once_with(s1, None)
+
+    @pytest.mark.asyncio
+    async def test_callback_on_remove_base_mode(self):
+        callback = AsyncMock()
+        mm = ModeManager(on_strategy_change=callback)
+        s1 = MockStrategy("pq")
+        s2 = MockStrategy("qv")
+        mm.register("pq", s1, 20)
+        mm.register("qv", s2, 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        callback.reset_mock()
+
+        await mm.remove_base_mode("qv")
+        # None → s1 (back to single base)
+        callback.assert_awaited_once_with(None, s1)
+
+    @pytest.mark.asyncio
+    async def test_unregister_clears_from_base_mode_list(self):
+        mm = ModeManager()
+        mm.register("pq", MockStrategy(), 20)
+        mm.register("qv", MockStrategy(), 10)
+        await mm.add_base_mode("pq")
+        await mm.add_base_mode("qv")
+        mm.unregister("pq")
+        assert mm.base_mode_names == ["qv"]
+
+
 class TestModeDefinition:
     def test_frozen(self):
         s = MockStrategy()

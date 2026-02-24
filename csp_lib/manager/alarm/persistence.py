@@ -8,8 +8,11 @@
 # 設計模式：
 #   - 觀察者模式：訂閱 AsyncModbusDevice 的連線/告警事件
 #   - 事件驅動：斷線/告警觸發 → 寫入 DB，恢復/解除 → 更新 resolved_at
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Callable
+from enum import Enum
+from typing import TYPE_CHECKING, Callable
 
 from csp_lib.core import get_logger
 from csp_lib.equipment.alarm import AlarmLevel
@@ -25,10 +28,21 @@ from csp_lib.equipment.device.events import (
 )
 from csp_lib.manager.base import DeviceEventSubscriber
 
+from .config import AlarmPersistenceConfig
 from .repository import AlarmRepository
 from .schema import AlarmRecord, AlarmType
 
+if TYPE_CHECKING:
+    from csp_lib.notification import NotificationSender
+
 logger = get_logger(__name__)
+
+
+class _NotifyEvent(str, Enum):
+    """內部通知事件類型（避免頂層 import 循環）"""
+
+    TRIGGERED = "triggered"
+    RESOLVED = "resolved"
 
 
 class AlarmPersistenceManager(DeviceEventSubscriber):
@@ -48,18 +62,24 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         DISCONNECT_NAME: 斷線告警的顯示名稱
     """
 
-    DISCONNECT_CODE = "DISCONNECT"
-    DISCONNECT_NAME = "設備斷線"
-
-    def __init__(self, repository: AlarmRepository) -> None:
+    def __init__(
+        self,
+        repository: AlarmRepository,
+        dispatcher: NotificationSender | None = None,
+        config: AlarmPersistenceConfig | None = None,
+    ) -> None:
         """
         初始化告警持久化管理器
 
         Args:
             repository: 告警資料存取層（遵循 AlarmRepository Protocol）
+            dispatcher: 通知分發器（可選），用於告警觸發/解除時發送通知
+            config: 告警持久化配置（可選，預設使用 AlarmPersistenceConfig()）
         """
         super().__init__()
         self._repository = repository
+        self._dispatcher = dispatcher
+        self._config = config or AlarmPersistenceConfig()
 
     # ================ 訂閱管理 ================
 
@@ -88,10 +108,10 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             payload: 斷線事件資料（包含 device_id、reason、timestamp）
         """
         record = AlarmRecord(
-            alarm_key=AlarmRecord.make_key(payload.device_id, AlarmType.DISCONNECT, self.DISCONNECT_CODE),
+            alarm_key=AlarmRecord.make_key(payload.device_id, AlarmType.DISCONNECT, self._config.disconnect_code),
             device_id=payload.device_id,
             alarm_type=AlarmType.DISCONNECT,
-            name=self.DISCONNECT_NAME,
+            name=self._config.disconnect_name,
             level=AlarmLevel.WARNING,
             description=payload.reason,
             occurred_at=payload.timestamp,
@@ -107,7 +127,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         Args:
             payload: 連線事件資料（包含 device_id、timestamp）
         """
-        key = AlarmRecord.make_key(payload.device_id, AlarmType.DISCONNECT, self.DISCONNECT_CODE)
+        key = AlarmRecord.make_key(payload.device_id, AlarmType.DISCONNECT, self._config.disconnect_code)
         await self._resolve_alarm(key, payload.timestamp)
 
     async def _on_alarm_triggered(self, payload: DeviceAlarmPayload) -> None:
@@ -150,7 +170,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         """
         建立告警記錄
 
-        透過 repository 寫入告警記錄。若為新告警則記錄 log。
+        透過 repository 寫入告警記錄。若為新告警則記錄 log 並發送通知。
 
         Args:
             record: 告警記錄
@@ -158,13 +178,13 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         _, is_new = await self._repository.upsert(record)
         if is_new:
             logger.info(f"告警持久化管理器已新增告警: {record.alarm_key}")
-            # TODO: 發送告警通知
+            await self._notify(record, _NotifyEvent.TRIGGERED)
 
     async def _resolve_alarm(self, alarm_key: str, resolved_at: datetime) -> None:
         """
         解除告警記錄
 
-        透過 repository 更新告警狀態為已解除。若成功則記錄 log。
+        透過 repository 更新告警狀態為已解除。若成功則記錄 log 並發送通知。
 
         Args:
             alarm_key: 告警唯一鍵
@@ -173,4 +193,40 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         success = await self._repository.resolve(alarm_key, resolved_at)
         if success:
             logger.info(f"告警持久化管理器已解除告警: {alarm_key}")
-        # TODO: 發送告警通知
+            await self._notify_resolved(alarm_key, resolved_at)
+
+    async def _notify(self, record: AlarmRecord, event: _NotifyEvent) -> None:
+        """發送告警通知（非阻塞，失敗僅記 log）"""
+        if self._dispatcher is None:
+            return
+        try:
+            from csp_lib.notification import NotificationDispatcher, NotificationEvent
+
+            notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent(event.value))
+            await self._dispatcher.dispatch(notification)
+        except Exception:
+            logger.warning(f"告警通知發送失敗: {record.alarm_key}", exc_info=True)
+
+    async def _notify_resolved(self, alarm_key: str, resolved_at: datetime) -> None:
+        """發送解除通知（從 alarm_key 拆解 device_id，不查 DB）"""
+        if self._dispatcher is None:
+            return
+        try:
+            from csp_lib.notification import Notification, NotificationEvent
+
+            # alarm_key 格式: "<device_id>:<alarm_type>:<alarm_code>"
+            parts = alarm_key.split(":")
+            device_id = parts[0] if parts else alarm_key
+
+            notification = Notification(
+                title=f"[RESOLVED] {device_id} 告警解除",
+                body=f"告警 {alarm_key} 已解除",
+                level=AlarmLevel.INFO,
+                device_id=device_id,
+                alarm_key=alarm_key,
+                event=NotificationEvent.RESOLVED,
+                occurred_at=resolved_at,
+            )
+            await self._dispatcher.dispatch(notification)
+        except Exception:
+            logger.warning(f"告警解除通知發送失敗: {alarm_key}", exc_info=True)

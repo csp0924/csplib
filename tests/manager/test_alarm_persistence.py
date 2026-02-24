@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,6 +27,7 @@ from csp_lib.equipment.device.events import (
 )
 from csp_lib.manager.alarm.persistence import AlarmPersistenceManager
 from csp_lib.manager.alarm.schema import AlarmRecord, AlarmType
+from csp_lib.notification import NotificationDispatcher, NotificationEvent
 
 
 class MockDevice:
@@ -333,3 +334,135 @@ class TestAlarmPersistenceManagerLogging:
             # 不應有 resolve log
             info_calls = [str(c) for c in mock_logger.info.call_args_list]
             assert not any("解除" in c for c in info_calls)
+
+
+# ======================== Notification Dispatch Tests ========================
+
+
+class TestAlarmPersistenceManagerNotification:
+    """通知分發整合測試"""
+
+    @pytest.fixture
+    def repository(self) -> MockRepository:
+        return MockRepository()
+
+    @pytest.fixture
+    def mock_dispatcher(self) -> MagicMock:
+        dispatcher = MagicMock(spec=NotificationDispatcher)
+        dispatcher.dispatch = AsyncMock()
+        dispatcher.from_alarm_record = NotificationDispatcher.from_alarm_record
+        return dispatcher
+
+    @pytest.mark.asyncio
+    async def test_new_alarm_triggers_notification(self, repository: MockRepository, mock_dispatcher: MagicMock):
+        """新告警應觸發 TRIGGERED 通知"""
+        repository.upsert.return_value = ("mock_id", True)  # is_new = True
+        manager = AlarmPersistenceManager(repository=repository, dispatcher=mock_dispatcher)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = DisconnectPayload(
+            device_id="device_001",
+            reason="Connection timeout",
+            consecutive_failures=5,
+        )
+        await device.emit(EVENT_DISCONNECTED, payload)
+
+        mock_dispatcher.dispatch.assert_called_once()
+        notification = mock_dispatcher.dispatch.call_args[0][0]
+        assert notification.event == NotificationEvent.TRIGGERED
+        assert notification.device_id == "device_001"
+
+    @pytest.mark.asyncio
+    async def test_existing_alarm_no_notification(self, repository: MockRepository, mock_dispatcher: MagicMock):
+        """既存告警（is_new=False）不應觸發通知"""
+        repository.upsert.return_value = ("existing_id", False)  # is_new = False
+        manager = AlarmPersistenceManager(repository=repository, dispatcher=mock_dispatcher)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = DisconnectPayload(
+            device_id="device_001",
+            reason="test",
+            consecutive_failures=1,
+        )
+        await device.emit(EVENT_DISCONNECTED, payload)
+
+        mock_dispatcher.dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_resolve_alarm_triggers_resolved_notification(
+        self, repository: MockRepository, mock_dispatcher: MagicMock
+    ):
+        """解除告警應觸發 RESOLVED 通知"""
+        repository.resolve.return_value = True
+        manager = AlarmPersistenceManager(repository=repository, dispatcher=mock_dispatcher)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = ConnectedPayload(device_id="device_001")
+        await device.emit(EVENT_CONNECTED, payload)
+
+        mock_dispatcher.dispatch.assert_called_once()
+        notification = mock_dispatcher.dispatch.call_args[0][0]
+        assert notification.event == NotificationEvent.RESOLVED
+        assert notification.device_id == "device_001"
+
+    @pytest.mark.asyncio
+    async def test_resolve_failure_no_notification(self, repository: MockRepository, mock_dispatcher: MagicMock):
+        """解除失敗時不應觸發通知"""
+        repository.resolve.return_value = False
+        manager = AlarmPersistenceManager(repository=repository, dispatcher=mock_dispatcher)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = ConnectedPayload(device_id="device_001")
+        await device.emit(EVENT_CONNECTED, payload)
+
+        mock_dispatcher.dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_dispatcher_backward_compatible(self, repository: MockRepository):
+        """無 dispatcher 時行為與現有完全相同"""
+        repository.upsert.return_value = ("mock_id", True)
+        manager = AlarmPersistenceManager(repository=repository)  # 無 dispatcher
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = DisconnectPayload(
+            device_id="device_001",
+            reason="test",
+            consecutive_failures=1,
+        )
+        await device.emit(EVENT_DISCONNECTED, payload)
+
+        repository.upsert.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_failure_does_not_break_persistence(
+        self, repository: MockRepository, mock_dispatcher: MagicMock
+    ):
+        """dispatcher 發送失敗不應影響告警持久化"""
+        repository.upsert.return_value = ("mock_id", True)
+        mock_dispatcher.dispatch = AsyncMock(side_effect=RuntimeError("dispatch failed"))
+        mock_dispatcher.from_alarm_record = NotificationDispatcher.from_alarm_record
+        manager = AlarmPersistenceManager(repository=repository, dispatcher=mock_dispatcher)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = DisconnectPayload(
+            device_id="device_001",
+            reason="test",
+            consecutive_failures=1,
+        )
+        # 不應拋錯
+        await device.emit(EVENT_DISCONNECTED, payload)
+
+        # 持久化仍成功
+        repository.upsert.assert_called_once()

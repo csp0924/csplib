@@ -1,0 +1,411 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1800" font-family="'Segoe UI', Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+    </marker>
+    <marker id="arrow-org" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-grn" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="100%" stop-color="#ffedd5"/>
+    </linearGradient>
+    <linearGradient id="soc-grad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="5%" stop-color="#ef4444"/>
+      <stop offset="5%" stop-color="#f59e0b"/>
+      <stop offset="10%" stop-color="#f59e0b"/>
+      <stop offset="10%" stop-color="#22c55e"/>
+      <stop offset="90%" stop-color="#22c55e"/>
+      <stop offset="90%" stop-color="#f59e0b"/>
+      <stop offset="95%" stop-color="#f59e0b"/>
+      <stop offset="95%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <style>
+      .title { font-size: 28px; font-weight: 700; fill: #7c2d12; }
+      .section-title { font-size: 18px; font-weight: 700; fill: #c2410c; }
+      .state { fill: #fff7ed; stroke: #ea580c; stroke-width: 1.5; rx: 12; }
+      .state-hi { fill: #ffedd5; stroke: #ea580c; stroke-width: 2; rx: 12; }
+      .state-text { font-size: 12px; font-weight: 600; fill: #7c2d12; text-anchor: middle; }
+      .label { font-size: 10px; fill: #64748b; }
+      .label-bold { font-size: 10px; fill: #334155; font-weight: 600; }
+      .code { font-family: 'Fira Code', 'Consolas', monospace; font-size: 10px; fill: #7c3aed; }
+      .box-org { fill: #fff7ed; stroke: #fdba74; stroke-width: 1; rx: 8; }
+      .box-red { fill: #fef2f2; stroke: #fca5a5; stroke-width: 1; rx: 8; }
+      .box-green { fill: #f0fdf4; stroke: #86efac; stroke-width: 1; rx: 8; }
+      .box-blue { fill: #eff6ff; stroke: #93c5fd; stroke-width: 1; rx: 8; }
+      .box-purple { fill: #faf5ff; stroke: #c4b5fd; stroke-width: 1; rx: 8; }
+      .connector { fill: none; stroke: #555; stroke-width: 1.2; }
+      .connector-org { fill: none; stroke: #ea580c; stroke-width: 1.5; }
+      .connector-red { fill: none; stroke: #dc2626; stroke-width: 1.5; }
+      .connector-grn { fill: none; stroke: #16a34a; stroke-width: 1.5; }
+      .section-bg { fill: #fff; stroke: #fed7aa; stroke-width: 1; rx: 16; filter: url(#shadow); }
+      .priority-high { fill: #fee2e2; stroke: #ef4444; stroke-width: 1.5; rx: 8; }
+      .priority-med { fill: #fef3c7; stroke: #f59e0b; stroke-width: 1.5; rx: 8; }
+      .priority-low { fill: #dbeafe; stroke: #3b82f6; stroke-width: 1.5; rx: 8; }
+      .diamond { fill: #fef3c7; stroke: #f59e0b; stroke-width: 1.5; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1800" fill="url(#bg)"/>
+
+  <!-- Main Title -->
+  <text x="800" y="45" text-anchor="middle" class="title">Controller Layer — Orchestration &amp; Protection</text>
+  <text x="800" y="68" text-anchor="middle" font-size="13" fill="#64748b">csp_lib.controller · ModeManager · ProtectionGuard · CascadingStrategy · StrategyExecutor</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 1: ModeManager State Machine -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="90" width="780" height="520" class="section-bg"/>
+  <text x="55" y="120" class="section-title">1. ModeManager — Priority-Based Mode Switching</text>
+  <text x="55" y="138" class="label">Base modes (single/multi) + Override stack (LIFO with priority)</text>
+
+  <!-- Priority levels -->
+  <text x="55" y="165" class="label-bold">ModePriority(IntEnum):</text>
+  <rect x="55" y="175" width="150" height="32" class="priority-low"/>
+  <text x="130" y="196" text-anchor="middle" class="state-text" fill="#1e40af">SCHEDULE = 10</text>
+  <rect x="220" y="175" width="150" height="32" class="priority-med"/>
+  <text x="295" y="196" text-anchor="middle" class="state-text" fill="#92400e">MANUAL = 50</text>
+  <rect x="385" y="175" width="175" height="32" class="priority-high"/>
+  <text x="473" y="196" text-anchor="middle" class="state-text" fill="#991b1b">PROTECTION = 100</text>
+
+  <!-- Base modes section -->
+  <rect x="55" y="225" width="340" height="220" class="box-blue"/>
+  <text x="225" y="248" text-anchor="middle" font-size="14" font-weight="700" fill="#1e40af">Base Modes</text>
+  <text x="225" y="265" text-anchor="middle" class="label">_base_mode_names: list[str]</text>
+
+  <!-- Single base mode -->
+  <rect x="75" y="280" width="140" height="40" rx="8" fill="#bfdbfe" stroke="#3b82f6"/>
+  <text x="145" y="300" text-anchor="middle" class="code" fill="#1e40af">Single Mode</text>
+  <text x="145" y="315" text-anchor="middle" class="label">set_base_mode(name)</text>
+
+  <!-- Multi base mode -->
+  <rect x="235" y="280" width="140" height="40" rx="8" fill="#bfdbfe" stroke="#3b82f6"/>
+  <text x="305" y="300" text-anchor="middle" class="code" fill="#1e40af">Multi Mode</text>
+  <text x="305" y="315" text-anchor="middle" class="label">add_base_mode(name)</text>
+
+  <text x="70" y="345" class="code" fill="#1e40af">set_base_mode(name) — clears &amp; sets single</text>
+  <text x="70" y="360" class="code" fill="#1e40af">add_base_mode(name) — appends to list</text>
+  <text x="70" y="375" class="code" fill="#1e40af">remove_base_mode(name) — removes from list</text>
+  <text x="70" y="395" class="label-bold" fill="#1e40af">Multi-mode: → CascadingStrategy (see §4)</text>
+  <text x="70" y="410" class="label-bold" fill="#1e40af">effective_strategy: None when multi-base</text>
+  <text x="70" y="425" class="label-bold" fill="#1e40af">base_strategies: sorted by priority desc</text>
+
+  <!-- Override stack section -->
+  <rect x="410" y="225" width="380" height="220" class="box-red"/>
+  <text x="600" y="248" text-anchor="middle" font-size="14" font-weight="700" fill="#991b1b">Override Stack (LIFO)</text>
+  <text x="600" y="265" text-anchor="middle" class="label">_override_names: list[str] — highest priority wins</text>
+
+  <!-- Stack visualization -->
+  <rect x="470" y="280" width="260" height="28" rx="4" fill="#fee2e2" stroke="#ef4444"/>
+  <text x="600" y="299" text-anchor="middle" class="code" fill="#991b1b">PROTECTION (pri=100) ← effective</text>
+  <rect x="470" y="312" width="260" height="28" rx="4" fill="#fee2e2" stroke="#ef4444" opacity="0.7"/>
+  <text x="600" y="331" text-anchor="middle" class="code" fill="#991b1b">MANUAL (pri=50)</text>
+  <rect x="470" y="344" width="260" height="28" rx="4" fill="#fee2e2" stroke="#ef4444" opacity="0.4"/>
+  <text x="600" y="363" text-anchor="middle" class="code" fill="#991b1b">SCHEDULE (pri=10)</text>
+
+  <text x="430" y="395" class="code" fill="#991b1b">push_override(name) — add to stack</text>
+  <text x="430" y="410" class="code" fill="#991b1b">pop_override(name) — remove from stack</text>
+  <text x="430" y="425" class="code" fill="#991b1b">clear_overrides() — empty stack</text>
+
+  <!-- Resolution logic -->
+  <rect x="55" y="460" width="735" height="135" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="65" y="480" class="label-bold">Strategy Resolution (effective_mode / effective_strategy):</text>
+
+  <!-- Decision diamond: overrides? -->
+  <polygon points="120,510 190,530 120,550 50,530" class="diamond"/>
+  <text x="120" y="534" text-anchor="middle" class="code" fill="#92400e">overrides?</text>
+
+  <!-- Yes → highest priority -->
+  <line x1="190" y1="530" x2="245" y2="530" class="connector-org" marker-end="url(#arrow-org)"/>
+  <text x="210" y="523" class="label-bold" fill="#ea580c">yes</text>
+  <rect x="247" y="515" width="180" height="30" rx="6" fill="#fee2e2" stroke="#fca5a5"/>
+  <text x="337" y="535" text-anchor="middle" class="code">highest priority override</text>
+
+  <!-- No → check base count -->
+  <line x1="120" y1="550" x2="120" y2="570" class="connector" marker-end="url(#arrow)"/>
+  <text x="130" y="565" class="label-bold">no</text>
+
+  <polygon points="120,570 200,590 120,610 40,590" class="diamond"/>
+  <text x="120" y="594" text-anchor="middle" class="code" fill="#92400e">base count?</text>
+
+  <!-- 0 → None -->
+  <line x1="40" y1="590" x2="10" y2="590" class="connector"/>
+  <text x="15" y="583" class="label">0</text>
+
+  <!-- 1 → single -->
+  <line x1="200" y1="590" x2="250" y2="590" class="connector-org" marker-end="url(#arrow-org)"/>
+  <text x="218" y="583" class="label-bold">1</text>
+  <rect x="252" y="575" width="120" height="30" rx="6" fill="#dcfce7" stroke="#86efac"/>
+  <text x="312" y="595" text-anchor="middle" class="code">single strategy</text>
+
+  <!-- >1 → cascading -->
+  <line x1="120" y1="610" x2="120" y2="625" class="connector"/>
+  <text x="130" y="622" class="label-bold">>1</text>
+  <line x1="120" y1="625" x2="252" y2="625" class="connector-org" marker-end="url(#arrow-org)"/>
+  <rect x="252" y="610" width="210" height="30" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="357" y="630" text-anchor="middle" class="code">CascadingStrategy(bases)</text>
+
+  <!-- on_strategy_change callback -->
+  <rect x="500" y="500" width="280" height="82" rx="6" fill="#f8fafc" stroke="#d1d5db"/>
+  <text x="510" y="520" class="label-bold">on_strategy_change callback:</text>
+  <text x="520" y="538" class="code">old_strategy is not new_strategy?</text>
+  <text x="520" y="553" class="code">  → notify with (old, new)</text>
+  <text x="520" y="568" class="code">  → SystemController._on_strategy_change</text>
+  <text x="520" y="583" class="code">  → executor.set_strategy(resolved)</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 2: ProtectionGuard Chain -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="640" width="1540" height="440" class="section-bg"/>
+  <text x="55" y="670" class="section-title">2. ProtectionGuard — Sequential Protection Chain</text>
+  <text x="55" y="688" class="label">Command → SOCProtection → ReversePowerProtection → SystemAlarmProtection → Protected Command</text>
+
+  <!-- Protection chain pipeline -->
+  <rect x="55" y="710" width="120" height="50" class="box-org"/>
+  <text x="115" y="730" text-anchor="middle" class="state-text" fill="#7c2d12">Command</text>
+  <text x="115" y="748" text-anchor="middle" class="code">p_target, q_target</text>
+
+  <line x1="175" y1="735" x2="215" y2="735" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="217" y="705" width="240" height="60" class="box-red"/>
+  <text x="337" y="728" text-anchor="middle" class="state-text" fill="#991b1b">SOCProtection</text>
+  <text x="337" y="745" text-anchor="middle" class="code">soc_high=95% soc_low=5%</text>
+  <text x="337" y="758" text-anchor="middle" class="code">warning_band=5%</text>
+
+  <line x1="457" y1="735" x2="492" y2="735" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="494" y="705" width="260" height="60" class="box-red"/>
+  <text x="624" y="728" text-anchor="middle" class="state-text" fill="#991b1b">ReversePowerProtection</text>
+  <text x="624" y="745" text-anchor="middle" class="code">threshold=0.0</text>
+  <text x="624" y="758" text-anchor="middle" class="code">meter_power_key="meter_power"</text>
+
+  <line x1="754" y1="735" x2="789" y2="735" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="791" y="705" width="260" height="60" class="box-red"/>
+  <text x="921" y="728" text-anchor="middle" class="state-text" fill="#991b1b">SystemAlarmProtection</text>
+  <text x="921" y="745" text-anchor="middle" class="code">alarm_key="system_alarm"</text>
+  <text x="921" y="758" text-anchor="middle" class="code">alarm=True → Command(0, 0)</text>
+
+  <line x1="1051" y1="735" x2="1086" y2="735" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="1088" y="710" width="180" height="50" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="1178" y="730" text-anchor="middle" class="state-text" fill="#166534">Protected Command</text>
+  <text x="1178" y="748" text-anchor="middle" class="code" fill="#166534">ProtectionResult</text>
+
+  <!-- ProtectionResult -->
+  <rect x="1290" y="710" width="260" height="50" rx="8" fill="#f8fafc" stroke="#d1d5db"/>
+  <text x="1300" y="730" class="label-bold">ProtectionResult:</text>
+  <text x="1310" y="745" class="code">original_command, protected_command</text>
+  <text x="1310" y="758" class="code">triggered_rules: list[str], was_modified</text>
+
+  <!-- SOC Zone Diagram -->
+  <rect x="55" y="785" width="470" height="275" rx="12" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="290" y="810" text-anchor="middle" font-size="14" font-weight="700" fill="#991b1b">SOC Protection Zones</text>
+  <text x="290" y="828" text-anchor="middle" class="label">Convention: P > 0 = discharge, P &lt; 0 = charge</text>
+
+  <!-- SOC bar -->
+  <rect x="80" y="845" width="40" height="200" rx="4" fill="url(#soc-grad)" stroke="#d1d5db"/>
+
+  <!-- Zone labels -->
+  <!-- High inhibit zone (95-100) -->
+  <text x="130" y="855" class="label-bold" fill="#ef4444">95-100%: Charge Inhibit</text>
+  <text x="140" y="870" class="code" fill="#ef4444">P &lt; 0 → P = 0 (block charge)</text>
+
+  <!-- High warning zone (90-95) -->
+  <text x="130" y="890" class="label-bold" fill="#f59e0b">90-95%: Charge Warning</text>
+  <text x="140" y="905" class="code" fill="#f59e0b">ratio = (soc_high - soc) / warning_band</text>
+  <text x="140" y="918" class="code" fill="#f59e0b">P_charge = P × ratio (linear ramp)</text>
+
+  <!-- Safe zone (10-90) -->
+  <text x="130" y="950" class="label-bold" fill="#16a34a">10-90%: Safe Zone</text>
+  <text x="140" y="965" class="code" fill="#16a34a">No intervention</text>
+
+  <!-- Low warning zone (5-10) -->
+  <text x="130" y="998" class="label-bold" fill="#f59e0b">5-10%: Discharge Warning</text>
+  <text x="140" y="1013" class="code" fill="#f59e0b">ratio = (soc - soc_low) / warning_band</text>
+  <text x="140" y="1026" class="code" fill="#f59e0b">P_discharge = P × ratio (linear ramp)</text>
+
+  <!-- Low inhibit zone (0-5) -->
+  <text x="130" y="1046" class="label-bold" fill="#ef4444">0-5%: Discharge Inhibit</text>
+  <text x="140" y="1061" class="code" fill="#ef4444">P > 0 → P = 0 (block discharge)</text>
+
+  <!-- SOC percentage labels on bar -->
+  <text x="67" y="853" text-anchor="end" class="code" fill="#64748b">100%</text>
+  <text x="67" y="863" text-anchor="end" class="code" fill="#ef4444">95%</text>
+  <text x="67" y="883" text-anchor="end" class="code" fill="#f59e0b">90%</text>
+  <text x="67" y="960" text-anchor="end" class="code" fill="#16a34a">50%</text>
+  <text x="67" y="1018" text-anchor="end" class="code" fill="#f59e0b">10%</text>
+  <text x="67" y="1038" text-anchor="end" class="code" fill="#ef4444">5%</text>
+  <text x="67" y="1048" text-anchor="end" class="code" fill="#64748b">0%</text>
+
+  <!-- Reverse Power Protection detail -->
+  <rect x="545" y="785" width="480" height="140" rx="12" fill="#fff7ed" stroke="#fdba74"/>
+  <text x="785" y="810" text-anchor="middle" font-size="14" font-weight="700" fill="#ea580c">Reverse Power Protection</text>
+  <text x="785" y="828" text-anchor="middle" class="label">Prevents power export (reverse flow) to grid</text>
+
+  <text x="560" y="855" class="label-bold">Convention:</text>
+  <text x="570" y="870" class="code">meter_power > 0 → buying from grid</text>
+  <text x="570" y="885" class="code">meter_power &lt; 0 → selling to grid (reverse!)</text>
+  <text x="560" y="908" class="label-bold">Constraint (discharge only, P > 0):</text>
+  <text x="570" y="923" class="code">max_discharge = max(0, meter_power + threshold)</text>
+
+  <!-- System Alarm Protection detail -->
+  <rect x="545" y="940" width="480" height="120" rx="12" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="785" y="965" text-anchor="middle" font-size="14" font-weight="700" fill="#991b1b">System Alarm Protection</text>
+  <text x="785" y="983" text-anchor="middle" class="label">Binary alarm gate — emergency shutdown</text>
+
+  <text x="560" y="1010" class="code">if context.extra["system_alarm"] == True:</text>
+  <text x="570" y="1025" class="code">  return Command(p_target=0.0, q_target=0.0)</text>
+  <text x="570" y="1040" class="code">else:</text>
+  <text x="580" y="1055" class="code">  return command (unchanged)</text>
+
+  <!-- ProtectionGuard mechanics -->
+  <rect x="1045" y="785" width="510" height="275" rx="12" fill="#f8fafc" stroke="#d1d5db"/>
+  <text x="1300" y="810" text-anchor="middle" font-size="14" font-weight="700" fill="#334155">ProtectionGuard Mechanics</text>
+
+  <text x="1060" y="838" class="label-bold">Chain execution:</text>
+  <text x="1070" y="855" class="code">for rule in self._rules:</text>
+  <text x="1080" y="870" class="code">  try:</text>
+  <text x="1090" y="885" class="code">    command = rule.evaluate(command, context)</text>
+  <text x="1090" y="900" class="code">    if rule.is_triggered:</text>
+  <text x="1100" y="915" class="code">      triggered.append(rule.name)</text>
+  <text x="1080" y="930" class="code">  except Exception:</text>
+  <text x="1090" y="945" class="code">    log error, skip rule (safe fallthrough)</text>
+
+  <text x="1060" y="975" class="label-bold">Methods:</text>
+  <text x="1070" y="992" class="code">add_rule(rule)     — append to chain</text>
+  <text x="1070" y="1007" class="code">remove_rule(name)  — remove by name</text>
+  <text x="1070" y="1022" class="code">apply(command, context) → ProtectionResult</text>
+  <text x="1070" y="1037" class="code">last_result        — cached ProtectionResult</text>
+  <text x="1070" y="1052" class="code">rules              — list[ProtectionRule]</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 3: CascadingStrategy -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="1100" width="780" height="340" class="section-bg"/>
+  <text x="55" y="1130" class="section-title">3. CascadingStrategy — Multi-Layer Power Allocation</text>
+  <text x="55" y="1148" class="label">Delta-based kVA clamping for multiple base strategies</text>
+
+  <!-- Layers visualization -->
+  <rect x="60" y="1170" width="120" height="45" class="box-blue"/>
+  <text x="120" y="1190" text-anchor="middle" class="state-text" fill="#1e40af">Layer 0</text>
+  <text x="120" y="1207" text-anchor="middle" class="code">original ctx</text>
+
+  <line x1="180" y1="1193" x2="210" y2="1193" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="212" y="1170" width="120" height="45" class="box-blue"/>
+  <text x="272" y="1190" text-anchor="middle" class="state-text" fill="#1e40af">Layer 1</text>
+  <text x="272" y="1207" text-anchor="middle" class="code">accumulated ctx</text>
+
+  <line x1="332" y1="1193" x2="362" y2="1193" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="364" y="1170" width="120" height="45" class="box-blue"/>
+  <text x="424" y="1190" text-anchor="middle" class="state-text" fill="#1e40af">Layer N</text>
+  <text x="424" y="1207" text-anchor="middle" class="code">remaining kVA</text>
+
+  <line x1="484" y1="1193" x2="514" y2="1193" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="516" y="1170" width="130" height="45" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="581" y="1190" text-anchor="middle" class="state-text" fill="#166534">Accumulated</text>
+  <text x="581" y="1207" text-anchor="middle" class="code" fill="#166534">Command</text>
+
+  <!-- Algorithm detail -->
+  <rect x="60" y="1230" width="730" height="195" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="70" y="1250" class="label-bold">Delta-based kVA Clamping Algorithm:</text>
+  <text x="80" y="1270" class="code">1. accumulated = Command(0.0, 0.0)</text>
+  <text x="80" y="1287" class="code">2. For each layer i:</text>
+  <text x="100" y="1304" class="code">ctx.last_command = accumulated</text>
+  <text x="100" y="1321" class="code">ctx.extra["remaining_s_kva"] = max(0, s_max - hypot(acc.p, acc.q))</text>
+  <text x="100" y="1338" class="code">layer_output = layer.execute(ctx)</text>
+  <text x="100" y="1355" class="code">delta_p = output.p - accumulated.p,  delta_q = output.q - accumulated.q</text>
+  <text x="100" y="1372" class="code">new_s = hypot(acc.p + delta_p, acc.q + delta_q)</text>
+  <text x="100" y="1389" class="code">if new_s > s_max: solve At² + Bt + C = 0 → scale delta by t ∈ [0,1]</text>
+  <text x="100" y="1406" class="code">accumulated = Command(acc.p + delta_p×t, acc.q + delta_q×t)</text>
+  <text x="80" y="1423" class="code">3. Return accumulated</text>
+
+  <!-- CapacityConfig -->
+  <rect x="665" y="1168" width="140" height="46" class="box-org"/>
+  <text x="735" y="1188" text-anchor="middle" class="label-bold" fill="#ea580c">CapacityConfig</text>
+  <text x="735" y="1206" text-anchor="middle" class="code">s_max_kva: float</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 4: StrategyExecutor Loop -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="830" y="1100" width="740" height="340" class="section-bg"/>
+  <text x="855" y="1130" class="section-title">4. StrategyExecutor — Execution Loop</text>
+  <text x="855" y="1148" class="label">context_provider() → strategy.execute() → on_command() callback</text>
+
+  <!-- Executor loop states -->
+  <rect x="870" y="1175" width="110" height="44" class="state"/>
+  <text x="925" y="1201" text-anchor="middle" class="state-text">Wait</text>
+
+  <line x1="980" y1="1197" x2="1020" y2="1197" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="1022" y="1175" width="130" height="44" class="state-hi"/>
+  <text x="1087" y="1195" text-anchor="middle" class="state-text">Get Context</text>
+  <text x="1087" y="1210" text-anchor="middle" class="code">context_provider()</text>
+
+  <line x1="1152" y1="1197" x2="1192" y2="1197" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="1194" y="1175" width="130" height="44" class="state-hi"/>
+  <text x="1259" y="1195" text-anchor="middle" class="state-text">Execute</text>
+  <text x="1259" y="1210" text-anchor="middle" class="code">strategy.execute(ctx)</text>
+
+  <line x1="1324" y1="1197" x2="1364" y2="1197" class="connector-org" marker-end="url(#arrow-org)"/>
+
+  <rect x="1366" y="1175" width="130" height="44" class="state-hi"/>
+  <text x="1431" y="1195" text-anchor="middle" class="state-text">Callback</text>
+  <text x="1431" y="1210" text-anchor="middle" class="code">on_command(cmd)</text>
+
+  <!-- Loop back arrow -->
+  <path d="M 1431,1219 Q 1431,1260 1087,1260 Q 925,1260 925,1219" fill="none" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-org)"/>
+  <text x="1160" y="1278" text-anchor="middle" class="code" fill="#ea580c">_wait_for_execution(config) — mode-dependent wait</text>
+
+  <!-- Executor internal state -->
+  <rect x="870" y="1300" width="680" height="125" rx="8" fill="#f8fafc" stroke="#d1d5db"/>
+  <text x="880" y="1320" class="label-bold">StrategyExecutor internal state:</text>
+  <text x="895" y="1340" class="code">_strategy: Strategy | None        — current strategy (via set_strategy)</text>
+  <text x="895" y="1355" class="code">_last_command: Command             — fallback on error</text>
+  <text x="895" y="1370" class="code">_trigger_event: asyncio.Event      — for TRIGGERED/HYBRID modes</text>
+  <text x="895" y="1385" class="code">_stop_event: asyncio.Event         — signals loop exit</text>
+
+  <text x="880" y="1410" class="label-bold">Key methods:</text>
+  <text x="895" y="1425" class="code">set_strategy(s)  — deactivate old, activate new   |  trigger()  — set trigger event</text>
+  <text x="895" y="1440" class="code">stop()           — set stop event, shutdown         |  run()      — main async loop</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 5: Wait mode details -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="1460" width="1540" height="130" class="section-bg"/>
+  <text x="55" y="1490" class="section-title">5. _wait_for_execution(config) — Mode-Dependent Wait Behavior</text>
+
+  <rect x="55" y="1508" width="480" height="68" rx="8" fill="#dbeafe" stroke="#3b82f6"/>
+  <text x="295" y="1528" text-anchor="middle" class="label-bold" fill="#1e40af">PERIODIC</text>
+  <text x="70" y="1548" class="code">await asyncio.wait_for(_stop_event.wait(), timeout=interval)</text>
+  <text x="70" y="1563" class="code">TimeoutError = normal cycle, stop_event = exit loop</text>
+
+  <rect x="555" y="1508" width="480" height="68" rx="8" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="795" y="1528" text-anchor="middle" class="label-bold" fill="#92400e">TRIGGERED</text>
+  <text x="570" y="1548" class="code">await _trigger_event.wait() then clear</text>
+  <text x="570" y="1563" class="code">blocks indefinitely until trigger() called</text>
+
+  <rect x="1055" y="1508" width="480" height="68" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text x="1295" y="1528" text-anchor="middle" class="label-bold" fill="#5b21b6">HYBRID</text>
+  <text x="1070" y="1548" class="code">await asyncio.wait_for(_trigger_event.wait(), timeout=interval)</text>
+  <text x="1070" y="1563" class="code">TimeoutError = normal cycle, early trigger = immediate execution</text>
+
+</svg>

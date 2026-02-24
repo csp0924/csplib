@@ -112,6 +112,9 @@ class DeviceGroup:
             for device in self.devices:
                 if self._stop_event.is_set():
                     break
+                if not device.should_attempt_read:
+                    logger.debug(f"跳過無回應設備 {device.device_id}，等待重試間隔")
+                    continue
                 try:
                     await device.read_once()
                 except Exception:

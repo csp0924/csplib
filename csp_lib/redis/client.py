@@ -535,6 +535,22 @@ class RedisClient:
             raise ConnectionError("Redis 尚未連線")
         return await self._client.expire(name, seconds)
 
+    # ================ Key Pattern 操作 ================
+
+    async def keys(self, pattern: str) -> list[str]:
+        """
+        取得匹配 pattern 的 Key 列表
+
+        Args:
+            pattern: 匹配模式（e.g., "monitor:default:nodes:*"）
+
+        Returns:
+            匹配的 Key 列表
+        """
+        if not self._client:
+            raise ConnectionError("Redis 尚未連線")
+        return await self._client.keys(pattern)
+
     # ================ Context Manager ================
 
     async def __aenter__(self) -> "RedisClient":

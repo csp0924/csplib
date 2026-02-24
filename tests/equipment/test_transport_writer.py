@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.equipment.core.point import WritePoint
 from csp_lib.equipment.transport.writer import (
     ValidatedWriter,
@@ -308,7 +309,7 @@ class TestValidatedWriterExceptions:
 
     @pytest.mark.asyncio
     async def test_unsupported_function_code_raises(self, writer: ValidatedWriter):
-        """不支援的 FunctionCode 應回傳失敗"""
+        """不支援的 FunctionCode 應拋 ConfigurationError"""
         point = WritePoint(
             name="invalid",
             address=100,
@@ -316,10 +317,8 @@ class TestValidatedWriterExceptions:
             function_code=FunctionCode.READ_HOLDING_REGISTERS,  # 讀取用的 FC
         )
 
-        result = await writer.write(point, 500)
-
-        assert result.status == WriteStatus.WRITE_FAILED
-        assert "不支援" in result.error_message
+        with pytest.raises(ConfigurationError, match="不支援"):
+            await writer.write(point, 500)
 
 
 # ======================== Verification Tests ========================
@@ -435,7 +434,7 @@ class TestValidatedWriterEncoding:
 
     @pytest.mark.asyncio
     async def test_single_register_fc_with_multi_register_type_raises(self, writer: ValidatedWriter):
-        """單一暫存器 FC 搭配多暫存器 DataType 應失敗"""
+        """單一暫存器 FC 搭配多暫存器 DataType 應拋 ConfigurationError"""
         point = WritePoint(
             name="invalid",
             address=100,
@@ -443,10 +442,8 @@ class TestValidatedWriterEncoding:
             function_code=FunctionCode.WRITE_SINGLE_REGISTER,
         )
 
-        result = await writer.write(point, 100)
-
-        assert result.status == WriteStatus.WRITE_FAILED
-        assert "只能寫入一個暫存器" in result.error_message
+        with pytest.raises(ConfigurationError, match="只能寫入一個暫存器"):
+            await writer.write(point, 100)
 
     @pytest.mark.asyncio
     async def test_write_zero_value(self, writer: ValidatedWriter, mock_client: AsyncMock):

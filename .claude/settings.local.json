@@ -10,7 +10,21 @@
       "Bash(uv run ruff format:*)",
       "Bash(uv run:*)",
       "Bash(git stash:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(python:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python -c:*)",
+      "Bash(uv sync:*)",
+      "WebSearch",
+      "Bash(SKIP_CYTHON=1 uv pip install:*)",
+      "Bash(uv pip install:*)",
+      "Bash(for dir in /Users/csp0924/csplib/csp_lib/csp_lib/*/)",
+      "Bash(do)",
+      "Bash(basename:*)",
+      "Bash(done)",
+      "Bash(for dir in /Users/csp0924/csplib/csp_lib/tests/*/)",
+      "Bash(grep:*)",
+      "Bash(git -C /Users/csp0924/csplib log --oneline -5)"
     ]
   }
 }

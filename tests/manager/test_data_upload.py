@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -327,3 +327,148 @@ class TestDataUploadManagerDisconnected:
 
         # 不應呼叫 enqueue（因為無快取結構）
         uploader.enqueue.assert_not_called()
+
+
+# ======================== Save Interval (Decimation) Tests ========================
+
+
+class TestDataUploadManagerSaveInterval:
+    """save_interval 降頻儲存測試"""
+
+    @pytest.fixture
+    def uploader(self) -> MockUploader:
+        return MockUploader()
+
+    @pytest.fixture
+    def manager(self, uploader: MockUploader) -> DataUploadManager:
+        return DataUploadManager(uploader=uploader)
+
+    def _make_payload(self, device_id: str = "device_001") -> ReadCompletePayload:
+        return ReadCompletePayload(
+            device_id=device_id,
+            values={"temperature": 25.5},
+            duration_ms=50.0,
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_interval_saves_every_read(self, manager: DataUploadManager, uploader: MockUploader):
+        """save_interval=0（預設）時每次讀取都儲存"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="data")
+
+        for _ in range(5):
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+
+        assert uploader.enqueue.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_interval_skips_within_window(self, manager: DataUploadManager, uploader: MockUploader):
+        """在 save_interval 內的讀取應被跳過"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="data", save_interval=30)
+
+        fake_time = 1000.0
+
+        with patch("csp_lib.manager.data.upload.time.monotonic", side_effect=lambda: fake_time):
+            # 第一次：應儲存
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+            assert uploader.enqueue.call_count == 1
+
+            # 第二次（同一時間點）：應跳過
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+            assert uploader.enqueue.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_interval_saves_after_elapsed(self, manager: DataUploadManager, uploader: MockUploader):
+        """超過 save_interval 後應再次儲存"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="data", save_interval=30)
+
+        call_count = [0]
+        fake_time = [1000.0]
+
+        def mock_monotonic():
+            return fake_time[0]
+
+        with patch("csp_lib.manager.data.upload.time.monotonic", side_effect=mock_monotonic):
+            # t=0: 儲存
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+            assert uploader.enqueue.call_count == 1
+
+            # t=10: 跳過
+            fake_time[0] = 1010.0
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+            assert uploader.enqueue.call_count == 1
+
+            # t=31: 儲存
+            fake_time[0] = 1031.0
+            await device.emit(EVENT_READ_COMPLETE, self._make_payload())
+            assert uploader.enqueue.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_interval_always_caches_values(self, manager: DataUploadManager, uploader: MockUploader):
+        """即使跳過儲存，仍應更新快取（供斷線空值記錄使用）"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="data", save_interval=30)
+
+        fake_time = [1000.0]
+
+        with patch("csp_lib.manager.data.upload.time.monotonic", side_effect=lambda: fake_time[0]):
+            # 第一次讀取
+            payload1 = ReadCompletePayload(
+                device_id="device_001",
+                values={"temperature": 20.0},
+                duration_ms=50.0,
+            )
+            await device.emit(EVENT_READ_COMPLETE, payload1)
+
+            # 第二次讀取（被降頻跳過）但快取應更新
+            payload2 = ReadCompletePayload(
+                device_id="device_001",
+                values={"temperature": 30.0},
+                duration_ms=50.0,
+            )
+            await device.emit(EVENT_READ_COMPLETE, payload2)
+
+            assert uploader.enqueue.call_count == 1  # 只存了一次
+            assert manager._last_values["device_001"]["temperature"] == 30.0  # 快取已更新
+
+    @pytest.mark.asyncio
+    async def test_different_devices_independent_intervals(self, manager: DataUploadManager, uploader: MockUploader):
+        """不同設備的 save_interval 獨立運作"""
+        device_fast = MockDevice("fast")
+        device_slow = MockDevice("slow")
+        manager.subscribe(device_fast, collection_name="fast_data", save_interval=0)  # 每次都存
+        manager.subscribe(device_slow, collection_name="slow_data", save_interval=60)
+
+        fake_time = [1000.0]
+
+        with patch("csp_lib.manager.data.upload.time.monotonic", side_effect=lambda: fake_time[0]):
+            for i in range(3):
+                await device_fast.emit(
+                    EVENT_READ_COMPLETE,
+                    ReadCompletePayload(device_id="fast", values={"v": i}, duration_ms=10.0),
+                )
+                await device_slow.emit(
+                    EVENT_READ_COMPLETE,
+                    ReadCompletePayload(device_id="slow", values={"v": i}, duration_ms=10.0),
+                )
+
+        # fast: 3 次都存, slow: 只存第 1 次
+        fast_calls = [c for c in uploader.enqueue.call_args_list if c[0][0] == "fast_data"]
+        slow_calls = [c for c in uploader.enqueue.call_args_list if c[0][0] == "slow_data"]
+        assert len(fast_calls) == 3
+        assert len(slow_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_cleans_interval_state(self, manager: DataUploadManager):
+        """取消訂閱後應清理 interval 相關狀態"""
+        device = MockDevice("device_001")
+        manager.subscribe(device, collection_name="data", save_interval=30)
+
+        assert "device_001" in manager._save_intervals
+
+        manager.unsubscribe(device)
+
+        assert "device_001" not in manager._save_intervals
+        assert "device_001" not in manager._last_save_times

@@ -8,8 +8,11 @@
 # 設計模式：
 #   - 觀察者模式：訂閱 AsyncModbusDevice 的 read_complete/disconnected 事件
 #   - 事件驅動：讀取完成 → 上傳資料，斷線 → 上傳空值記錄
+#   - 降頻儲存：透過 save_interval 控制每台設備的儲存頻率
 
 from __future__ import annotations
+
+import time
 
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -103,10 +106,17 @@ class DataUploadManager(DeviceEventSubscriber):
         self._uploader = uploader
         self._device_collection: dict[str, str] = {}  # device_id -> collection_name
         self._last_values: dict[str, dict[str, Any]] = {}  # device_id -> last values
+        self._save_intervals: dict[str, float] = {}  # device_id -> save_interval (seconds)
+        self._last_save_times: dict[str, float] = {}  # device_id -> monotonic timestamp
 
     # ================ 訂閱管理 ================
 
-    def subscribe(self, device: AsyncModbusDevice, collection_name: str) -> None:  # type: ignore[override]
+    def subscribe(  # type: ignore[override]
+        self,
+        device: AsyncModbusDevice,
+        collection_name: str,
+        save_interval: float = 0,
+    ) -> None:
         """
         訂閱設備事件
 
@@ -116,6 +126,8 @@ class DataUploadManager(DeviceEventSubscriber):
         Args:
             device: 要訂閱的 Modbus 設備
             collection_name: 資料上傳的 MongoDB collection 名稱
+            save_interval: 最小儲存間隔（秒）。設為 0 表示每次讀取都儲存。
+                例如設備每 1 秒讀取一次，save_interval=30 則約每 30 秒才存一筆至 MongoDB。
         """
         device_id = device.device_id
         if device_id in self._unsubscribes:
@@ -124,8 +136,11 @@ class DataUploadManager(DeviceEventSubscriber):
         self._device_collection[device_id] = collection_name
         self._uploader.register_collection(collection_name)
 
+        if save_interval > 0:
+            self._save_intervals[device_id] = save_interval
+
         self._unsubscribes[device_id] = self._register_events(device)
-        logger.info(f"資料上傳管理器已訂閱設備: {device_id} -> {collection_name}")
+        logger.info(f"資料上傳管理器已訂閱設備: {device_id} -> {collection_name} (save_interval={save_interval}s)")
 
     def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
         """註冊設備的 read_complete 與 disconnected 事件"""
@@ -137,6 +152,8 @@ class DataUploadManager(DeviceEventSubscriber):
     def _on_unsubscribe(self, device_id: str) -> None:
         self._device_collection.pop(device_id, None)
         self._last_values.pop(device_id, None)
+        self._save_intervals.pop(device_id, None)
+        self._last_save_times.pop(device_id, None)
         logger.info(f"資料上傳管理器已取消訂閱設備: {device_id}")
 
     # ================ 事件處理器 ================
@@ -146,6 +163,7 @@ class DataUploadManager(DeviceEventSubscriber):
         處理讀取完成事件
 
         將讀取資料加入上傳佇列，並快取值結構供斷線時使用。
+        若設有 save_interval，僅在距上次儲存超過指定秒數時才上傳。
 
         Args:
             payload: 讀取完成事件資料
@@ -155,8 +173,17 @@ class DataUploadManager(DeviceEventSubscriber):
         if not collection_name:
             return
 
-        # 快取結構供斷線時使用
+        # 快取結構供斷線時使用（無論是否降頻都要更新）
         self._last_values[device_id] = payload.values
+
+        # 降頻檢查
+        interval = self._save_intervals.get(device_id)
+        if interval is not None:
+            now = time.monotonic()
+            last_save = self._last_save_times.get(device_id)
+            if last_save is not None and (now - last_save) < interval:
+                return
+            self._last_save_times[device_id] = now
 
         # 建立文件並上傳
         document = {

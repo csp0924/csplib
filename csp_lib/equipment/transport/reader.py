@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Sequence
 
+from csp_lib.core.errors import CommunicationError, ConfigurationError
 from csp_lib.modbus.enums import FunctionCode
+from csp_lib.modbus.exceptions import ModbusError
 
 from .base import ReadGroup
 
@@ -65,7 +67,7 @@ class GroupReader:
             max_concurrent_reads: 最大並行讀取數（預設 1 = 串列讀取）
         """
         if max_concurrent_reads < 1:
-            raise ValueError(f"max_concurrent_reads 必須 >= 1，收到: {max_concurrent_reads}")
+            raise ConfigurationError(f"max_concurrent_reads 必須 >= 1，收到: {max_concurrent_reads}")
 
         self._client = client
         self._unit_id = unit_id
@@ -130,22 +132,28 @@ class GroupReader:
             原始暫存器/線圈資料
 
         Raises:
-            ValueError: 不支援的 FunctionCode
+            ConfigurationError: 不支援的 FunctionCode
+            CommunicationError: Modbus 通訊錯誤
         """
         address = group.start_address + self._address_offset
         count = group.count
         function_code = group.function_code
 
-        if function_code == FunctionCode.READ_COILS:
-            return list(await self._client.read_coils(address, count, self._unit_id))
-        elif function_code == FunctionCode.READ_DISCRETE_INPUTS:
-            return list(await self._client.read_discrete_inputs(address, count, self._unit_id))
-        elif function_code == FunctionCode.READ_HOLDING_REGISTERS:
-            return list(await self._client.read_holding_registers(address, count, self._unit_id))
-        elif function_code == FunctionCode.READ_INPUT_REGISTERS:
-            return list(await self._client.read_input_registers(address, count, self._unit_id))
-        else:
-            raise ValueError(f"不支援的 Function Code: {function_code}")
+        try:
+            if function_code == FunctionCode.READ_COILS:
+                return list(await self._client.read_coils(address, count, self._unit_id))
+            elif function_code == FunctionCode.READ_DISCRETE_INPUTS:
+                return list(await self._client.read_discrete_inputs(address, count, self._unit_id))
+            elif function_code == FunctionCode.READ_HOLDING_REGISTERS:
+                return list(await self._client.read_holding_registers(address, count, self._unit_id))
+            elif function_code == FunctionCode.READ_INPUT_REGISTERS:
+                return list(await self._client.read_input_registers(address, count, self._unit_id))
+            else:
+                raise ConfigurationError(f"不支援的 Function Code: {function_code}")
+        except (ConfigurationError, CommunicationError):
+            raise
+        except ModbusError as e:
+            raise CommunicationError("unknown", f"Modbus 通訊錯誤: {e}") from e
 
     def _decode(self, group: ReadGroup, raw_data: list[int] | list[bool]) -> dict[str, Any]:
         """
@@ -159,7 +167,7 @@ class GroupReader:
             {點位名稱: 值} 字典
 
         Raises:
-            ValueError: 資料長度不足以解碼點位
+            CommunicationError: 資料長度不足以解碼點位
         """
         result: dict[str, Any] = {}
 
@@ -171,10 +179,11 @@ class GroupReader:
             # 提取資料切片並驗證長度
             data_slice = list(raw_data[offset : offset + length])
             if len(data_slice) < length:
-                raise ValueError(
+                raise CommunicationError(
+                    "unknown",
                     f"資料不足以解碼點位 '{point.name}': "
                     f"期望 {length} 個暫存器，實際 {len(data_slice)} "
-                    f"(offset={offset}, group.count={group.count})"
+                    f"(offset={offset}, group.count={group.count})",
                 )
 
             # 解碼

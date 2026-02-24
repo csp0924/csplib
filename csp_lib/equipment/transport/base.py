@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from itertools import groupby
 from typing import TYPE_CHECKING, Sequence
 
+from .config import PointGrouperConfig
+
 if TYPE_CHECKING:
     from ..core.point import ReadPoint
 
@@ -35,13 +37,8 @@ class PointGrouper:
         groups = grouper.group(points)
     """
 
-    # 各功能碼的最大讀取長度
-    FC_MAX_LENGTH: dict[int, int] = {
-        1: 2000,  # Read Coils
-        2: 2000,  # Read Discrete Inputs
-        3: 125,  # Read Holding Registers
-        4: 125,  # Read Input Registers
-    }
+    def __init__(self, config: PointGrouperConfig | None = None) -> None:
+        self._config = config or PointGrouperConfig()
 
     def group(self, points: Sequence[ReadPoint]) -> list[ReadGroup]:
         """
@@ -79,7 +76,7 @@ class PointGrouper:
         Returns:
             合併後的 ReadGroup 列表
         """
-        max_length = max_length or self.FC_MAX_LENGTH.get(function_code, 125)
+        max_length = max_length or self._config.fc_max_length.get(function_code, 125)
         groups: list[ReadGroup] = []
 
         current: list[ReadPoint] = []

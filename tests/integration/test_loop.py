@@ -11,10 +11,13 @@ from csp_lib.integration.registry import DeviceRegistry
 from csp_lib.integration.schema import CommandMapping, ContextMapping, DataFeedMapping
 
 
-def _make_device(device_id: str, values: dict | None = None, responsive: bool = True) -> MagicMock:
+def _make_device(
+    device_id: str, values: dict | None = None, responsive: bool = True, protected: bool = False
+) -> MagicMock:
     dev = MagicMock()
     type(dev).device_id = PropertyMock(return_value=device_id)
     type(dev).is_responsive = PropertyMock(return_value=responsive)
+    type(dev).is_protected = PropertyMock(return_value=protected)
     type(dev).latest_values = PropertyMock(return_value=values or {})
     dev.write = AsyncMock()
     unsub_fn = MagicMock()

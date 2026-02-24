@@ -21,8 +21,11 @@ from .state import StateSyncManager
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.integration.registry import DeviceRegistry
     from csp_lib.mongo import MongoBatchUploader
+    from csp_lib.notification import NotificationDispatcher
     from csp_lib.redis import RedisClient
+    from csp_lib.statistics import StatisticsConfig, StatisticsManager
 
 logger = get_logger(__name__)
 
@@ -42,6 +45,7 @@ class UnifiedConfig:
         command_repository: 寫入指令 Repository（可選）
         mongo_uploader: MongoDB 批次上傳器（可選）
         redis_client: Redis 客戶端（可選）
+        notification_dispatcher: 通知分發器（可選）
 
     Example:
         ```python
@@ -58,6 +62,9 @@ class UnifiedConfig:
     command_repository: CommandRepository | None = None
     mongo_uploader: MongoBatchUploader | None = None
     redis_client: RedisClient | None = None
+    notification_dispatcher: NotificationDispatcher | None = None
+    statistics_config: StatisticsConfig | None = None
+    device_registry: DeviceRegistry | None = None
 
 
 # ================ 統一管理器 ================
@@ -68,7 +75,7 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
     統一設備管理器
 
     整合 DeviceManager、AlarmPersistenceManager、WriteCommandManager、
-    DataUploadManager、StateSyncManager，提供單一入口點。
+    DataUploadManager、StateSyncManager、StatisticsManager，提供單一入口點。
 
     註冊設備後自動串接所有已啟用的功能，使用者無需手動 subscribe 各子管理器。
 
@@ -78,6 +85,7 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         command_manager: 寫入指令管理器（可能為 None）
         data_manager: 資料上傳管理器（可能為 None）
         state_manager: 狀態同步管理器（可能為 None）
+        statistics_manager: 統計管理器（可能為 None）
 
     Example:
         ```python
@@ -113,7 +121,9 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
 
         # 根據配置初始化子管理器（可選）
         self._alarm_manager: AlarmPersistenceManager | None = (
-            AlarmPersistenceManager(config.alarm_repository) if config.alarm_repository else None
+            AlarmPersistenceManager(config.alarm_repository, config.notification_dispatcher)
+            if config.alarm_repository
+            else None
         )
         self._command_manager: WriteCommandManager | None = (
             WriteCommandManager(config.command_repository) if config.command_repository else None
@@ -125,12 +135,22 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             StateSyncManager(config.redis_client) if config.redis_client else None
         )
 
+        # Statistics manager（需要 mongo_uploader + statistics_config）
+        from csp_lib.statistics import StatisticsManager
+
+        self._statistics_manager: StatisticsManager | None = (
+            StatisticsManager(config.statistics_config, config.mongo_uploader, config.device_registry)
+            if config.statistics_config and config.mongo_uploader
+            else None
+        )
+
         logger.info(
             f"UnifiedDeviceManager 初始化: "
             f"alarm={self._alarm_manager is not None}, "
             f"command={self._command_manager is not None}, "
             f"data={self._data_manager is not None}, "
-            f"state={self._state_manager is not None}"
+            f"state={self._state_manager is not None}, "
+            f"statistics={self._statistics_manager is not None}"
         )
 
     # ================ 註冊 ================
@@ -200,6 +220,9 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         if self._state_manager:
             self._state_manager.subscribe(device)
 
+        if self._statistics_manager:
+            self._statistics_manager.subscribe(device)
+
     # ================ 生命週期 ================
 
     async def _on_start(self) -> None:
@@ -246,6 +269,11 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
     def state_manager(self) -> StateSyncManager | None:
         """狀態同步管理器（可能為 None）"""
         return self._state_manager
+
+    @property
+    def statistics_manager(self) -> StatisticsManager | None:
+        """統計管理器（可能為 None）"""
+        return self._statistics_manager
 
     @property
     def is_running(self) -> bool:

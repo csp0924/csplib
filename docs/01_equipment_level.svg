@@ -1,0 +1,385 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1800" font-family="'Segoe UI', Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#555"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+    <style>
+      .title { font-size: 28px; font-weight: 700; fill: #1e3a5f; }
+      .section-title { font-size: 18px; font-weight: 700; fill: #1e40af; }
+      .state { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.5; rx: 12; }
+      .state-active { fill: #bfdbfe; stroke: #1d4ed8; stroke-width: 2; rx: 12; }
+      .state-error { fill: #fee2e2; stroke: #dc2626; stroke-width: 1.5; rx: 12; }
+      .state-text { font-size: 12px; font-weight: 600; fill: #1e3a5f; text-anchor: middle; }
+      .label { font-size: 10px; fill: #64748b; }
+      .label-bold { font-size: 10px; fill: #334155; font-weight: 600; }
+      .code { font-family: 'Fira Code', 'Consolas', monospace; font-size: 10px; fill: #7c3aed; }
+      .pipe-box { fill: #eff6ff; stroke: #93c5fd; stroke-width: 1; rx: 8; }
+      .alarm-normal { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.5; rx: 12; }
+      .alarm-active { fill: #fee2e2; stroke: #dc2626; stroke-width: 1.5; rx: 12; }
+      .write-box { fill: #fef3c7; stroke: #d97706; stroke-width: 1; rx: 8; }
+      .transport-box { fill: #f0fdf4; stroke: #22c55e; stroke-width: 1; rx: 8; }
+      .event-box { fill: #faf5ff; stroke: #a855f7; stroke-width: 1; rx: 6; }
+      .connector { fill: none; stroke: #555; stroke-width: 1.2; }
+      .connector-blue { fill: none; stroke: #2563eb; stroke-width: 1.5; }
+      .connector-red { fill: none; stroke: #dc2626; stroke-width: 1.2; stroke-dasharray: 4,3; }
+      .connector-green { fill: none; stroke: #16a34a; stroke-width: 1.2; }
+      .section-bg { fill: #fff; stroke: #e2e8f0; stroke-width: 1; rx: 16; filter: url(#shadow); }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1600" height="1800" fill="url(#bg)"/>
+
+  <!-- Main Title -->
+  <text x="800" y="45" text-anchor="middle" class="title">Equipment Layer — AsyncModbusDevice</text>
+  <text x="800" y="68" text-anchor="middle" font-size="13" fill="#64748b">csp_lib.equipment · Device Lifecycle · Read Pipeline · Alarms · Write Flow · Transport</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 1: Device Lifecycle State Machine -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="90" width="750" height="420" class="section-bg"/>
+  <text x="55" y="120" class="section-title">1. Device Lifecycle State Machine</text>
+  <text x="55" y="138" class="label">AsyncModbusDevice — connection &amp; responsiveness tracking</text>
+
+  <!-- States -->
+  <!-- Disconnected -->
+  <rect x="60" y="160" width="130" height="44" class="state-error"/>
+  <text x="125" y="186" class="state-text">Disconnected</text>
+  <text x="125" y="218" class="code">_client_connected=F</text>
+  <text x="125" y="230" class="code">_device_responsive=F</text>
+
+  <!-- Connecting -->
+  <rect x="260" y="160" width="130" height="44" class="state"/>
+  <text x="325" y="186" class="state-text">Connecting</text>
+
+  <!-- Connected + Responsive -->
+  <rect x="460" y="160" width="150" height="44" class="state-active"/>
+  <text x="535" y="186" class="state-text">Connected</text>
+  <text x="535" y="218" class="code">_client_connected=T</text>
+  <text x="535" y="230" class="code">_device_responsive=T</text>
+
+  <!-- Running (read loop active) -->
+  <rect x="460" y="280" width="150" height="44" class="state-active"/>
+  <text x="535" y="306" class="state-text">Running</text>
+  <text x="535" y="338" class="code">_read_task active</text>
+  <text x="535" y="350" class="code">is_running=True</text>
+
+  <!-- Unreachable -->
+  <rect x="230" y="350" width="150" height="44" class="state-error"/>
+  <text x="305" y="376" class="state-text">Unreachable</text>
+  <text x="305" y="408" class="code">_client_connected=T</text>
+  <text x="305" y="420" class="code">_device_responsive=F</text>
+
+  <!-- Stopped -->
+  <rect x="460" y="415" width="150" height="44" class="state"/>
+  <text x="535" y="441" class="state-text">Stopped</text>
+  <text x="535" y="468" class="code">_read_task=None</text>
+
+  <!-- Transition arrows -->
+  <!-- Disconnected → Connecting -->
+  <line x1="190" y1="182" x2="258" y2="182" class="connector-blue" marker-end="url(#arrow-blue)"/>
+  <text x="215" y="175" class="code">connect()</text>
+
+  <!-- Connecting → Connected -->
+  <line x1="390" y1="182" x2="458" y2="182" class="connector-blue" marker-end="url(#arrow-blue)"/>
+  <text x="410" y="175" class="code">client.connect()</text>
+  <text x="410" y="175" class="code" dy="12">→ EVENT_CONNECTED</text>
+
+  <!-- Connected → Running -->
+  <line x1="535" y1="204" x2="535" y2="278" class="connector-blue" marker-end="url(#arrow-blue)"/>
+  <text x="545" y="245" class="code">start() →</text>
+  <text x="545" y="257" class="code">_read_loop()</text>
+
+  <!-- Running → Unreachable -->
+  <line x1="460" y1="310" x2="382" y2="358" class="connector-red" marker-end="url(#arrow-red)"/>
+  <text x="385" y="325" class="code" fill="#dc2626">failures ≥ threshold</text>
+  <text x="385" y="337" class="code" fill="#dc2626">→ EVENT_DISCONNECTED</text>
+
+  <!-- Unreachable → Running (reconnect) -->
+  <path d="M 380,365 Q 430,330 460,300" class="connector-green" marker-end="url(#arrow-green)"/>
+  <text x="430" y="348" class="code" fill="#16a34a">read success</text>
+  <text x="430" y="360" class="code" fill="#16a34a">→ EVENT_CONNECTED</text>
+
+  <!-- Running → Stopped -->
+  <line x1="535" y1="324" x2="535" y2="413" class="connector" marker-end="url(#arrow)"/>
+  <text x="545" y="380" class="code">stop()</text>
+
+  <!-- Stopped → Disconnected -->
+  <path d="M 460,437 L 200,437 Q 125,437 125,400 L 125,204" class="connector" marker-end="url(#arrow)"/>
+  <text x="260" y="455" class="code">disconnect() → EVENT_DISCONNECTED</text>
+
+  <!-- Health states legend -->
+  <rect x="630" y="260" width="140" height="110" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="700" y="280" text-anchor="middle" class="label-bold">HealthStatus</text>
+  <circle cx="650" cy="296" r="6" fill="#22c55e"/><text x="662" y="300" class="label">HEALTHY — is_healthy</text>
+  <circle cx="650" cy="318" r="6" fill="#f59e0b"/><text x="662" y="322" class="label">DEGRADED — !responsive</text>
+  <circle cx="650" cy="340" r="6" fill="#ef4444"/><text x="662" y="344" class="label">UNHEALTHY — !connected</text>
+  <text x="645" y="362" class="code">is_healthy = connected</text>
+  <text x="645" y="374" class="code">&amp; responsive &amp; !protected</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 2: Read Cycle Pipeline -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="810" y="90" width="760" height="420" class="section-bg"/>
+  <text x="835" y="120" class="section-title">2. Read Cycle Pipeline</text>
+  <text x="835" y="138" class="label">_read_loop() → _read_all() → _process_values() → _evaluate_alarm()</text>
+
+  <!-- Pipeline stages -->
+  <!-- Stage 1: Modbus Registers -->
+  <rect x="835" y="155" width="140" height="50" class="pipe-box"/>
+  <text x="905" y="176" text-anchor="middle" class="state-text">Modbus Registers</text>
+  <text x="905" y="192" text-anchor="middle" class="code">FC3/FC4 raw data</text>
+
+  <line x1="975" y1="180" x2="1005" y2="180" class="connector-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Stage 2: Codec Decode -->
+  <rect x="1007" y="155" width="130" height="50" class="pipe-box"/>
+  <text x="1072" y="176" text-anchor="middle" class="state-text">Codec Decode</text>
+  <text x="1072" y="192" text-anchor="middle" class="code">data_type.decode()</text>
+
+  <line x1="1137" y1="180" x2="1167" y2="180" class="connector-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Stage 3: ProcessingPipeline -->
+  <rect x="1169" y="148" width="180" height="64" class="pipe-box" stroke="#2563eb"/>
+  <text x="1259" y="170" text-anchor="middle" class="state-text">ProcessingPipeline</text>
+  <text x="1259" y="185" text-anchor="middle" class="code">steps: tuple[TransformStep]</text>
+  <text x="1259" y="200" text-anchor="middle" class="code">chain: step.apply(value)</text>
+
+  <line x1="1349" y1="180" x2="1379" y2="180" class="connector-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Stage 4: latest_values -->
+  <rect x="1381" y="155" width="130" height="50" class="pipe-box" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="1446" y="176" text-anchor="middle" class="state-text">latest_values</text>
+  <text x="1446" y="192" text-anchor="middle" class="code">dict[str, Any]</text>
+
+  <!-- Transform types table -->
+  <rect x="835" y="225" width="340" height="192" rx="8" fill="#f8fafc" stroke="#93c5fd"/>
+  <text x="1005" y="245" text-anchor="middle" class="label-bold">Available TransformSteps</text>
+  <line x1="840" y1="252" x2="1170" y2="252" stroke="#93c5fd"/>
+  <text x="845" y="268" class="code">ScaleTransform      value × magnitude + offset</text>
+  <text x="845" y="283" class="code">RoundTransform      round(value, decimals)</text>
+  <text x="845" y="298" class="code">ClampTransform      clamp(value, min, max)</text>
+  <text x="845" y="313" class="code">BoolTransform       value in true_values → bool</text>
+  <text x="845" y="328" class="code">EnumMapTransform    mapping[int(value)] → str</text>
+  <text x="845" y="343" class="code">BitExtractTransform (value >> offset) &amp; mask</text>
+  <text x="845" y="358" class="code">InverseTransform    (value - offset) / magnitude</text>
+  <text x="845" y="373" class="code">ByteExtractTransform  byte slice from registers</text>
+  <text x="845" y="388" class="code">MultiFieldExtract   named bit fields from int</text>
+  <text x="845" y="403" class="code">PowerFactorTransform  PF quadrant decode</text>
+
+  <!-- Events emitted -->
+  <rect x="1200" y="225" width="350" height="192" rx="8" fill="#faf5ff" stroke="#a855f7"/>
+  <text x="1375" y="245" text-anchor="middle" class="label-bold">Device Events (DeviceEventEmitter)</text>
+  <line x1="1205" y1="252" x2="1545" y2="252" stroke="#a855f7"/>
+  <text x="1210" y="270" class="code">EVENT_CONNECTED       "connected"</text>
+  <text x="1210" y="287" class="code">EVENT_DISCONNECTED    "disconnected"</text>
+  <text x="1210" y="304" class="code">EVENT_READ_COMPLETE   "read_complete"</text>
+  <text x="1210" y="321" class="code">EVENT_READ_ERROR      "read_error"</text>
+  <text x="1210" y="338" class="code">EVENT_VALUE_CHANGE    "value_change"</text>
+  <text x="1210" y="355" class="code">EVENT_ALARM_TRIGGERED "alarm_triggered"</text>
+  <text x="1210" y="372" class="code">EVENT_ALARM_CLEARED   "alarm_cleared"</text>
+  <text x="1210" y="389" class="code">EVENT_WRITE_COMPLETE  "write_complete"</text>
+  <text x="1210" y="406" class="code">EVENT_WRITE_ERROR     "write_error"</text>
+
+  <!-- Post-read sequence -->
+  <text x="835" y="440" class="label-bold">Post-read sequence in read_once():</text>
+  <rect x="835" y="448" width="130" height="34" class="pipe-box"/>
+  <text x="900" y="470" text-anchor="middle" class="code">_read_all()</text>
+  <line x1="965" y1="465" x2="990" y2="465" class="connector" marker-end="url(#arrow)"/>
+  <rect x="992" y="448" width="150" height="34" class="pipe-box"/>
+  <text x="1067" y="470" text-anchor="middle" class="code">_process_values()</text>
+  <line x1="1142" y1="465" x2="1167" y2="465" class="connector" marker-end="url(#arrow)"/>
+  <rect x="1169" y="448" width="155" height="34" class="pipe-box"/>
+  <text x="1247" y="470" text-anchor="middle" class="code">_evaluate_alarm()</text>
+  <line x1="1324" y1="465" x2="1349" y2="465" class="connector" marker-end="url(#arrow)"/>
+  <rect x="1351" y="448" width="160" height="34" class="event-box"/>
+  <text x="1431" y="470" text-anchor="middle" class="code">EVENT_READ_COMPLETE</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 3: Alarm State Machine -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="530" width="750" height="420" class="section-bg"/>
+  <text x="55" y="560" class="section-title">3. Alarm State Machine</text>
+  <text x="55" y="578" class="label">AlarmState.update(is_triggered) — hysteresis-based activation/clearing</text>
+
+  <!-- Normal State -->
+  <rect x="100" y="600" width="170" height="60" class="alarm-normal"/>
+  <text x="185" y="625" text-anchor="middle" class="state-text" fill="#166534" font-size="14">Normal</text>
+  <text x="185" y="646" text-anchor="middle" class="code" fill="#166534">is_active = False</text>
+
+  <!-- Active State -->
+  <rect x="450" y="600" width="170" height="60" class="alarm-active"/>
+  <text x="535" y="625" text-anchor="middle" class="state-text" fill="#991b1b" font-size="14">Active</text>
+  <text x="535" y="646" text-anchor="middle" class="code" fill="#991b1b">is_active = True</text>
+
+  <!-- Normal → Active arrow -->
+  <path d="M 270,618 L 448,618" class="connector-red" stroke-dasharray="none" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <text x="360" y="610" text-anchor="middle" class="label-bold" fill="#dc2626">activate_count ≥ activate_threshold</text>
+  <text x="360" y="598" text-anchor="middle" class="code" fill="#dc2626">→ AlarmEvent(TRIGGERED)</text>
+
+  <!-- Active → Normal arrow -->
+  <path d="M 450,650 L 270,650" class="connector-green" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="360" y="672" text-anchor="middle" class="label-bold" fill="#16a34a">clear_count ≥ clear_threshold</text>
+  <text x="360" y="684" text-anchor="middle" class="code" fill="#16a34a">→ AlarmEvent(CLEARED)</text>
+
+  <!-- Counting detail -->
+  <rect x="80" y="710" width="280" height="120" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+  <text x="220" y="730" text-anchor="middle" class="label-bold" fill="#166534">When is_triggered = True</text>
+  <text x="92" y="750" class="code">activate_count += 1</text>
+  <text x="92" y="765" class="code">clear_count = 0</text>
+  <text x="92" y="780" class="code">last_triggered_at = now</text>
+  <text x="92" y="800" class="code">if activate_count ≥ threshold:</text>
+  <text x="92" y="815" class="code">  → activate alarm</text>
+
+  <rect x="380" y="710" width="280" height="120" rx="8" fill="#fef2f2" stroke="#fca5a5"/>
+  <text x="520" y="730" text-anchor="middle" class="label-bold" fill="#991b1b">When is_triggered = False</text>
+  <text x="392" y="750" class="code">clear_count += 1</text>
+  <text x="392" y="765" class="code">activate_count = 0</text>
+  <text x="392" y="800" class="code">if clear_count ≥ threshold</text>
+  <text x="392" y="815" class="code">  &amp;&amp; is_active: → clear alarm</text>
+
+  <!-- Evaluator types -->
+  <rect x="80" y="848" width="620" height="88" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="390" y="870" text-anchor="middle" class="label-bold">Alarm Evaluators → evaluate(value) → dict[str, bool]</text>
+  <line x1="85" y1="878" x2="695" y2="878" stroke="#cbd5e1"/>
+
+  <rect x="95" y="890" width="180" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="185" y="912" text-anchor="middle" class="code">BitMaskAlarmEvaluator</text>
+  <text x="185" y="912" text-anchor="middle" class="label" dy="14">(value >> bit) &amp; 1</text>
+
+  <rect x="290" y="890" width="180" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="380" y="912" text-anchor="middle" class="code">ThresholdAlarmEvaluator</text>
+  <text x="380" y="912" text-anchor="middle" class="label" dy="14">operator(value, threshold)</text>
+
+  <rect x="485" y="890" width="180" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="575" y="912" text-anchor="middle" class="code">TableAlarmEvaluator</text>
+  <text x="575" y="912" text-anchor="middle" class="label" dy="14">exact value match</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 4: Write Flow -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="810" y="530" width="760" height="200" class="section-bg"/>
+  <text x="835" y="560" class="section-title">4. Write Flow</text>
+  <text x="835" y="578" class="label">ValidatedWriter.write() — validate → encode → write → verify</text>
+
+  <!-- Write pipeline -->
+  <rect x="835" y="598" width="110" height="44" class="write-box"/>
+  <text x="890" y="616" text-anchor="middle" class="state-text">Validate</text>
+  <text x="890" y="632" text-anchor="middle" class="code">validator.validate()</text>
+
+  <line x1="945" y1="620" x2="970" y2="620" class="connector" marker-end="url(#arrow)"/>
+
+  <rect x="972" y="598" width="110" height="44" class="write-box"/>
+  <text x="1027" y="616" text-anchor="middle" class="state-text">Encode</text>
+  <text x="1027" y="632" text-anchor="middle" class="code">data_type.encode()</text>
+
+  <line x1="1082" y1="620" x2="1107" y2="620" class="connector" marker-end="url(#arrow)"/>
+
+  <rect x="1109" y="598" width="130" height="44" class="write-box"/>
+  <text x="1174" y="616" text-anchor="middle" class="state-text">Write Device</text>
+  <text x="1174" y="632" text-anchor="middle" class="code">client.write_*()</text>
+
+  <line x1="1239" y1="620" x2="1264" y2="620" class="connector" marker-end="url(#arrow)"/>
+
+  <rect x="1266" y="598" width="110" height="44" class="write-box"/>
+  <text x="1321" y="616" text-anchor="middle" class="state-text">Verify</text>
+  <text x="1321" y="632" text-anchor="middle" class="code">if verify=True</text>
+
+  <line x1="1376" y1="620" x2="1401" y2="620" class="connector" marker-end="url(#arrow)"/>
+
+  <rect x="1403" y="598" width="140" height="44" class="event-box"/>
+  <text x="1473" y="616" text-anchor="middle" class="state-text" fill="#7c3aed">Events</text>
+  <text x="1473" y="632" text-anchor="middle" class="code" fill="#7c3aed">WRITE_COMPLETE/ERROR</text>
+
+  <!-- WriteStatus enum -->
+  <rect x="835" y="660" width="710" height="55" rx="8" fill="#fffbeb" stroke="#fde68a"/>
+  <text x="845" y="680" class="label-bold">WriteStatus:</text>
+  <rect x="935" y="667" width="85" height="22" rx="4" fill="#dcfce7" stroke="#86efac"/>
+  <text x="978" y="683" text-anchor="middle" class="code" fill="#166534">SUCCESS</text>
+  <rect x="1030" y="667" width="140" height="22" rx="4" fill="#fee2e2" stroke="#fca5a5"/>
+  <text x="1100" y="683" text-anchor="middle" class="code" fill="#991b1b">VALIDATION_FAILED</text>
+  <rect x="1180" y="667" width="110" height="22" rx="4" fill="#fee2e2" stroke="#fca5a5"/>
+  <text x="1235" y="683" text-anchor="middle" class="code" fill="#991b1b">WRITE_FAILED</text>
+  <rect x="1300" y="667" width="150" height="22" rx="4" fill="#fef3c7" stroke="#fde68a"/>
+  <text x="1375" y="683" text-anchor="middle" class="code" fill="#92400e">VERIFICATION_FAILED</text>
+
+  <!-- Function codes -->
+  <text x="845" y="705" class="label">FC5: write_single_coil · FC6: write_single_register · FC15: write_multiple_coils · FC16: write_multiple_registers</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 5: Transport Layer -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="810" y="750" width="760" height="200" class="section-bg"/>
+  <text x="835" y="780" class="section-title">5. Transport Layer</text>
+  <text x="835" y="798" class="label">PointGrouper → ReadScheduler → GroupReader — register merging &amp; scheduling</text>
+
+  <!-- Transport pipeline -->
+  <rect x="835" y="815" width="160" height="55" class="transport-box"/>
+  <text x="915" y="835" text-anchor="middle" class="state-text" fill="#166534">PointGrouper</text>
+  <text x="915" y="852" text-anchor="middle" class="code" fill="#166534">sort by (group, fc, addr)</text>
+  <text x="915" y="863" text-anchor="middle" class="code" fill="#166534">merge adjacent → ReadGroup</text>
+
+  <line x1="995" y1="842" x2="1020" y2="842" class="connector-green" marker-end="url(#arrow-green)"/>
+
+  <rect x="1022" y="815" width="200" height="55" class="transport-box"/>
+  <text x="1122" y="835" text-anchor="middle" class="state-text" fill="#166534">ReadScheduler</text>
+  <text x="1122" y="852" text-anchor="middle" class="code" fill="#166534">always_groups (every cycle)</text>
+  <text x="1122" y="863" text-anchor="middle" class="code" fill="#166534">rotating_groups[idx] (round-robin)</text>
+
+  <line x1="1222" y1="842" x2="1250" y2="842" class="connector-green" marker-end="url(#arrow-green)"/>
+
+  <rect x="1252" y="815" width="180" height="55" class="transport-box"/>
+  <text x="1342" y="835" text-anchor="middle" class="state-text" fill="#166534">GroupReader</text>
+  <text x="1342" y="852" text-anchor="middle" class="code" fill="#166534">Semaphore(max_concurrent)</text>
+  <text x="1342" y="863" text-anchor="middle" class="code" fill="#166534">read_many → decode → values</text>
+
+  <line x1="1432" y1="842" x2="1460" y2="842" class="connector-green" marker-end="url(#arrow-green)"/>
+
+  <rect x="1462" y="815" width="90" height="55" class="pipe-box" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="1507" y="840" text-anchor="middle" class="state-text">Values</text>
+  <text x="1507" y="858" text-anchor="middle" class="code">dict[str,Any]</text>
+
+  <!-- ReadGroup and limits -->
+  <rect x="835" y="885" width="710" height="50" rx="8" fill="#f0fdf4" stroke="#86efac"/>
+  <text x="845" y="903" class="label-bold" fill="#166534">ReadGroup (frozen):</text>
+  <text x="1000" y="903" class="code">function_code · start_address · count · points: tuple[ReadPoint, ...]</text>
+  <text x="845" y="920" class="label-bold" fill="#166534">Max register span:</text>
+  <text x="1000" y="920" class="code">FC1/FC2 (Coils): 2000 · FC3/FC4 (Registers): 125</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- SECTION 6: AlarmLevel and DeviceConfig -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <rect x="30" y="970" width="750" height="98" class="section-bg"/>
+  <text x="55" y="1000" class="section-title">6. Configuration</text>
+
+  <rect x="55" y="1012" width="340" height="42" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="65" y="1030" class="label-bold">AlarmLevel:</text>
+  <rect x="140" y="1018" width="55" height="22" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
+  <text x="168" y="1033" text-anchor="middle" class="code">INFO=1</text>
+  <rect x="200" y="1018" width="80" height="22" rx="4" fill="#fef3c7" stroke="#fde68a"/>
+  <text x="240" y="1033" text-anchor="middle" class="code">WARNING=2</text>
+  <rect x="285" y="1018" width="80" height="22" rx="4" fill="#fee2e2" stroke="#fca5a5"/>
+  <text x="325" y="1033" text-anchor="middle" class="code">ALARM=3</text>
+
+  <rect x="420" y="1012" width="340" height="42" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="430" y="1030" class="label-bold">DeviceConfig:</text>
+  <text x="515" y="1030" class="code">read_interval=1s  reconnect=5s  disconnect_threshold=5</text>
+  <text x="430" y="1046" class="code">unit_id=1  address_offset=0  max_concurrent_reads=1</text>
+
+</svg>

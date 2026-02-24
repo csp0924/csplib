@@ -14,6 +14,7 @@
 #   3. 註冊設備 (register_device)
 #   4. 直接呼叫 execute() 或透過 RedisCommandAdapter 接收外部指令
 
+from .adapters.config import CommandAdapterConfig
 from .adapters.redis import CommandResult, RedisCommandAdapter
 from .manager import WriteCommandManager
 from .repository import CommandRepository, MongoCommandRepository
@@ -32,6 +33,7 @@ __all__ = [
     # Manager
     "WriteCommandManager",
     # Adapters
+    "CommandAdapterConfig",
     "RedisCommandAdapter",
     "CommandResult",
 ]

@@ -47,6 +47,7 @@ EXCLUDED_DIRS = {
     "tests",
     "build",
     "dist",
+    "static",
 }
 
 

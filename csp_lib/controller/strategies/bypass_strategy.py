@@ -22,6 +22,11 @@ class BypassStrategy(Strategy):
     """
 
     @property
+    def suppress_heartbeat(self) -> bool:
+        """旁路模式暫停心跳，讓設備知道控制器已釋放控制權"""
+        return True
+
+    @property
     def execution_config(self) -> ExecutionConfig:
         # TRIGGERED 模式，不會主動執行
         return ExecutionConfig(mode=ExecutionMode.TRIGGERED, interval_seconds=1)

@@ -11,6 +11,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.equipment.device.config import DeviceConfig
 
 
@@ -59,7 +60,7 @@ class TestDeviceConfigValidation:
 
     def test_device_id_empty_raises(self):
         """device_id 為空應拋錯"""
-        with pytest.raises(ValueError, match="device_id 不可為空"):
+        with pytest.raises(ConfigurationError, match="device_id 不可為空"):
             DeviceConfig(device_id="")
 
     def test_unit_id_boundary_valid(self):
@@ -74,22 +75,22 @@ class TestDeviceConfigValidation:
 
     def test_unit_id_below_range_raises(self):
         """unit_id < 0 應拋錯"""
-        with pytest.raises(ValueError, match="unit_id 必須在 0-255 範圍內"):
+        with pytest.raises(ConfigurationError, match="unit_id 必須在 0-255 範圍內"):
             DeviceConfig(device_id="test", unit_id=-1)
 
     def test_unit_id_above_range_raises(self):
         """unit_id > 255 應拋錯"""
-        with pytest.raises(ValueError, match="unit_id 必須在 0-255 範圍內"):
+        with pytest.raises(ConfigurationError, match="unit_id 必須在 0-255 範圍內"):
             DeviceConfig(device_id="test", unit_id=256)
 
     def test_read_interval_zero_raises(self):
         """read_interval = 0 應拋錯"""
-        with pytest.raises(ValueError, match="read_interval 必須 > 0"):
+        with pytest.raises(ConfigurationError, match="read_interval 必須 > 0"):
             DeviceConfig(device_id="test", read_interval=0)
 
     def test_read_interval_negative_raises(self):
         """read_interval < 0 應拋錯"""
-        with pytest.raises(ValueError, match="read_interval 必須 > 0"):
+        with pytest.raises(ConfigurationError, match="read_interval 必須 > 0"):
             DeviceConfig(device_id="test", read_interval=-1.0)
 
     def test_read_interval_small_valid(self):
@@ -99,7 +100,7 @@ class TestDeviceConfigValidation:
 
     def test_disconnect_threshold_zero_raises(self):
         """disconnect_threshold = 0 應拋錯"""
-        with pytest.raises(ValueError, match="disconnect_threshold 必須 >= 1"):
+        with pytest.raises(ConfigurationError, match="disconnect_threshold 必須 >= 1"):
             DeviceConfig(device_id="test", disconnect_threshold=0)
 
     def test_disconnect_threshold_min_valid(self):
@@ -109,7 +110,7 @@ class TestDeviceConfigValidation:
 
     def test_max_concurrent_reads_negative_raises(self):
         """max_concurrent_reads < 0 應拋錯"""
-        with pytest.raises(ValueError, match="max_concurrent_reads 必須 >= 0"):
+        with pytest.raises(ConfigurationError, match="max_concurrent_reads 必須 >= 0"):
             DeviceConfig(device_id="test", max_concurrent_reads=-1)
 
     def test_max_concurrent_reads_zero_valid(self):

@@ -6,6 +6,7 @@
 #   - ModeManager: 模式註冊、優先權切換
 #   - ProtectionGuard: 保護規則鏈式套用
 
+from .cascading import CapacityConfig, CascadingStrategy
 from .mode import ModeDefinition, ModeManager, ModePriority
 from .protection import (
     ProtectionGuard,
@@ -18,6 +19,9 @@ from .protection import (
 )
 
 __all__ = [
+    # Cascading
+    "CapacityConfig",
+    "CascadingStrategy",
     # Mode
     "ModePriority",
     "ModeDefinition",

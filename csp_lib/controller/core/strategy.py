@@ -48,6 +48,15 @@ class Strategy(ABC):
         """
         pass
 
+    @property
+    def suppress_heartbeat(self) -> bool:
+        """
+        是否在此策略啟用期間暫停心跳寫入
+
+        預設 False。旁路模式等需要完全停止控制器輸出的策略應覆寫為 True。
+        """
+        return False
+
     async def on_activate(self) -> None:
         """
         策略啟用時呼叫 (可選覆寫)

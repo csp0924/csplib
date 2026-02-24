@@ -76,6 +76,35 @@ class TestPointMetadata:
         with pytest.raises(FrozenInstanceError):
             meta.unit = "A"
 
+    def test_value_map_default_none(self):
+        meta = PointMetadata()
+        assert meta.value_map is None
+
+    def test_with_value_map(self):
+        vmap = {0: "Stop", 1: "Run", 2: "Fault"}
+        meta = PointMetadata(value_map=vmap)
+        assert meta.value_map == {0: "Stop", 1: "Run", 2: "Fault"}
+
+    def test_with_all_fields(self):
+        meta = PointMetadata(unit="mode", description="Operating mode", value_map={0: "Off", 1: "On"})
+        assert meta.unit == "mode"
+        assert meta.description == "Operating mode"
+        assert meta.value_map == {0: "Off", 1: "On"}
+
+    def test_hashable_with_value_map(self):
+        meta = PointMetadata(value_map={0: "Stop", 1: "Run"})
+        assert isinstance(hash(meta), int)
+        # Same content should produce same hash
+        meta2 = PointMetadata(value_map={0: "Stop", 1: "Run"})
+        assert hash(meta) == hash(meta2)
+
+    def test_equal_with_value_map(self):
+        meta1 = PointMetadata(unit="kW", value_map={0: "Off", 1: "On"})
+        meta2 = PointMetadata(unit="kW", value_map={0: "Off", 1: "On"})
+        assert meta1 == meta2
+        meta3 = PointMetadata(unit="kW", value_map={0: "Off", 1: "On", 2: "Fault"})
+        assert meta1 != meta3
+
 
 class TestReadPoint:
     """ReadPoint 測試"""
@@ -111,6 +140,12 @@ class TestReadPoint:
         point = ReadPoint(name="current", address=0, data_type=Float32(), metadata=meta)
         assert point.metadata is not None
         assert point.metadata.unit == "A"
+
+    def test_with_metadata_value_map(self):
+        """ReadPoint with value_map metadata"""
+        meta = PointMetadata(unit="mode", value_map={0: "Stop", 1: "Run", 2: "Fault"})
+        point = ReadPoint(name="mode", address=0, data_type=UInt16(), metadata=meta)
+        assert point.metadata.value_map == {0: "Stop", 1: "Run", 2: "Fault"}
 
     def test_inherits_from_point_definition(self):
         point = ReadPoint(
@@ -149,6 +184,34 @@ class TestWritePoint:
         assert point.validator is not None
         assert point.validator.validate(50) is True
         assert point.validator.validate(150) is False
+
+    def test_with_metadata(self):
+        """WritePoint can have metadata"""
+        meta = PointMetadata(unit="kW", description="Power setpoint")
+        point = WritePoint(name="power", address=100, data_type=UInt16(), metadata=meta)
+        assert point.metadata is not None
+        assert point.metadata.unit == "kW"
+        assert point.metadata.description == "Power setpoint"
+
+    def test_with_metadata_value_map(self):
+        """WritePoint metadata with value_map"""
+        meta = PointMetadata(value_map={0: "Stop", 1: "Run"})
+        point = WritePoint(name="cmd", address=100, data_type=UInt16(), metadata=meta)
+        assert point.metadata.value_map == {0: "Stop", 1: "Run"}
+
+    def test_metadata_default_none(self):
+        """WritePoint metadata defaults to None"""
+        point = WritePoint(name="test", address=100, data_type=UInt16())
+        assert point.metadata is None
+
+    def test_with_validator_and_metadata(self):
+        """validator and metadata coexist"""
+        validator = RangeValidator(min_value=0, max_value=1)
+        meta = PointMetadata(value_map={0: "Off", 1: "On"})
+        point = WritePoint(name="switch", address=100, data_type=UInt16(), validator=validator, metadata=meta)
+        assert point.validator.validate(0) is True
+        assert point.validator.validate(2) is False
+        assert point.metadata.value_map == {0: "Off", 1: "On"}
 
     def test_inherits_from_point_definition(self):
         point = WritePoint(name="test", address=300, data_type=Float32())

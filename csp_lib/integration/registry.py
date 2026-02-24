@@ -15,6 +15,7 @@ from csp_lib.core import get_logger
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.capability import Capability
 
 logger = get_logger("csp_lib.integration.registry")
 
@@ -137,6 +138,19 @@ class DeviceRegistry:
     def all_traits(self) -> list[str]:
         """所有已知的 trait 標籤（排序）"""
         return sorted(self._trait_devices.keys())
+
+    # ---- Capability 查詢 ----
+
+    def get_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
+        """取得具備指定能力的所有設備（按 device_id 排序）"""
+        return sorted(
+            [d for d in self._devices.values() if d.has_capability(capability)],
+            key=lambda d: d.device_id,
+        )
+
+    def get_responsive_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
+        """取得具備指定能力且 responsive 的設備（按 device_id 排序）"""
+        return [d for d in self.get_devices_with_capability(capability) if d.is_responsive]
 
     def __len__(self) -> int:
         return len(self._devices)

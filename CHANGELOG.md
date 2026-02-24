@@ -7,6 +7,9 @@
 ## [0.3.3] - 2026-02-16
 
 ### Added
+- **GroupControllerManager** (`csp_lib.integration`): 多群組控制器管理
+  - GroupDefinition: 群組定義（ID、設備列表、配置）
+  - GroupControllerManager: 管理多個獨立 SystemController 實例，每組擁有獨立的模式管理、保護機制與策略執行
 - **integration 模組** (`csp_lib.integration`): Equipment-Controller 整合層
   - DeviceRegistry: Trait-based 設備查詢索引
   - ContextBuilder: 設備值 → StrategyContext 映射（支援多設備聚合）
@@ -23,6 +26,7 @@
   RedisCommandAdapter → AsyncLifecycleMixin）
 
 ### Tests
+- 新增 GroupControllerManager 測試（26 個測試：驗證、查詢、模式管理、獨立性、生命週期、健康檢查）
 - 新增 integration 模組測試（94 個測試）
 - 新增 AsyncLifecycleMixin 單元測試
 - 新增 core transform 綜合測試

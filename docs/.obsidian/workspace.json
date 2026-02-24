@@ -1,0 +1,205 @@
+{
+  "main": {
+    "id": "a53f067db99b1d18",
+    "type": "split",
+    "children": [
+      {
+        "id": "e91576c3ef2c21bb",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "e922dc8cb4302295",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Home.md",
+                "mode": "preview",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Home"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "7e6f5686b7fff309",
+    "type": "split",
+    "children": [
+      {
+        "id": "02d8b537570eb3bb",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "340a7667f935fe66",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "檔案瀏覽器"
+            }
+          },
+          {
+            "id": "efe68808ac08a816",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "tag:type/reference",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜尋"
+            }
+          },
+          {
+            "id": "c1eea8a013933da5",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "書籤"
+            }
+          }
+        ],
+        "currentTab": 1
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "a02d2a74a2565c0f",
+    "type": "split",
+    "children": [
+      {
+        "id": "c35ae0290bf96ce5",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b4db3abb691d98b9",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Home.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Home 的反向連結"
+            }
+          },
+          {
+            "id": "742efda097305c57",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Home.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Home 的對外連結"
+            }
+          },
+          {
+            "id": "fcf461a496544043",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "標籤"
+            }
+          },
+          {
+            "id": "4c9d33b777081621",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "所有屬性"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:開啟快速切換": false,
+      "graph:查看關聯圖": false,
+      "canvas:建立新畫布": false,
+      "templates:插入模板": false,
+      "command-palette:開啟命令面板": false,
+      "bases:建立新的 base": false
+    }
+  },
+  "active": "efe68808ac08a816",
+  "lastOpenFiles": [
+    "14-Reference/UML Diagrams.md",
+    "04_system_level.svg",
+    "03_controller_level.svg",
+    "02_strategies_level.svg",
+    "01_equipment_level.svg",
+    "architecture.svg",
+    "06-Integration/GroupControllerManager.md",
+    "06-Integration/SystemController.md",
+    "06-Integration/GridControlLoop.md",
+    "14-Reference/Version History.md",
+    "14-Reference/All Events.md",
+    "15-Development/CI-CD Pipeline.md",
+    "15-Development/Cython Build.md",
+    "15-Development/Linting.md",
+    "15-Development/Dev Setup.md",
+    "15-Development/Testing.md",
+    "04-Equipment/Aggregators.md",
+    "04-Equipment/WritePoint.md",
+    "15-Development/_MOC Development.md",
+    "12-Modbus-Server/Behaviors.md",
+    "12-Modbus-Server/Simulators.md",
+    "08-Storage/TLSConfig.md",
+    "08-Storage/RedisClient.md",
+    "14-Reference/Import Paths.md",
+    "12-Modbus-Server/MicrogridSimulator.md",
+    "08-Storage/RedisConfig.md",
+    "12-Modbus-Server/SimulationServer.md",
+    "08-Storage/MongoBatchUploader.md",
+    "08-Storage/MongoConfig.md",
+    "12-Modbus-Server/_MOC Modbus Server.md",
+    "14-Reference/All Config Classes.md"
+  ]
+}

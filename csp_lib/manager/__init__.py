@@ -11,6 +11,7 @@
 #   - unified: 統一設備管理器
 
 from .alarm import (
+    AlarmPersistenceConfig,
     AlarmPersistenceManager,
     AlarmRecord,
     AlarmRepository,
@@ -20,6 +21,7 @@ from .alarm import (
 )
 from .base import DeviceEventSubscriber
 from .command import (
+    CommandAdapterConfig,
     CommandRecord,
     CommandRepository,
     CommandSource,
@@ -34,13 +36,24 @@ from .device import (
     DeviceGroup,
     DeviceManager,
 )
-from .state import StateSyncManager
+from .schedule import (
+    MongoScheduleRepository,
+    ScheduleRepository,
+    ScheduleRule,
+    ScheduleService,
+    ScheduleServiceConfig,
+    ScheduleType,
+    StrategyFactory,
+    StrategyType,
+)
+from .state import StateSyncConfig, StateSyncManager
 from .unified import UnifiedConfig, UnifiedDeviceManager
 
 __all__ = [
     # Base
     "DeviceEventSubscriber",
     # Alarm
+    "AlarmPersistenceConfig",
     "AlarmPersistenceManager",
     "AlarmRepository",
     "MongoAlarmRepository",
@@ -48,6 +61,7 @@ __all__ = [
     "AlarmStatus",
     "AlarmType",
     # Command
+    "CommandAdapterConfig",
     "WriteCommandManager",
     "CommandRepository",
     "MongoCommandRepository",
@@ -61,7 +75,17 @@ __all__ = [
     # Device
     "DeviceGroup",
     "DeviceManager",
+    # Schedule
+    "MongoScheduleRepository",
+    "ScheduleRepository",
+    "ScheduleRule",
+    "ScheduleService",
+    "ScheduleServiceConfig",
+    "ScheduleType",
+    "StrategyFactory",
+    "StrategyType",
     # State
+    "StateSyncConfig",
     "StateSyncManager",
     # Unified
     "UnifiedConfig",

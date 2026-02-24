@@ -34,6 +34,8 @@ from .strategies import (
     StopStrategy,
 )
 from .system import (
+    CapacityConfig,
+    CascadingStrategy,
     ModeDefinition,
     ModeManager,
     ModePriority,
@@ -78,6 +80,8 @@ __all__ = [
     "ScheduleStrategy",
     "StopStrategy",
     # System
+    "CapacityConfig",
+    "CascadingStrategy",
     "ModePriority",
     "ModeDefinition",
     "ModeManager",

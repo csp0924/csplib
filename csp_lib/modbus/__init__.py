@@ -29,8 +29,12 @@
 # Clients
 from .clients import (
     AsyncModbusClientBase,
+    CircuitBreakerState,
+    ModbusRequestQueue,
     PymodbusRtuClient,
     PymodbusTcpClient,
+    RequestPriority,
+    RequestQueueConfig,
     SharedPymodbusTcpClient,
 )
 
@@ -51,10 +55,12 @@ from .enums import (
     RegisterOrder,
 )
 from .exceptions import (
+    ModbusCircuitBreakerError,
     ModbusConfigError,
     ModbusDecodeError,
     ModbusEncodeError,
     ModbusError,
+    ModbusQueueFullError,
 )
 
 # Types
@@ -79,6 +85,8 @@ __all__ = [
     "ModbusEncodeError",
     "ModbusDecodeError",
     "ModbusConfigError",
+    "ModbusCircuitBreakerError",
+    "ModbusQueueFullError",
     # Enums
     "ByteOrder",
     "RegisterOrder",
@@ -105,6 +113,11 @@ __all__ = [
     "ModbusString",
     # Codec
     "ModbusCodec",
+    # Queue
+    "RequestQueueConfig",
+    "RequestPriority",
+    "CircuitBreakerState",
+    "ModbusRequestQueue",
     # Clients
     "AsyncModbusClientBase",
     "PymodbusTcpClient",

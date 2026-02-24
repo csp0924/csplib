@@ -44,7 +44,12 @@ class MockDevice:
         self._client_connected = False
         self._device_responsive = False
         self._consecutive_failures = 0
+        self._should_attempt_read = True
         self.read_once = AsyncMock()
+
+    @property
+    def should_attempt_read(self) -> bool:
+        return self._should_attempt_read
 
 
 # ======================== Lifecycle Tests ========================
@@ -161,6 +166,104 @@ class TestDeviceGroupSequentialLoop:
         # 其他設備仍應被讀取
         assert group.devices[1].read_once.call_count >= 1
         assert group.devices[2].read_once.call_count >= 1
+
+
+# ======================== Skip Unresponsive Tests ========================
+
+
+class TestDeviceGroupSkipUnresponsive:
+    """跳過無回應設備測試"""
+
+    @pytest.fixture
+    def shared_client(self) -> MockClient:
+        return MockClient()
+
+    @pytest.fixture
+    def devices(self, shared_client: MockClient) -> list[MockDevice]:
+        return [
+            MockDevice("device_001", shared_client),
+            MockDevice("device_002", shared_client),
+            MockDevice("device_003", shared_client),
+        ]
+
+    @pytest.fixture
+    def group(self, devices: list[MockDevice]) -> DeviceGroup:
+        return DeviceGroup(devices=devices, interval=0.05)
+
+    @pytest.mark.asyncio
+    async def test_skip_unresponsive_device(self, group: DeviceGroup):
+        """should_attempt_read 為 False 的設備應被跳過"""
+        # 將第二個設備標記為不應嘗試讀取
+        group.devices[1]._should_attempt_read = False
+
+        group.start()
+        await asyncio.sleep(0.3)
+        await group.stop()
+
+        # 第一和第三個設備應被讀取
+        assert group.devices[0].read_once.call_count >= 1
+        assert group.devices[2].read_once.call_count >= 1
+        # 第二個設備不應被讀取
+        assert group.devices[1].read_once.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_all_unresponsive_skips_all(self, group: DeviceGroup):
+        """所有設備都無回應時應全部跳過"""
+        for device in group.devices:
+            device._should_attempt_read = False
+
+        group.start()
+        await asyncio.sleep(0.3)
+        await group.stop()
+
+        for device in group.devices:
+            assert device.read_once.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_resume_after_becoming_responsive(self, group: DeviceGroup):
+        """設備恢復 should_attempt_read 後應重新被讀取"""
+        # 初始：第二個設備不應嘗試讀取
+        group.devices[1]._should_attempt_read = False
+
+        group.start()
+        await asyncio.sleep(0.15)
+
+        # 確認被跳過
+        assert group.devices[1].read_once.call_count == 0
+
+        # 恢復
+        group.devices[1]._should_attempt_read = True
+        await asyncio.sleep(0.15)
+        await group.stop()
+
+        # 恢復後應被讀取
+        assert group.devices[1].read_once.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_other_devices_not_delayed_by_skip(self, group: DeviceGroup):
+        """跳過設備不應延遲其他設備的讀取"""
+        read_order: list[str] = []
+
+        def make_side_effect(device_id: str):
+            async def _read():
+                read_order.append(device_id)
+
+            return _read
+
+        for device in group.devices:
+            device.read_once = AsyncMock(side_effect=make_side_effect(device.device_id))
+
+        # 跳過中間設備
+        group.devices[1]._should_attempt_read = False
+
+        group.start()
+        await asyncio.sleep(0.3)
+        await group.stop()
+
+        # 讀取順序應只有 device_001 和 device_003
+        assert "device_002" not in read_order
+        assert "device_001" in read_order
+        assert "device_003" in read_order
 
 
 # ======================== Properties Tests ========================

@@ -1,0 +1,549 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 1520" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <!-- Layer gradients -->
+    <linearGradient id="layer7" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="layer6" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="layer5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0891b2"/>
+      <stop offset="100%" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="layer4" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="layer3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#d97706"/>
+      <stop offset="100%" stop-color="#b45309"/>
+    </linearGradient>
+    <linearGradient id="layer2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#b91c1c"/>
+    </linearGradient>
+    <linearGradient id="layer1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e11d48"/>
+      <stop offset="100%" stop-color="#be123c"/>
+    </linearGradient>
+    <linearGradient id="layerSide1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="layerSide2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="layerSide3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#db2777"/>
+    </linearGradient>
+    <!-- Module card style -->
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <filter id="glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="1520" fill="url(#bg)" rx="12"/>
+
+  <!-- Title -->
+  <text x="640" y="52" text-anchor="middle" fill="#f8fafc" font-size="28" font-weight="700" letter-spacing="1">csp_lib Architecture</text>
+  <text x="640" y="78" text-anchor="middle" fill="#94a3b8" font-size="14">Industrial Equipment Communication &amp; Energy Management Library</text>
+
+  <!-- ==================== LAYER 7: GUI (top) ==================== -->
+  <g transform="translate(40, 100)">
+    <rect width="560" height="145" rx="10" fill="url(#layer7)" opacity="0.15" stroke="#7c3aed" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#c4b5fd" font-size="11" font-weight="600" letter-spacing="2" text-transform="uppercase">LAYER 7 &#8212; PRESENTATION</text>
+    <text x="16" y="44" fill="#7c3aed" font-size="20" font-weight="700">gui</text>
+    <text x="60" y="44" fill="#a78bfa" font-size="12">FastAPI + WebSocket Dashboard</text>
+
+    <!-- GUI modules -->
+    <g transform="translate(16, 58)">
+      <rect width="155" height="72" rx="6" fill="#1e1b4b" stroke="#7c3aed" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#c4b5fd" font-size="11" font-weight="600">api/</text>
+      <text x="12" y="35" fill="#94a3b8" font-size="10">alarms.py</text>
+      <text x="12" y="47" fill="#94a3b8" font-size="10">commands.py</text>
+      <text x="12" y="59" fill="#94a3b8" font-size="10">devices.py  modes.py</text>
+    </g>
+    <g transform="translate(185, 58)">
+      <rect width="155" height="72" rx="6" fill="#1e1b4b" stroke="#7c3aed" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#c4b5fd" font-size="11" font-weight="600">ws/</text>
+      <text x="12" y="35" fill="#94a3b8" font-size="10">events.py</text>
+      <text x="12" y="47" fill="#94a3b8" font-size="10">manager.py</text>
+      <text x="12" y="59" fill="#94a3b8" font-size="10">router.py</text>
+    </g>
+    <g transform="translate(354, 58)">
+      <rect width="185" height="72" rx="6" fill="#1e1b4b" stroke="#7c3aed" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#c4b5fd" font-size="11" font-weight="600">app / config / deps</text>
+      <text x="12" y="35" fill="#94a3b8" font-size="10">app.py</text>
+      <text x="12" y="47" fill="#94a3b8" font-size="10">config.py</text>
+      <text x="12" y="59" fill="#94a3b8" font-size="10">dependencies.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 6: INTEGRATION ==================== -->
+  <g transform="translate(40, 260)">
+    <rect width="1200" height="145" rx="10" fill="url(#layer6)" opacity="0.15" stroke="#2563eb" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#93c5fd" font-size="11" font-weight="600" letter-spacing="2">LAYER 6 &#8212; INTEGRATION &amp; ORCHESTRATION</text>
+    <text x="16" y="44" fill="#2563eb" font-size="20" font-weight="700">integration</text>
+
+    <g transform="translate(16, 58)">
+      <rect width="150" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">system_controller</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Mode transitions</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">Strategy dispatch</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">System state mgmt</text>
+    </g>
+    <g transform="translate(180, 58)">
+      <rect width="140" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">command_router</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Command dispatch</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">Priority routing</text>
+    </g>
+    <g transform="translate(334, 58)">
+      <rect width="140" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">orchestrator</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Full system</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">orchestration</text>
+    </g>
+    <g transform="translate(488, 58)">
+      <rect width="130" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">loop</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Control loop</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">Periodic execution</text>
+    </g>
+    <g transform="translate(632, 58)">
+      <rect width="130" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">data_feed</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Real-time data</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">streaming</text>
+    </g>
+    <g transform="translate(776, 58)">
+      <rect width="130" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">context_builder</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Builds execution</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">context objects</text>
+    </g>
+    <g transform="translate(920, 58)">
+      <rect width="130" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">registry</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Service registry</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">DI container</text>
+    </g>
+    <g transform="translate(1064, 58)">
+      <rect width="120" height="72" rx="6" fill="#172554" stroke="#2563eb" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#93c5fd" font-size="11" font-weight="600">schema</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">Mapping config</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">Device schemas</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 5: MANAGER ==================== -->
+  <g transform="translate(40, 420)">
+    <rect width="1200" height="145" rx="10" fill="url(#layer5)" opacity="0.15" stroke="#0891b2" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#67e8f9" font-size="11" font-weight="600" letter-spacing="2">LAYER 5 &#8212; MANAGEMENT</text>
+    <text x="16" y="44" fill="#0891b2" font-size="20" font-weight="700">manager</text>
+
+    <g transform="translate(16, 58)">
+      <rect width="185" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">device/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">manager.py  &#8212; DeviceManager</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">group.py    &#8212; DeviceGroup</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">Lifecycle &amp; health</text>
+    </g>
+    <g transform="translate(215, 58)">
+      <rect width="190" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">alarm/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">persistence.py  &#8212; MongoDB</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">repository.py   &#8212; Query</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">schema.py  config.py</text>
+    </g>
+    <g transform="translate(419, 58)">
+      <rect width="200" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">command/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">manager.py   &#8212; WriteCommandMgr</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">adapters/redis.py  &#8212; Pub/Sub</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">repository.py  schema.py</text>
+    </g>
+    <g transform="translate(633, 58)">
+      <rect width="155" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">data/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">upload.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">DataUploadManager</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">Batch uploads</text>
+    </g>
+    <g transform="translate(802, 58)">
+      <rect width="155" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">state/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">sync.py  &#8212; StateSyncMgr</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">config.py</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">Redis state sync</text>
+    </g>
+    <g transform="translate(971, 58)">
+      <rect width="210" height="72" rx="6" fill="#164e63" stroke="#0891b2" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#67e8f9" font-size="11" font-weight="600">unified.py / base.py</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">UnifiedDeviceManager</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">Combines all managers</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">BaseManager mixin</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 4: CONTROLLER ==================== -->
+  <g transform="translate(40, 580)">
+    <rect width="1200" height="175" rx="10" fill="url(#layer4)" opacity="0.15" stroke="#059669" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#6ee7b7" font-size="11" font-weight="600" letter-spacing="2">LAYER 4 &#8212; CONTROL</text>
+    <text x="16" y="44" fill="#059669" font-size="20" font-weight="700">controller</text>
+
+    <!-- Core -->
+    <g transform="translate(16, 58)">
+      <rect width="200" height="100" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#6ee7b7" font-size="11" font-weight="600">core/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">strategy.py   &#8212; BaseStrategy</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">command.py    &#8212; Command pattern</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">context.py    &#8212; ExecutionContext</text>
+      <text x="12" y="72" fill="#94a3b8" font-size="10">execution.py  &#8212; Results</text>
+      <text x="12" y="88" fill="#6ee7b7" font-size="10">protocol.py   &#8212; Interfaces</text>
+    </g>
+
+    <!-- Strategies -->
+    <g transform="translate(230, 58)">
+      <rect width="390" height="100" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#6ee7b7" font-size="11" font-weight="600">strategies/</text>
+      <g transform="translate(12, 30)">
+        <rect width="82" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">PVSmooth</text>
+      </g>
+      <g transform="translate(100, 30)">
+        <rect width="52" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">PQ</text>
+      </g>
+      <g transform="translate(158, 30)">
+        <rect width="52" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">QV</text>
+      </g>
+      <g transform="translate(216, 30)">
+        <rect width="52" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">FP</text>
+      </g>
+      <g transform="translate(274, 30)">
+        <rect width="100" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">Schedule</text>
+      </g>
+      <g transform="translate(12, 58)">
+        <rect width="82" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">Island</text>
+      </g>
+      <g transform="translate(100, 58)">
+        <rect width="82" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">Bypass</text>
+      </g>
+      <g transform="translate(188, 58)">
+        <rect width="82" height="22" rx="4" fill="#059669" opacity="0.3"/>
+        <text x="8" y="15" fill="#a7f3d0" font-size="10">Stop</text>
+      </g>
+    </g>
+
+    <!-- Executor -->
+    <g transform="translate(634, 58)">
+      <rect width="175" height="100" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#6ee7b7" font-size="11" font-weight="600">executor/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">strategy_executor.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">compute_offloader.py</text>
+      <text x="12" y="68" fill="#6ee7b7" font-size="10">Orchestrates strategy</text>
+      <text x="12" y="80" fill="#6ee7b7" font-size="10">execution pipeline</text>
+    </g>
+
+    <!-- System -->
+    <g transform="translate(823, 58)">
+      <rect width="175" height="100" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#6ee7b7" font-size="11" font-weight="600">system/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">mode.py       &#8212; ModeManager</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">protection.py &#8212; Guards</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">cascading.py  &#8212; Cascade</text>
+    </g>
+
+    <!-- Services -->
+    <g transform="translate(1012, 58)">
+      <rect width="170" height="100" rx="6" fill="#064e3b" stroke="#059669" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#6ee7b7" font-size="11" font-weight="600">services/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">pv_data_service.py</text>
+      <text x="12" y="56" fill="#6ee7b7" font-size="10">PV forecasting &amp;</text>
+      <text x="12" y="68" fill="#6ee7b7" font-size="10">data aggregation</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 3: EQUIPMENT ==================== -->
+  <g transform="translate(40, 770)">
+    <rect width="1200" height="175" rx="10" fill="url(#layer3)" opacity="0.15" stroke="#d97706" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#fcd34d" font-size="11" font-weight="600" letter-spacing="2">LAYER 3 &#8212; EQUIPMENT ABSTRACTION</text>
+    <text x="16" y="44" fill="#d97706" font-size="20" font-weight="700">equipment</text>
+
+    <!-- Device -->
+    <g transform="translate(16, 58)">
+      <rect width="210" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">device/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">base.py        &#8212; AsyncModbusDevice</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">config.py      &#8212; DeviceConfig</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">events.py      &#8212; Event system</text>
+      <text x="12" y="72" fill="#94a3b8" font-size="10">event_bridge.py  mixins.py</text>
+    </g>
+
+    <!-- Core -->
+    <g transform="translate(240, 58)">
+      <rect width="200" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">core/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">point.py      &#8212; Read/WritePoint</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">transform.py  &#8212; Scale, BitExtract</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">pipeline.py   &#8212; ProcessingPipeline</text>
+    </g>
+
+    <!-- Alarm -->
+    <g transform="translate(454, 58)">
+      <rect width="200" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">alarm/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">definition.py  &#8212; AlarmDefinition</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">evaluator.py   &#8212; BitMask/Threshold</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">state.py       &#8212; AlarmStateManager</text>
+      <text x="12" y="76" fill="#fcd34d" font-size="10">Hysteresis &amp; debounce</text>
+    </g>
+
+    <!-- Transport -->
+    <g transform="translate(668, 58)">
+      <rect width="200" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">transport/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">reader.py     &#8212; GroupReader</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">writer.py     &#8212; Batch writes</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">scheduler.py  &#8212; ReadScheduler</text>
+      <text x="12" y="72" fill="#94a3b8" font-size="10">base.py  config.py</text>
+    </g>
+
+    <!-- Processing -->
+    <g transform="translate(882, 58)">
+      <rect width="155" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">processing/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">aggregator.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">can_parser.py</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">decoder.py</text>
+    </g>
+
+    <!-- Simulation -->
+    <g transform="translate(1051, 58)">
+      <rect width="130" height="100" rx="6" fill="#451a03" stroke="#d97706" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">simulation/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">curve.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">virtual_meter.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 2: MODBUS ==================== -->
+  <g transform="translate(40, 960)">
+    <rect width="580" height="145" rx="10" fill="url(#layer2)" opacity="0.15" stroke="#dc2626" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#fca5a5" font-size="11" font-weight="600" letter-spacing="2">LAYER 2 &#8212; PROTOCOL</text>
+    <text x="16" y="44" fill="#dc2626" font-size="20" font-weight="700">modbus</text>
+
+    <g transform="translate(16, 58)">
+      <rect width="155" height="72" rx="6" fill="#450a0a" stroke="#dc2626" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fca5a5" font-size="11" font-weight="600">clients/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">base.py   &#8212; BaseClient</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">client.py &#8212; TCP/RTU</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">compat.py &#8212; SharedClient</text>
+    </g>
+    <g transform="translate(185, 58)">
+      <rect width="190" height="72" rx="6" fill="#450a0a" stroke="#dc2626" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fca5a5" font-size="11" font-weight="600">types/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">numeric.py &#8212; Int16, Float32...</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">string.py  &#8212; ModbusString</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">dynamic.py  base.py</text>
+    </g>
+    <g transform="translate(389, 58)">
+      <rect width="175" height="72" rx="6" fill="#450a0a" stroke="#dc2626" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fca5a5" font-size="11" font-weight="600">codec / config / enums</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">codec.py       &#8212; Encode/Decode</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">config.py      &#8212; ConnectionConfig</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">enums.py  exceptions.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 1: MODBUS SERVER ==================== -->
+  <g transform="translate(640, 960)">
+    <rect width="600" height="145" rx="10" fill="url(#layer1)" opacity="0.15" stroke="#e11d48" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#fda4af" font-size="11" font-weight="600" letter-spacing="2">LAYER 2B &#8212; SIMULATION SERVER</text>
+    <text x="16" y="44" fill="#e11d48" font-size="20" font-weight="700">modbus_server</text>
+
+    <g transform="translate(16, 58)">
+      <rect width="155" height="72" rx="6" fill="#4c0519" stroke="#e11d48" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fda4af" font-size="11" font-weight="600">simulator/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">solar.py  generator.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">pcs.py    load.py</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">power_meter.py  base.py</text>
+    </g>
+    <g transform="translate(185, 58)">
+      <rect width="155" height="72" rx="6" fill="#4c0519" stroke="#e11d48" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fda4af" font-size="11" font-weight="600">behaviors/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">alarm.py   curve.py</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">noise.py   ramp.py</text>
+    </g>
+    <g transform="translate(354, 58)">
+      <rect width="230" height="72" rx="6" fill="#4c0519" stroke="#e11d48" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fda4af" font-size="11" font-weight="600">server / infra</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">server.py          &#8212; ModbusServer</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">register_block.py  &#8212; Register I/O</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">microgrid.py  config.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== LAYER 0: STORAGE ==================== -->
+  <g transform="translate(40, 1120)">
+    <rect width="380" height="130" rx="10" fill="#1e293b" opacity="0.6" stroke="#64748b" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#94a3b8" font-size="11" font-weight="600" letter-spacing="2">STORAGE</text>
+
+    <g transform="translate(16, 42)">
+      <rect width="165" height="72" rx="6" fill="#0f172a" stroke="#f59e0b" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fcd34d" font-size="11" font-weight="600">mongo/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">client.py   &#8212; AsyncMongo</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">writer.py   queue.py</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">uploader.py config.py</text>
+    </g>
+    <g transform="translate(195, 42)">
+      <rect width="165" height="72" rx="6" fill="#0f172a" stroke="#ef4444" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#fca5a5" font-size="11" font-weight="600">redis/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">client.py &#8212; AsyncRedis</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">config.py</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">Pub/Sub &amp; state sync</text>
+    </g>
+  </g>
+
+  <!-- ==================== SIDE: CORE ==================== -->
+  <g transform="translate(440, 1120)">
+    <rect width="240" height="130" rx="10" fill="#1e293b" opacity="0.6" stroke="#8b5cf6" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#c4b5fd" font-size="11" font-weight="600" letter-spacing="2">CORE FOUNDATION</text>
+
+    <g transform="translate(16, 42)">
+      <rect width="208" height="72" rx="6" fill="#0f172a" stroke="#8b5cf6" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#c4b5fd" font-size="11" font-weight="600">core/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">lifecycle.py &#8212; AsyncLifecycleMixin</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">errors.py    &#8212; Error hierarchy</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">health.py    &#8212; Health checks</text>
+    </g>
+  </g>
+
+  <!-- ==================== SIDE: CLUSTER ==================== -->
+  <g transform="translate(700, 1120)">
+    <rect width="260" height="130" rx="10" fill="#1e293b" opacity="0.6" stroke="#ec4899" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#f9a8d4" font-size="11" font-weight="600" letter-spacing="2">CLUSTER</text>
+
+    <g transform="translate(16, 42)">
+      <rect width="228" height="72" rx="6" fill="#0f172a" stroke="#ec4899" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="20" fill="#f9a8d4" font-size="11" font-weight="600">cluster/</text>
+      <text x="12" y="36" fill="#94a3b8" font-size="10">controller.py &#8212; ClusterController</text>
+      <text x="12" y="48" fill="#94a3b8" font-size="10">election.py   &#8212; Leader election</text>
+      <text x="12" y="60" fill="#94a3b8" font-size="10">sync.py  context.py  config.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== SIDE: CROSS-CUTTING ==================== -->
+  <g transform="translate(980, 1120)">
+    <rect width="260" height="130" rx="10" fill="#1e293b" opacity="0.6" stroke="#14b8a6" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#5eead4" font-size="11" font-weight="600" letter-spacing="2">CROSS-CUTTING</text>
+
+    <g transform="translate(16, 42)">
+      <rect width="105" height="72" rx="6" fill="#0f172a" stroke="#14b8a6" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="8" y="20" fill="#5eead4" font-size="10" font-weight="600">monitor/</text>
+      <text x="8" y="35" fill="#94a3b8" font-size="9">alarm.py</text>
+      <text x="8" y="46" fill="#94a3b8" font-size="9">collector.py</text>
+      <text x="8" y="57" fill="#94a3b8" font-size="9">publisher.py</text>
+      <text x="8" y="68" fill="#94a3b8" font-size="9">manager.py</text>
+    </g>
+    <g transform="translate(127, 42)">
+      <rect width="117" height="72" rx="6" fill="#0f172a" stroke="#14b8a6" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="8" y="20" fill="#5eead4" font-size="10" font-weight="600">notification/</text>
+      <text x="8" y="35" fill="#94a3b8" font-size="9">dispatcher.py</text>
+      <text x="8" y="46" fill="#94a3b8" font-size="9">base.py</text>
+      <text x="8" y="57" fill="#94a3b8" font-size="9">config.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== STATISTICS ==================== -->
+  <g transform="translate(40, 1265)">
+    <rect width="240" height="110" rx="10" fill="#1e293b" opacity="0.6" stroke="#a3e635" stroke-width="1.5" stroke-opacity="0.4"/>
+    <text x="16" y="26" fill="#bef264" font-size="11" font-weight="600" letter-spacing="2">STATISTICS</text>
+    <g transform="translate(16, 40)">
+      <rect width="208" height="56" rx="6" fill="#0f172a" stroke="#a3e635" stroke-width="1" opacity="0.9" filter="url(#shadow)"/>
+      <text x="12" y="18" fill="#bef264" font-size="11" font-weight="600">statistics/</text>
+      <text x="12" y="34" fill="#94a3b8" font-size="10">engine.py  tracker.py</text>
+      <text x="12" y="46" fill="#94a3b8" font-size="10">manager.py  config.py</text>
+    </g>
+  </g>
+
+  <!-- ==================== DEPENDENCY ARROWS ==================== -->
+  <!-- Layer connectors (vertical) -->
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <!-- GUI -> Integration -->
+  <line x1="320" y1="245" x2="320" y2="260" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Integration -> Manager -->
+  <line x1="640" y1="405" x2="640" y2="420" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Manager -> Controller -->
+  <line x1="640" y1="565" x2="640" y2="580" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Controller -> Equipment -->
+  <line x1="640" y1="755" x2="640" y2="770" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Equipment -> Modbus -->
+  <line x1="400" y1="945" x2="330" y2="960" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- Equipment -> Modbus Server -->
+  <line x1="880" y1="945" x2="940" y2="960" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arrowhead)"/>
+
+  <!-- ==================== LEGEND ==================== -->
+  <g transform="translate(340, 1280)">
+    <rect width="900" height="95" rx="10" fill="#0f172a" opacity="0.5" stroke="#334155" stroke-width="1"/>
+    <text x="20" y="24" fill="#e2e8f0" font-size="12" font-weight="600">Data Flow (top-down)</text>
+    <text x="20" y="44" fill="#94a3b8" font-size="11">GUI  -&gt;  Integration  -&gt;  Manager  -&gt;  Controller  -&gt;  Equipment  -&gt;  Modbus</text>
+
+    <text x="20" y="68" fill="#e2e8f0" font-size="12" font-weight="600">Key Patterns</text>
+    <text x="20" y="84" fill="#94a3b8" font-size="11">Async-first  |  Event-driven (on/emit)  |  Command pattern  |  Strategy pattern  |  Optional deps</text>
+
+    <!-- Python version badge -->
+    <g transform="translate(720, 10)">
+      <rect width="155" height="24" rx="12" fill="#059669" opacity="0.3" stroke="#059669" stroke-width="1"/>
+      <text x="14" y="16" fill="#6ee7b7" font-size="11" font-weight="600">Python 3.13+  |  asyncio</text>
+    </g>
+    <!-- Package badge -->
+    <g transform="translate(720, 42)">
+      <rect width="155" height="24" rx="12" fill="#2563eb" opacity="0.3" stroke="#2563eb" stroke-width="1"/>
+      <text x="14" y="16" fill="#93c5fd" font-size="11" font-weight="600">pkg: csp0924_lib</text>
+    </g>
+    <!-- Cython badge -->
+    <g transform="translate(720, 68)">
+      <rect width="155" height="24" rx="12" fill="#d97706" opacity="0.3" stroke="#d97706" stroke-width="1"/>
+      <text x="14" y="16" fill="#fcd34d" font-size="11" font-weight="600">Optional Cython build</text>
+    </g>
+  </g>
+
+  <!-- Version -->
+  <text x="640" y="1510" text-anchor="middle" fill="#475569" font-size="11">csp_lib v0.3.3 &#8212; Architecture Overview</text>
+</svg>

@@ -10,10 +10,13 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from datetime import datetime, timezone
-from typing import Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from csp_lib.controller.core import Command, ExecutionMode, Strategy, StrategyContext
 from csp_lib.core import get_logger
+
+if TYPE_CHECKING:
+    from .compute_offloader import ComputeOffloader
 
 logger = get_logger(__name__)
 
@@ -45,6 +48,7 @@ class StrategyExecutor:
         self,
         context_provider: Callable[[], StrategyContext],
         on_command: Optional[Callable[[Command], Awaitable[None]]] = None,
+        offloader: ComputeOffloader | None = None,
     ):
         """
         初始化執行器
@@ -52,9 +56,11 @@ class StrategyExecutor:
         Args:
             context_provider: 提供 StrategyContext 的 callable
             on_command: 命令產生後的回呼 (可選，用於將命令發送給 GridController)
+            offloader: 計算卸載器 (可選，將同步策略卸載到執行緒池)
         """
         self._context_provider = context_provider
         self._on_command = on_command
+        self._offloader = offloader
 
         self._strategy: Optional[Strategy] = None
         self._last_command = Command()
@@ -77,6 +83,14 @@ class StrategyExecutor:
     def is_running(self) -> bool:
         """是否正在執行"""
         return self._is_running
+
+    def set_context_provider(self, provider: Callable[[], StrategyContext]) -> None:
+        """設定 context provider（供叢集模式切換用）"""
+        self._context_provider = provider
+
+    def set_on_command(self, callback: Callable[[Command], Awaitable[None]] | None) -> None:
+        """設定 on_command 回呼（供叢集模式切換用）"""
+        self._on_command = callback
 
     async def set_strategy(self, strategy: Optional[Strategy]) -> None:
         """
@@ -147,6 +161,8 @@ class StrategyExecutor:
         """停止執行迴圈"""
         self._stop_event.set()
         self._trigger_event.set()  # 解除等待
+        if self._offloader is not None:
+            self._offloader.shutdown()
 
     async def execute_once(self) -> Command:
         """
@@ -205,8 +221,11 @@ class StrategyExecutor:
                 base_context, last_command=self._last_command, current_time=datetime.now(timezone.utc)
             )
 
-            # 執行策略
-            command = self._strategy.execute(context)
+            # 執行策略（可選卸載到執行緒池）
+            if self._offloader is not None:
+                command = await self._offloader.run(self._strategy.execute, context)
+            else:
+                command = self._strategy.execute(context)
             self._last_command = command
 
             logger.debug(f"策略執行完成: {self._strategy} -> {command}")

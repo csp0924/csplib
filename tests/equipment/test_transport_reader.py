@@ -14,12 +14,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from csp_lib.core.errors import CommunicationError, ConfigurationError
 from csp_lib.equipment.core.pipeline import pipeline
 from csp_lib.equipment.core.point import ReadPoint
 from csp_lib.equipment.core.transform import ClampTransform, RoundTransform, ScaleTransform
 from csp_lib.equipment.transport.base import ReadGroup
 from csp_lib.equipment.transport.reader import GroupReader
 from csp_lib.modbus import Float32, FunctionCode, Int32, UInt16
+from csp_lib.modbus.exceptions import ModbusError
 
 # ======================== Mock Fixtures ========================
 
@@ -174,7 +176,7 @@ class TestGroupReaderDecode:
         assert result == {"value": 0x1234}
 
     def test_decode_insufficient_data_raises(self, reader_for_decode: GroupReader):
-        """資料不足應拋錯"""
+        """資料不足應拋 CommunicationError"""
         point = ReadPoint(name="value", address=100, data_type=Int32())
         group = ReadGroup(
             function_code=3,
@@ -184,7 +186,7 @@ class TestGroupReaderDecode:
         )
         raw_data = [0x0001]  # 只有 1 個，需要 2 個
 
-        with pytest.raises(ValueError, match="資料不足"):
+        with pytest.raises(CommunicationError, match="資料不足"):
             reader_for_decode._decode(group, raw_data)
 
     def test_decode_empty_group(self, reader_for_decode: GroupReader):
@@ -358,10 +360,10 @@ class TestGroupReaderRead:
 
     @pytest.mark.asyncio
     async def test_read_unsupported_function_code_raises(self, reader: GroupReader):
-        """不支援的 FunctionCode 應拋錯"""
+        """不支援的 FunctionCode 應拋 ConfigurationError"""
         group = ReadGroup(function_code=99, start_address=0, count=1, points=())
 
-        with pytest.raises(ValueError, match="不支援"):
+        with pytest.raises(ConfigurationError, match="不支援"):
             await reader.read(group)
 
 
@@ -437,10 +439,18 @@ class TestGroupReaderExceptions:
     """異常處理測試"""
 
     @pytest.mark.asyncio
-    async def test_read_exception_propagates(self, reader: GroupReader, mock_client: AsyncMock):
-        """Modbus 通訊錯誤應傳播"""
+    async def test_modbus_error_wrapped_as_communication_error(self, reader: GroupReader, mock_client: AsyncMock):
+        """ModbusError 應被包裝為 CommunicationError"""
         group = ReadGroup(function_code=3, start_address=0, count=1, points=())
-        mock_client.read_holding_registers.side_effect = Exception("連線逾時")
+        mock_client.read_holding_registers.side_effect = ModbusError("連線逾時")
 
-        with pytest.raises(Exception, match="連線逾時"):
+        with pytest.raises(CommunicationError, match="連線逾時") as exc_info:
             await reader.read(group)
+
+        # 確認 exception chaining
+        assert isinstance(exc_info.value.__cause__, ModbusError)
+
+    def test_init_invalid_max_concurrent_reads(self, mock_client: AsyncMock):
+        """max_concurrent_reads < 1 應拋 ConfigurationError"""
+        with pytest.raises(ConfigurationError, match="max_concurrent_reads"):
+            GroupReader(client=mock_client, max_concurrent_reads=0)

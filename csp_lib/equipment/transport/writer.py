@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.modbus.enums import FunctionCode
+from csp_lib.modbus.exceptions import ModbusError
 
 if TYPE_CHECKING:
     from csp_lib.equipment.core.point import WritePoint
@@ -92,6 +94,12 @@ class ValidatedWriter:
                 value=value,
             )
 
+        except ConfigurationError:
+            raise
+        except ModbusError as e:
+            return WriteResult(
+                status=WriteStatus.WRITE_FAILED, point_name=point.name, value=value, error_message=str(e)
+            )
         except Exception as e:
             return WriteResult(
                 status=WriteStatus.WRITE_FAILED, point_name=point.name, value=value, error_message=str(e)
@@ -109,7 +117,7 @@ class ValidatedWriter:
 
         if function_code in [FunctionCode.WRITE_SINGLE_COIL, FunctionCode.WRITE_SINGLE_REGISTER]:
             if len(registers) != 1:
-                raise ValueError(f"Function Code {function_code} 只能寫入一個暫存器")
+                raise ConfigurationError(f"Function Code {function_code} 只能寫入一個暫存器")
             if function_code == FunctionCode.WRITE_SINGLE_COIL:
                 return bool(registers[0])
             return registers[0]
@@ -139,7 +147,7 @@ class ValidatedWriter:
                     address=address, values=[int(encoded)], unit_id=self._unit_id
                 )
         else:
-            raise ValueError(f"不支援的 Function Code: {function_code}")
+            raise ConfigurationError(f"不支援的 Function Code: {function_code}")
 
     async def _read_back(self, point: WritePoint) -> Any:
         """讀回驗證"""
@@ -153,7 +161,7 @@ class ValidatedWriter:
         elif function_code in [FunctionCode.WRITE_SINGLE_REGISTER, FunctionCode.WRITE_MULTIPLE_REGISTERS]:
             data = await self._client.read_holding_registers(address, register_count, self._unit_id)
         else:
-            raise ValueError(f"不支援的 Function Code: {function_code}")
+            raise ConfigurationError(f"不支援的 Function Code: {function_code}")
 
         return point.data_type.decode(
             registers=list(data),

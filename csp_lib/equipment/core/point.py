@@ -60,10 +60,15 @@ class PointMetadata:
     Attributes:
         unit: 單位（如 kW, V, A）
         description: 描述
+        value_map: 數值對應名稱（如 {0: "Stop", 1: "Run", 2: "Fault"}）
     """
 
     unit: str | None = None
     description: str | None = None
+    value_map: dict[int, str] | None = None
+
+    def __hash__(self) -> int:
+        return hash((self.unit, self.description, tuple(self.value_map.items()) if self.value_map else None))
 
 
 @dataclass(frozen=True)
@@ -95,9 +100,11 @@ class WritePoint(PointDefinition):
 
     Attributes:
         validator: 值驗證器（可選）
+        metadata: 點位元資料（可選）
     """
 
     validator: ValueValidator | None = None
+    metadata: PointMetadata | None = None
 
     def __post_init__(self) -> None:
         if self.function_code is None:

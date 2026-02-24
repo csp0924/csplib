@@ -85,12 +85,22 @@ class TestUnifiedConfig:
         assert config.command_repository is None
         assert config.mongo_uploader is None
         assert config.redis_client is None
+        assert config.notification_dispatcher is None
 
     def test_partial_config(self, mock_alarm_repo):
         """部分配置應可正常建立"""
         config = UnifiedConfig(alarm_repository=mock_alarm_repo)
         assert config.alarm_repository is mock_alarm_repo
         assert config.command_repository is None
+
+    def test_config_with_notification_dispatcher(self, mock_alarm_repo):
+        """配置 notification_dispatcher 應可正常建立"""
+        mock_dispatcher = MagicMock()
+        config = UnifiedConfig(
+            alarm_repository=mock_alarm_repo,
+            notification_dispatcher=mock_dispatcher,
+        )
+        assert config.notification_dispatcher is mock_dispatcher
 
 
 # ================ 測試：初始化 ================
@@ -116,7 +126,20 @@ class TestUnifiedDeviceManagerInit:
         config = UnifiedConfig(alarm_repository=mock_alarm_repo)
         manager = UnifiedDeviceManager(config)
 
-        mock_apm.assert_called_once_with(mock_alarm_repo)
+        mock_apm.assert_called_once_with(mock_alarm_repo, None)
+        assert manager.alarm_manager is not None
+
+    @patch("csp_lib.manager.unified.AlarmPersistenceManager")
+    def test_alarm_repo_with_dispatcher(self, mock_apm, mock_alarm_repo):
+        """配置 notification_dispatcher 時應傳遞給 AlarmPersistenceManager"""
+        mock_dispatcher = MagicMock()
+        config = UnifiedConfig(
+            alarm_repository=mock_alarm_repo,
+            notification_dispatcher=mock_dispatcher,
+        )
+        manager = UnifiedDeviceManager(config)
+
+        mock_apm.assert_called_once_with(mock_alarm_repo, mock_dispatcher)
         assert manager.alarm_manager is not None
 
     @patch("csp_lib.manager.unified.WriteCommandManager")

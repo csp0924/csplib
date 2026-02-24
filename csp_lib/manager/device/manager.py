@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Sequence
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.core.errors import DeviceConnectionError
 
 from .group import DeviceGroup
 
@@ -116,7 +117,7 @@ class DeviceManager(AsyncLifecycleMixin):
         for device in self._standalone:
             try:
                 await device.connect()
-            except Exception as e:
+            except DeviceConnectionError as e:
                 logger.warning(f"設備 {device.device_id} 連線失敗，將在背景重試: {e}")
             # 無論連線成功與否都啟動 read_loop（會在背景自動重連）
             await device.start()
@@ -126,7 +127,7 @@ class DeviceManager(AsyncLifecycleMixin):
             for device in group.devices:
                 try:
                     await device.connect()
-                except Exception as e:
+                except DeviceConnectionError as e:
                     logger.warning(f"設備 {device.device_id} 連線失敗，將在背景重試: {e}")
                 await device._emitter.start()
             group.start()
@@ -156,7 +157,7 @@ class DeviceManager(AsyncLifecycleMixin):
                 await device._emitter.stop()
                 try:
                     await device.disconnect()
-                except Exception as e:
+                except DeviceConnectionError as e:
                     logger.debug(f"設備 {device.device_id} 斷線失敗（已忽略）: {e}")
 
         logger.info("DeviceManager 已停止")

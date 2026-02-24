@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from csp_lib.core import get_logger
+from csp_lib.core.errors import DeviceError
 
 from .registry import DeviceRegistry
 from .schema import CommandMapping
@@ -82,18 +83,24 @@ class CommandRouter:
         if device is None:
             logger.warning(f"Device '{device_id}' not found in registry, skipping write.")
             return
+        if device.is_protected:
+            logger.warning(f"Device '{device_id}' is protected (alarm), skipping write.")
+            return
         if not device.is_responsive:
             logger.warning(f"Device '{device_id}' is not responsive, skipping write.")
             return
         await self._safe_write(device, point_name, value)
 
     async def _write_trait_broadcast(self, trait: str, point_name: str, value: object) -> None:
-        """trait 模式：廣播寫入所有 responsive 設備"""
+        """trait 模式：廣播寫入所有 responsive 且非 protected 設備"""
         devices = self._registry.get_responsive_devices_by_trait(trait)
         if not devices:
             logger.warning(f"No responsive devices found for trait '{trait}'.")
             return
         for device in devices:
+            if device.is_protected:
+                logger.warning(f"Device '{device.device_id}' is protected (alarm), skipping broadcast write.")
+                continue
             await self._safe_write(device, point_name, value)
 
     @staticmethod
@@ -101,5 +108,5 @@ class CommandRouter:
         """安全寫入：單一設備失敗不中斷其他設備"""
         try:
             await device.write(point_name, value)
-        except Exception:
+        except DeviceError:
             logger.warning(f"Write failed for device '{device.device_id}' point '{point_name}'.", exc_info=True)

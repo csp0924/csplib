@@ -6,7 +6,9 @@
 #   ModbusError (基礎)
 #   ├── ModbusEncodeError (編碼錯誤)
 #   ├── ModbusDecodeError (解碼錯誤)
-#   └── ModbusConfigError (設定錯誤)
+#   ├── ModbusConfigError (設定錯誤)
+#   ├── ModbusCircuitBreakerError (斷路器開啟)
+#   └── ModbusQueueFullError (請求佇列已滿)
 
 from __future__ import annotations
 
@@ -49,9 +51,35 @@ class ModbusConfigError(ModbusError):
     """
 
 
+class ModbusCircuitBreakerError(ModbusError):
+    """
+    斷路器開啟錯誤
+
+    當某個 unit_id 的斷路器處於 OPEN 狀態時拋出，
+    表示該設備連續失敗次數已達閾值，暫時停止請求。
+
+    Attributes:
+        unit_id: 觸發斷路器的設備位址
+    """
+
+    def __init__(self, unit_id: int, message: str | None = None) -> None:
+        self.unit_id = unit_id
+        super().__init__(message or f"Circuit breaker is open for unit_id={unit_id}")
+
+
+class ModbusQueueFullError(ModbusError):
+    """
+    請求佇列已滿錯誤
+
+    當請求佇列達到 max_queue_size 上限時拋出。
+    """
+
+
 __all__ = [
     "ModbusError",
     "ModbusEncodeError",
     "ModbusDecodeError",
     "ModbusConfigError",
+    "ModbusCircuitBreakerError",
+    "ModbusQueueFullError",
 ]

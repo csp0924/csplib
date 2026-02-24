@@ -1,0 +1,40 @@
+/* csp_lib Obsidian Custom Styles */
+
+/* Frontmatter tag pills */
+.tag {
+  background-color: var(--background-modifier-hover);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.85em;
+}
+
+/* MOC page styling */
+.markdown-preview-view h1 {
+  border-bottom: 2px solid var(--interactive-accent);
+  padding-bottom: 0.3em;
+}
+
+/* Code block improvements */
+.markdown-preview-view pre {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+/* Table styling */
+.markdown-preview-view table {
+  width: 100%;
+}
+
+.markdown-preview-view th {
+  background-color: var(--background-modifier-hover);
+}
+
+/* Callout customization for layer indicators */
+.callout[data-callout="layer"] {
+  --callout-color: 64, 160, 255;
+  --callout-icon: layers;
+}
+
+.callout[data-callout="source"] {
+  --callout-color: 150, 150, 150;
+  --callout-icon: file-code;
+}

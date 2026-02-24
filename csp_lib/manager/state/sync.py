@@ -27,6 +27,7 @@ from csp_lib.equipment.device.events import (
     ReadCompletePayload,
 )
 from csp_lib.manager.base import DeviceEventSubscriber
+from csp_lib.manager.state.config import StateSyncConfig
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
@@ -72,13 +73,10 @@ class StateSyncManager(DeviceEventSubscriber):
         ```
     """
 
-    # 預設 TTL（秒）
-    DEFAULT_STATE_TTL = 60
-    DEFAULT_ONLINE_TTL = 60
-
     def __init__(
         self,
         redis_client: RedisClient,
+        config: StateSyncConfig | None = None,
         state_ttl: int | None = None,
         online_ttl: int | None = None,
     ) -> None:
@@ -87,13 +85,20 @@ class StateSyncManager(DeviceEventSubscriber):
 
         Args:
             redis_client: Redis 客戶端實例
-            state_ttl: 設備狀態 Hash TTL（秒），None 表示使用預設值
-            online_ttl: 連線狀態 TTL（秒），None 表示使用預設值
+            config: 狀態同步配置（優先使用）
+            state_ttl: 設備狀態 Hash TTL（秒），config 為 None 時使用
+            online_ttl: 連線狀態 TTL（秒），config 為 None 時使用
         """
         super().__init__()
         self._redis = redis_client
-        self._state_ttl = state_ttl if state_ttl is not None else self.DEFAULT_STATE_TTL
-        self._online_ttl = online_ttl if online_ttl is not None else self.DEFAULT_ONLINE_TTL
+        if config is None:
+            config = StateSyncConfig(
+                state_ttl=state_ttl if state_ttl is not None else 60,
+                online_ttl=online_ttl if online_ttl is not None else 60,
+            )
+        self._config = config
+        self._state_ttl = self._config.state_ttl
+        self._online_ttl = self._config.online_ttl
 
     # ================ Key/Channel 命名 ================
 

@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from csp_lib.core.errors import ConfigurationError
+
 
 @dataclass(frozen=True)
 class DeviceConfig:
@@ -32,15 +34,15 @@ class DeviceConfig:
 
     def __post_init__(self) -> None:
         if not self.device_id:
-            raise ValueError("device_id 不可為空")
+            raise ConfigurationError("device_id 不可為空")
         if not 0 <= self.unit_id <= 255:
-            raise ValueError(f"unit_id 必須在 0-255 範圍內，收到: {self.unit_id}")
+            raise ConfigurationError(f"unit_id 必須在 0-255 範圍內，收到: {self.unit_id}")
         if self.read_interval <= 0:
-            raise ValueError(f"read_interval 必須 > 0，收到: {self.read_interval}")
+            raise ConfigurationError(f"read_interval 必須 > 0，收到: {self.read_interval}")
         if self.disconnect_threshold < 1:
-            raise ValueError(f"disconnect_threshold 必須 >= 1，收到: {self.disconnect_threshold}")
+            raise ConfigurationError(f"disconnect_threshold 必須 >= 1，收到: {self.disconnect_threshold}")
         if self.max_concurrent_reads < 0:
-            raise ValueError(f"max_concurrent_reads 必須 >= 0，收到: {self.max_concurrent_reads}")
+            raise ConfigurationError(f"max_concurrent_reads 必須 >= 0，收到: {self.max_concurrent_reads}")
 
 
 __all__ = [

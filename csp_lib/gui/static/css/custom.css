@@ -1,0 +1,65 @@
+/* CSP Control Panel - Custom Styles */
+
+:root {
+    --status-healthy: #10b981;
+    --status-degraded: #f59e0b;
+    --status-unhealthy: #ef4444;
+    --alarm-info: #3b82f6;
+    --alarm-warning: #f59e0b;
+    --alarm-alarm: #ef4444;
+}
+
+[x-cloak] { display: none !important; }
+
+body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc;
+}
+
+.tab-active {
+    border-bottom: 2px solid #3b82f6;
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.status-healthy { background-color: #d1fae5; color: #065f46; }
+.status-degraded { background-color: #fef3c7; color: #92400e; }
+.status-unhealthy { background-color: #fee2e2; color: #991b1b; }
+
+.alarm-INFO { background-color: #dbeafe; color: #1e40af; }
+.alarm-WARNING { background-color: #fef3c7; color: #92400e; }
+.alarm-ALARM { background-color: #fee2e2; color: #991b1b; }
+
+.device-card {
+    transition: box-shadow 0.2s;
+}
+.device-card:hover {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.ws-connected { color: var(--status-healthy); }
+.ws-disconnected { color: var(--status-unhealthy); }
+
+.tree-node {
+    padding-left: 1.5rem;
+    border-left: 1px solid #e5e7eb;
+}
+
+.value-flash {
+    animation: flash 0.5s ease-out;
+}
+
+@keyframes flash {
+    0% { background-color: #fef3c7; }
+    100% { background-color: transparent; }
+}

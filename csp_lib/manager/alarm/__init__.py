@@ -13,11 +13,14 @@
 #   3. 呼叫 subscribe() 訂閱 AsyncModbusDevice 事件
 #   4. 告警將自動持久化至資料庫
 
+from .config import AlarmPersistenceConfig
 from .persistence import AlarmPersistenceManager
 from .repository import AlarmRepository, MongoAlarmRepository
 from .schema import AlarmRecord, AlarmStatus, AlarmType
 
 __all__ = [
+    # Config
+    "AlarmPersistenceConfig",
     # Persistence
     "AlarmPersistenceManager",
     # Repository

@@ -689,6 +689,129 @@ class TestAsyncModbusDevicePerformance:
 # ======================== Edge Cases ========================
 
 
+# ======================== Should Attempt Read Tests ========================
+
+
+class TestAsyncModbusDeviceShouldAttemptRead:
+    """should_attempt_read 屬性測試"""
+
+    def test_initially_true(self, device: AsyncModbusDevice):
+        """初始狀態應為 True（尚未失敗過）"""
+        assert device.should_attempt_read is True
+
+    @pytest.mark.asyncio
+    async def test_true_when_responsive(self, device: AsyncModbusDevice):
+        """設備回應中應為 True"""
+        await device.connect()
+        try:
+            assert device._device_responsive is True
+            assert device.should_attempt_read is True
+        finally:
+            await device.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_false_after_threshold_failures(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """超過失敗閾值後應為 False（在重試間隔內）"""
+        mock_client.read_holding_registers.side_effect = Exception("Timeout")
+
+        await device.connect()
+        try:
+            # 讀取直到超過 disconnect_threshold (3)
+            for _ in range(4):
+                try:
+                    await device.read_once()
+                except Exception:
+                    pass
+
+            assert device._device_responsive is False
+            assert device._last_failure_time is not None
+            assert device.should_attempt_read is False
+        finally:
+            await device.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_true_after_reconnect_interval(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """超過重試間隔後應恢復為 True"""
+        mock_client.read_holding_registers.side_effect = Exception("Timeout")
+
+        await device.connect()
+        try:
+            for _ in range(4):
+                try:
+                    await device.read_once()
+                except Exception:
+                    pass
+
+            assert device.should_attempt_read is False
+
+            # 模擬時間流逝（將 _last_failure_time 設為過去）
+            device._last_failure_time = time.monotonic() - device._config.reconnect_interval - 1
+            assert device.should_attempt_read is True
+        finally:
+            await device.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_reset_on_successful_read(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """成功讀取後 _last_failure_time 應重置"""
+        mock_client.read_holding_registers.side_effect = Exception("Timeout")
+
+        await device.connect()
+        try:
+            # 製造失敗
+            try:
+                await device.read_once()
+            except Exception:
+                pass
+
+            assert device._last_failure_time is not None
+
+            # 恢復正常
+            mock_client.read_holding_registers.side_effect = None
+            mock_client.read_holding_registers.return_value = [100, 200, 300]
+            await device.read_once()
+
+            assert device._last_failure_time is None
+        finally:
+            await device.disconnect()
+
+    @pytest.mark.asyncio
+    async def test_reset_on_disconnect(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """正常斷線後 _last_failure_time 應重置"""
+        mock_client.read_holding_registers.side_effect = Exception("Timeout")
+
+        await device.connect()
+        try:
+            await device.read_once()
+        except Exception:
+            pass
+
+        assert device._last_failure_time is not None
+
+        await device.disconnect()
+        assert device._last_failure_time is None
+
+    @pytest.mark.asyncio
+    async def test_failure_time_set_on_reconnect_failure(self, device: AsyncModbusDevice, mock_client: AsyncMock):
+        """重連失敗也應設置 _last_failure_time"""
+        await device.connect()
+        # 模擬斷線狀態
+        device._client_connected = False
+        device._device_responsive = False
+
+        mock_client.connect.side_effect = Exception("Connection refused")
+
+        try:
+            await device.read_once()
+        except Exception:
+            pass
+
+        assert device._last_failure_time is not None
+        assert device.should_attempt_read is False
+
+
+# ======================== Edge Cases ========================
+
+
 class TestAsyncModbusDeviceEdgeCases:
     """邊界條件測試"""
 
