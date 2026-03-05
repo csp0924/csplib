@@ -15,6 +15,7 @@ Cross-Platform Wheel Builder for csp_lib
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -84,7 +85,29 @@ def check_requirements() -> bool:
     # 檢查 C 編譯器
     if sys.platform == "win32":
         # Windows 需要 Visual Studio Build Tools
-        print("Note: Windows requires Visual Studio Build Tools")
+        if shutil.which("cl"):
+            print("[OK] MSVC compiler (cl.exe) found")
+        else:
+            # 嘗試透過 vswhere 檢查 Visual Studio 是否安裝
+            vswhere = Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+            if vswhere.exists():
+                vs_result = subprocess.run(
+                    [str(vswhere), "-latest", "-property", "installationPath"],
+                    capture_output=True,
+                    text=True,
+                )
+                if vs_result.returncode == 0 and vs_result.stdout.strip():
+                    print(f"[OK] Visual Studio found: {vs_result.stdout.strip()}")
+                    print("     Note: Run from 'Developer Command Prompt' to ensure cl.exe is in PATH")
+                else:
+                    print("[X] Visual Studio Build Tools not found.")
+                    print("    Install from: https://visualstudio.microsoft.com/visual-cpp-build-tools/")
+                    print("    Select 'Desktop development with C++' workload")
+                    return False
+            else:
+                print("[WARN] Cannot verify MSVC installation (cl.exe not in PATH, vswhere not found)")
+                print("       Ensure Visual Studio Build Tools is installed with C++ workload")
+                print("       Download: https://visualstudio.microsoft.com/visual-cpp-build-tools/")
     else:
         # Linux/macOS 檢查 gcc
         result = subprocess.run(["gcc", "--version"], capture_output=True, text=True)
@@ -148,10 +171,18 @@ def build_extensions(build_dir: Path) -> bool:
     )
 
     if result.returncode != 0:
-        print("Build failed!")
+        print("Build failed! Check the compiler output above for details.")
         return False
 
-    print("Build completed!\n")
+    # 驗證編譯產物
+    package_dir = build_dir / PACKAGE_NAME
+    ext = ".pyd" if sys.platform == "win32" else ".so"
+    compiled_files = list(package_dir.rglob(f"*{ext}"))
+    if not compiled_files:
+        print(f"Build failed! No compiled extensions ({ext}) found after build.")
+        return False
+
+    print(f"Build completed! ({len(compiled_files)} extensions compiled)\n")
     return True
 
 
@@ -283,7 +314,7 @@ def build_wheel(build_dir: Path) -> bool:
     )
 
     if result.returncode != 0:
-        print("Wheel build failed!")
+        print("Wheel build failed! Check the build output above for details.")
         return False
 
     print("Wheel build completed!\n")

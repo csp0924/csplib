@@ -28,6 +28,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --group dev
@@ -54,14 +56,23 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Install dependencies
         run: uv sync --group dev --all-extras
         env:
           SKIP_CYTHON: "1"
 
-      - name: Run tests
-        run: uv run pytest tests/ -v
+      - name: Run tests with coverage
+        run: uv run pytest tests/ -v --cov=csp_lib --cov-report=xml
+
+      - name: Upload coverage report
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
 
   # ============ 建置 Windows Wheel ============
   build_wheels:
@@ -77,6 +88,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install build dependencies
         run: |
@@ -105,6 +117,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: "pip"
 
       - name: Install build dependencies
         run: |
@@ -117,7 +130,8 @@ jobs:
       - name: Convert to manylinux
         run: |
           # 使用 auditwheel 將 linux_x86_64 轉換為 manylinux
-          auditwheel repair dist/*.whl -w wheelhouse --plat manylinux_2_28_x86_64
+          # manylinux_2_28 要求 glibc 2.28+，適用於 Python 3.13+ 的目標環境
+          auditwheel repair dist/*.whl -w wheelhouse --plat manylinux_2_28_x86_64 --only-plat
           # 移除原始的 linux_x86_64 wheel
           rm dist/*.whl
           # 移動 manylinux wheel 到 dist
@@ -146,6 +160,16 @@ jobs:
           path: dist/
           pattern: wheel-*
           merge-multiple: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Verify wheels
+        run: |
+          pip install twine
+          twine check dist/*.whl
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

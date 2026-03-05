@@ -139,6 +139,8 @@ else:
         },
         # 不產生 annotation HTML
         annotate=False,
+        # 平行編譯以加速建置
+        nthreads=os.cpu_count() or 1,
     )
 
 # 必須在 module level 呼叫 setup()，build backend 需要這個
