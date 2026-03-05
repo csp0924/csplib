@@ -29,5 +29,8 @@
       "Bash(SKIP_CYTHON=1 uv run:*)",
       "Bash(PYTHONUTF8=1 uv run:*)"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" : "1"
   }
 }

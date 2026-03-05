@@ -255,6 +255,22 @@ class RedisCommandAdapter(AsyncLifecycleMixin):
 
         logger.info(f"執行 action: {command.device_id}.{command.action}, value={command.value}")
         result = await device.execute_action(command.action, **command.params)
+        if result.status != WriteStatus.SUCCESS:
+            logger.error(
+                f"Action 執行失敗: device_id={command.device_id}, action={command.action}, value={command.value}, error={result.error_message}"
+            )
+            return CommandResult(
+                command_id=command.command_id,
+                device_id=command.device_id,
+                status=result.status.value,
+                action=command.action,
+                value=command.value,
+                error_message=result.error_message,
+            )
+        else:
+            logger.info(
+                f"Action 執行成功: device_id={command.device_id}, action={command.action}, value={command.value}"
+            )
 
         return CommandResult(
             command_id=command.command_id,

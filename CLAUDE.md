@@ -90,9 +90,6 @@ GitHub Actions (`.github/workflows/build-wheels.yml`):
 - **Tag (v\*)**: lint + test + build wheels (Windows/manylinux) + publish to PyPI
 - `SKIP_CYTHON=1` to skip Cython in test environments
 
-## Agent Teams
-
-Multi-agent orchestration system for automated collaborative development workflows.
 
 ### Agent Roles
 
@@ -106,15 +103,6 @@ Multi-agent orchestration system for automated collaborative development workflo
 | Doc Organizer | [`.claude/agents/doc-organizer.md`](.claude/agents/doc-organizer.md) | 文件維護、CHANGELOG、API docs | `docs/**/*.md`, `CHANGELOG.md`, `README.md` |
 | Performance Optimizer | [`.claude/agents/performance-optimizer.md`](.claude/agents/performance-optimizer.md) | 效能剖析、基準測試、Cython 相容 | `csp_lib/**/*.py` (coordinated) |
 
-### Team Templates
-
-| Team | File | Purpose | Pipeline |
-|------|------|---------|----------|
-| Feature Team | [`.claude/teams/feature-team.md`](.claude/teams/feature-team.md) | 完整功能開發 | driver → architect → implementer → [test ∥ security] → perf → docs |
-| Review Team | [`.claude/teams/review-team.md`](.claude/teams/review-team.md) | 程式碼審查 QA | [security ∥ test ∥ perf] → architect → docs |
-| Release Team | [`.claude/teams/release-team.md`](.claude/teams/release-team.md) | 發版準備 | [test ∥ security] → [driver ∥ docs] → implementer (bump) |
-| Audit-Demo Team | [`.claude/teams/audit-demo-team.md`](.claude/teams/audit-demo-team.md) | 品質稽核 + 整合示範 | [test ∥ architect ∥ security] → architect → implementer → test → [implementer ∥ docs] |
-| Hierarchical Control Team | [`.claude/teams/hierarchical-control-team.md`](.claude/teams/hierarchical-control-team.md) | 階層控制架構設計 | [architect ∥ security ∥ perf] → [architect ∥ driver] → [implementer ∥ test] → docs |
 
 ### File Ownership Boundary (防衝突)
 

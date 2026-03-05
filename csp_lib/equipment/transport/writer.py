@@ -10,9 +10,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from csp_lib.core import get_logger
 from csp_lib.core.errors import ConfigurationError
 from csp_lib.modbus.enums import FunctionCode
 from csp_lib.modbus.exceptions import ModbusError
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from csp_lib.equipment.core.point import WritePoint
@@ -64,26 +67,40 @@ class ValidatedWriter:
         Returns:
             寫入結果
         """
+        logger.debug(f"[ValidatedWriter] write 開始: point={point.name}, value={value}, type={type(value).__name__}, verify={verify}")
+
         if point.validator and not point.validator.validate(value):
+            msg = point.validator.get_error_message(value)
+            logger.warning(f"[ValidatedWriter] 驗證失敗: point={point.name}, value={value}, error={msg}")
             return WriteResult(
                 status=WriteStatus.VALIDATION_FAILED,
                 point_name=point.name,
                 value=value,
-                error_message=point.validator.get_error_message(value),
+                error_message=msg,
             )
 
         try:
             # 寫入前管線轉換（使用者值 → 暫存器值）
             if point.pipeline is not None:
+                original = value
                 value = point.pipeline.process(value)
+                logger.debug(f"[ValidatedWriter] pipeline 轉換: {original} → {value}")
+
+            # pipeline 回傳 float 但整數型態需要 int，自動轉換整數值
+            if isinstance(value, float) and value.is_integer():
+                value = int(value)
+                logger.debug(f"[ValidatedWriter] float→int 自動轉換: {value}")
 
             # 編碼
             encoded = self._encode(point, value)
+            logger.debug(f"[ValidatedWriter] 編碼完成: point={point.name}, encoded={encoded}, fc={point.function_code}")
 
             await self._write_to_device(point, encoded)
+            logger.debug(f"[ValidatedWriter] 寫入設備完成: point={point.name}")
 
             if verify:
                 read_value = await self._read_back(point)
+                logger.debug(f"[ValidatedWriter] 讀回驗證: point={point.name}, 期望={value}, 實際={read_value}")
                 if not self._values_equal(value, read_value):
                     return WriteResult(
                         status=WriteStatus.VERIFICATION_FAILED,
@@ -92,6 +109,7 @@ class ValidatedWriter:
                         error_message=f"寫入後讀回值不匹配: 期望 {value}, 實際 {read_value}",
                     )
 
+            logger.info(f"[ValidatedWriter] write 成功: point={point.name}, value={value}")
             return WriteResult(
                 status=WriteStatus.SUCCESS,
                 point_name=point.name,
@@ -101,10 +119,12 @@ class ValidatedWriter:
         except ConfigurationError:
             raise
         except ModbusError as e:
+            logger.error(f"[ValidatedWriter] Modbus 錯誤: point={point.name}, error={e}")
             return WriteResult(
                 status=WriteStatus.WRITE_FAILED, point_name=point.name, value=value, error_message=str(e)
             )
         except Exception as e:
+            logger.error(f"[ValidatedWriter] 未預期錯誤: point={point.name}, error={e}")
             return WriteResult(
                 status=WriteStatus.WRITE_FAILED, point_name=point.name, value=value, error_message=str(e)
             )
@@ -131,6 +151,11 @@ class ValidatedWriter:
         """寫入暫存器"""
         address = point.address + self._address_offset
         function_code = point.function_code
+        logger.debug(
+            f"[ValidatedWriter] _write_to_device: point={point.name}, address={address} "
+            f"(base={point.address}+offset={self._address_offset}), fc={function_code}, "
+            f"unit_id={self._unit_id}, encoded={encoded}"
+        )
 
         if function_code == FunctionCode.WRITE_SINGLE_COIL:
             await self._client.write_single_coil(address=address, value=bool(encoded), unit_id=self._unit_id)

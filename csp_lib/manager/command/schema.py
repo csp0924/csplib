@@ -140,7 +140,11 @@ class ActionCommand:
     @property
     def params(self) -> dict[str, Any]:
         """動作參數（用於傳遞給 execute_action）"""
-        return self.value if isinstance(self.value, dict) else {}
+        if isinstance(self.value, dict):
+            return self.value
+        if self.value is not None:
+            return {"value": self.value}
+        return {}
 
     def to_dict(self) -> dict[str, Any]:
         """轉為字典"""

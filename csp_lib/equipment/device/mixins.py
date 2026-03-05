@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from csp_lib.core import get_logger
 from csp_lib.equipment.alarm import AlarmEventType, AlarmState
 from csp_lib.equipment.transport import WriteResult, WriteStatus
+
+logger = get_logger(__name__)
 
 from .events import (
     EVENT_ALARM_CLEARED,
@@ -81,8 +84,12 @@ class WriteMixin:
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""
+        device_id = getattr(self._config, "device_id", "?")
+        logger.debug(f"[{device_id}] write 開始: point={name}, value={value}, verify={verify}")
+
         point = self._write_points.get(name)
         if point is None:
+            logger.warning(f"[{device_id}] write 點位不存在: {name}, 可用點位: {list(self._write_points.keys())}")
             return WriteResult(
                 status=WriteStatus.VALIDATION_FAILED,
                 point_name=name,
@@ -90,7 +97,9 @@ class WriteMixin:
                 error_message=f"寫入點位 {name} 失敗，點位不存在",
             )
 
+        logger.debug(f"[{device_id}] write 點位已找到: {name}, address={point.address}, fc={point.function_code}")
         result = await self._writer.write(point=point, value=value, verify=verify)
+        logger.debug(f"[{device_id}] write 結果: point={name}, status={result.status.value}, error={result.error_message or 'none'}")
 
         if result.status == WriteStatus.SUCCESS:
             self._emitter.emit(
@@ -123,8 +132,12 @@ class WriteMixin:
         Raises:
             不拋出異常，所有錯誤透過 WriteResult 回傳
         """
+        device_id = getattr(self._config, "device_id", "?")
+        logger.debug(f"[{device_id}] execute_action 開始: action={action}, params={params}")
+
         method_name = self.ACTIONS.get(action)
         if method_name is None:
+            logger.warning(f"[{device_id}] action 不支援: {action}, 可用: {list(self.ACTIONS.keys())}")
             return WriteResult(
                 status=WriteStatus.VALIDATION_FAILED,
                 point_name=action,
@@ -134,6 +147,7 @@ class WriteMixin:
 
         method = getattr(self, method_name, None)
         if method is None or not callable(method):
+            logger.error(f"[{device_id}] action 方法不存在: action={action} → method={method_name}")
             return WriteResult(
                 status=WriteStatus.VALIDATION_FAILED,
                 point_name=action,
@@ -142,13 +156,25 @@ class WriteMixin:
             )
 
         try:
-            await method(**params)
+            logger.debug(f"[{device_id}] 呼叫方法: {method_name}(**{params})")
+            result = await method(**params)
+
+            # 若方法回傳 WriteResult，直接使用其狀態
+            if isinstance(result, WriteResult):
+                if result.status != WriteStatus.SUCCESS:
+                    logger.error(f"[{device_id}] execute_action 失敗: action={action}, status={result.status.value}, error={result.error_message}")
+                else:
+                    logger.info(f"[{device_id}] execute_action 成功: action={action}")
+                return result
+
+            logger.info(f"[{device_id}] execute_action 成功: action={action}")
             return WriteResult(
                 status=WriteStatus.SUCCESS,
                 point_name=action,
                 value=params if params else None,
             )
         except Exception as e:
+            logger.error(f"[{device_id}] execute_action 失敗: action={action}, error={e}")
             return WriteResult(
                 status=WriteStatus.WRITE_FAILED,
                 point_name=action,
