@@ -135,9 +135,9 @@ class TestActionCommand:
         assert cmd.params == {}
 
     def test_params_property_with_non_dict(self):
-        """params property 當 value 非 dict 時回傳空 dict"""
+        """params property 當 value 非 dict 時包裝為 {'value': value}"""
         cmd = ActionCommand(device_id="d", action="start", value=123)  # type: ignore
-        assert cmd.params == {}
+        assert cmd.params == {"value": 123}
 
     def test_to_dict(self):
         """to_dict 應正確序列化"""
