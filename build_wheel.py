@@ -32,7 +32,7 @@ BUILD_DIRS = ["build", "dist", f"{PACKAGE_NAME}.egg-info", "csp0924_lib.egg-info
 GENERATED_EXTENSIONS = {".c", ".pyd", ".so", ".html"}
 
 # 建置時需要複製的檔案
-BUILD_FILES = ["setup.py", "pyproject.toml", "README.md"]
+BUILD_FILES = ["setup.py", "pyproject.toml", "README.md", "LICENSE"]
 
 
 # =============== Clean Functions ===============

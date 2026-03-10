@@ -31,6 +31,9 @@ monitor = [
 ]
 cluster = [
     "etcetra>=0.1.0",
+    "grpcio>=1.64.0",
+    "grpcio-tools>=1.64.0",
+    "protobuf>=4.25.3",
 ]
 gui = [
     "fastapi>=0.115.0",
