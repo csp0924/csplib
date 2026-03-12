@@ -26,7 +26,12 @@ from .events import (
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
-    pass
+    from csp_lib.equipment.alarm import AlarmEvaluator, AlarmStateManager
+    from csp_lib.equipment.core import WritePoint
+    from csp_lib.equipment.transport import ValidatedWriter
+
+    from .config import DeviceConfig
+    from .events import DeviceEventEmitter
 
 
 class AlarmMixin:
@@ -37,6 +42,13 @@ class AlarmMixin:
 
     依賴：self._alarm_manager, self._alarm_evaluators, self._emitter, self._config
     """
+
+    if TYPE_CHECKING:
+        _alarm_manager: AlarmStateManager
+        _config: DeviceConfig
+        _emitter: DeviceEventEmitter
+        _alarm_evaluators: list[AlarmEvaluator]
+        _disabled_points: set[str]
 
     @property
     def is_protected(self) -> bool:
@@ -83,6 +95,14 @@ class WriteMixin:
 
     依賴：self._write_points, self._writer, self._emitter, self._config, self.ACTIONS
     """
+
+    if TYPE_CHECKING:
+        _config: DeviceConfig
+        _emitter: DeviceEventEmitter
+        _write_points: dict[str, WritePoint]
+        _writer: ValidatedWriter
+        _disabled_points: set[str]
+        ACTIONS: dict[str, str]
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""

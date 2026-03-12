@@ -57,7 +57,7 @@ def discover_strategies(group: str = ENTRY_POINT_GROUP) -> list[StrategyDescript
     """
     eps = entry_points()
     # Python 3.12+ returns a SelectableGroups, use .select()
-    selected = eps.select(group=group) if hasattr(eps, "select") else eps.get(group, [])
+    selected = eps.select(group=group) if hasattr(eps, "select") else eps.get(group, [])  # type: ignore[attr-defined]
 
     descriptors: list[StrategyDescriptor] = []
     for ep in selected:

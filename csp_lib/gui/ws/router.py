@@ -12,7 +12,7 @@ router = APIRouter()
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     """WebSocket endpoint for real-time event streaming."""
-    manager = get_ws_manager(ws)
+    manager = get_ws_manager(ws)  # type: ignore[arg-type]  # WebSocket has same .app.state as Request
     await manager.connect(ws)
     try:
         while True:

@@ -162,7 +162,7 @@ class ValidatedWriter:
         if function_code == FunctionCode.WRITE_SINGLE_COIL:
             await self._client.write_single_coil(address=address, value=bool(encoded), unit_id=self._unit_id)
         elif function_code == FunctionCode.WRITE_SINGLE_REGISTER:
-            await self._client.write_single_register(address=address, value=int(encoded), unit_id=self._unit_id)
+            await self._client.write_single_register(address=address, value=int(encoded), unit_id=self._unit_id)  # type: ignore[arg-type]
         elif function_code == FunctionCode.WRITE_MULTIPLE_COILS:
             if isinstance(encoded, list):
                 await self._client.write_multiple_coils(
@@ -190,7 +190,7 @@ class ValidatedWriter:
         if function_code in [FunctionCode.WRITE_SINGLE_COIL, FunctionCode.WRITE_MULTIPLE_COILS]:
             data = await self._client.read_coils(address, register_count, self._unit_id)
         elif function_code in [FunctionCode.WRITE_SINGLE_REGISTER, FunctionCode.WRITE_MULTIPLE_REGISTERS]:
-            data = await self._client.read_holding_registers(address, register_count, self._unit_id)
+            data = await self._client.read_holding_registers(address, register_count, self._unit_id)  # type: ignore[assignment]
         else:
             raise ConfigurationError(f"不支援的 Function Code: {function_code}")
 

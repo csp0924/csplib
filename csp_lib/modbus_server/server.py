@@ -148,7 +148,7 @@ class SimulationServer(AsyncLifecycleMixin):
         for unit_id, sim in self._simulators.items():
             data_block = _create_datablock(sim)
             # ModbusDeviceContext: di=discrete inputs, co=coils, hr=holding registers, ir=input registers
-            slave_ctx = _ModbusDeviceContext(
+            slave_ctx = _ModbusDeviceContext(  # type: ignore[misc]
                 di=data_block,
                 co=data_block,
                 hr=data_block,
@@ -159,11 +159,11 @@ class SimulationServer(AsyncLifecycleMixin):
         if not slaves:
             logger.warning("No simulators registered, server will start with empty context")
             data_block = _create_empty_pymodbus_block()
-            slaves[0] = _ModbusDeviceContext(di=data_block, co=data_block, hr=data_block, ir=data_block)
+            slaves[0] = _ModbusDeviceContext(di=data_block, co=data_block, hr=data_block, ir=data_block)  # type: ignore[misc]
 
-        server_ctx = _ModbusServerContext(devices=slaves, single=False)
+        server_ctx = _ModbusServerContext(devices=slaves, single=False)  # type: ignore[misc]
 
-        self._server = _ModbusTcpServer(
+        self._server = _ModbusTcpServer(  # type: ignore[misc]
             context=server_ctx,
             address=(self._config.host, self._config.port),
         )
@@ -233,7 +233,7 @@ def _create_datablock(simulator: BaseDeviceSimulator) -> Any:
     _ensure_pymodbus_imported()
     wrapper = SimulatorDataBlock(simulator)
 
-    class _PymodbusDataBlock(_BaseModbusDataBlock):
+    class _PymodbusDataBlock(_BaseModbusDataBlock):  # type: ignore[valid-type, misc]
         def __init__(self):
             self.address = 0
             self.default_value = 0
@@ -255,7 +255,7 @@ def _create_empty_pymodbus_block() -> Any:
     """建立空的 pymodbus DataBlock"""
     _ensure_pymodbus_imported()
 
-    class _EmptyBlock(_BaseModbusDataBlock):
+    class _EmptyBlock(_BaseModbusDataBlock):  # type: ignore[valid-type, misc]
         def __init__(self):
             self.address = 0
             self.default_value = 0

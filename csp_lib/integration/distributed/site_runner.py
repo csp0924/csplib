@@ -80,7 +80,7 @@ class RemoteSiteRunner(AsyncLifecycleMixin):
                     manager=command_manager,
                     config=adapter_config,
                 )
-            await self._adapter.start()
+                await self._adapter.start()
 
         logger.info(f"RemoteSiteRunner started: site={self._config.site_id}")
 

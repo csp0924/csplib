@@ -200,7 +200,7 @@ class SystemController(AsyncLifecycleMixin):
 
         # 自動停機狀態（向後相容）
         self._auto_stop_active = False
-        self._cached_context = None
+        self._cached_context: StrategyContext | None = None
 
         # 事件驅動 Override
         self._event_overrides: list[EventDrivenOverride] = []
@@ -480,7 +480,7 @@ class SystemController(AsyncLifecycleMixin):
         if len(base) == 1:
             return base[0]
         if self._config.capacity_kva is not None:
-            return CascadingStrategy(
+            return CascadingStrategy(  # type: ignore[return-value]  # CascadingStrategy is structurally compatible
                 base,
                 CapacityConfig(self._config.capacity_kva),
                 ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1),

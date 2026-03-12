@@ -131,7 +131,7 @@ def _reconfigure_logger() -> None:
 
     _root_logger.add(
         sys.stderr,
-        filter=_filter,
+        filter=_filter,  # type: ignore[arg-type]  # loguru Record vs dict
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
@@ -181,7 +181,7 @@ def configure_logging(
 
     _root_logger.add(
         sys.stderr,
-        filter=_filter,
+        filter=_filter,  # type: ignore[arg-type]  # loguru Record vs dict
         format=format_string or default_format,
     )
 

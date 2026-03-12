@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 

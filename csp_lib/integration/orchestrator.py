@@ -284,7 +284,7 @@ class SystemCommandOrchestrator:
                 if result.status.value in ("success", "write_success"):
                     device_results[device_id] = "success"
                 else:
-                    error = result.error_message or result.status.value
+                    error = result.error_message or result.status.value  # type: ignore[union-attr]
                     device_results[device_id] = error
                     has_failure = True
                     failure_messages.append(f"{device_id}: {error}")

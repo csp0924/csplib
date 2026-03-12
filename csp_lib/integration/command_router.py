@@ -244,7 +244,7 @@ class CommandRouter:
         """套用 transform 後寫入 capability 解析的點位"""
         if mapping.transform is not None:
             try:
-                value = mapping.transform(value)
+                value = mapping.transform(value)  # type: ignore[arg-type]
             except Exception:
                 logger.error(f"Transform failed for capability command field '{mapping.command_field}', skipping.")
                 return
