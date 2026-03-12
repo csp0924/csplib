@@ -247,6 +247,15 @@ class ModbusRequestQueue:
             if request.future.cancelled() or request.future.done():
                 continue
 
+            effective_timeout = request.timeout if request.timeout is not None else self._config.default_timeout
+
+            # 跳過在 queue 中已過期的請求
+            elapsed = time.monotonic() - request.enqueue_time
+            if elapsed >= effective_timeout:
+                if not request.future.done():
+                    request.future.cancel()
+                continue
+
             cb = self._get_circuit_breaker(request.unit_id)
 
             # 再次檢查斷路器 (可能在排隊期間變為 OPEN)
@@ -257,7 +266,9 @@ class ModbusRequestQueue:
 
             try:
                 coro = request.coroutine_factory()
-                result = await coro
+                remaining = effective_timeout - elapsed
+                worker_timeout = max(remaining, 0.5)  # 最低 0.5s，對齊 pymodbus wire timeout
+                result = await asyncio.wait_for(coro, timeout=worker_timeout)
                 cb.record_success()
                 if not request.future.done():
                     request.future.set_result(result)
@@ -282,10 +293,21 @@ class ModbusRequestQueue:
             best_request: ModbusRequest | None = None
             best_unit_id: int | None = None
             best_index: int | None = None
+            stale_units: list[int] = []
 
             for i, unit_id in enumerate(self._round_robin):
                 queue = self._unit_queues.get(unit_id)
                 if not queue:
+                    stale_units.append(unit_id)
+                    continue
+
+                # 清理 heap 頂部已取消或已完成的 request
+                while queue and (queue[0].future.cancelled() or queue[0].future.done()):
+                    heappop(queue)
+                    self._total_size -= 1
+
+                if not queue:
+                    stale_units.append(unit_id)
                     continue
 
                 cb = self._get_circuit_breaker(unit_id)
@@ -299,6 +321,13 @@ class ModbusRequestQueue:
                     best_request = candidate
                     best_unit_id = unit_id
                     best_index = i
+
+            # 清理空的 unit 佇列
+            for uid in stale_units:
+                if uid in self._unit_queues:
+                    del self._unit_queues[uid]
+                if uid in self._round_robin:
+                    self._round_robin.remove(uid)
 
             if best_request is None or best_unit_id is None or best_index is None:
                 return None

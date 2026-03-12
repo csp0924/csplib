@@ -501,6 +501,218 @@ class TestModbusRequestQueue:
         finally:
             await queue.stop()
 
+    @pytest.mark.asyncio
+    async def test_worker_timeout_prevents_blocking(self):
+        """永不回傳的 coroutine 被 worker timeout 終止，回傳 TimeoutError"""
+
+        async def never_return():
+            await asyncio.sleep(3600)
+            return "never"
+
+        config = RequestQueueConfig(default_timeout=0.5)
+        queue = ModbusRequestQueue(config)
+        await queue.start()
+        try:
+            with pytest.raises(asyncio.TimeoutError):
+                await queue.submit(
+                    unit_id=1,
+                    priority=RequestPriority.READ,
+                    coroutine_factory=never_return,
+                    timeout=0.5,
+                )
+        finally:
+            await queue.stop()
+
+    @pytest.mark.asyncio
+    async def test_stale_requests_skipped(self):
+        """在 queue 中過期的 request 不被執行"""
+        executed = False
+        gate = asyncio.Event()
+
+        async def blocking_op():
+            await gate.wait()
+            return "block"
+
+        async def tracked_op():
+            nonlocal executed
+            executed = True
+            return "tracked"
+
+        config = RequestQueueConfig(default_timeout=5.0)
+        queue = ModbusRequestQueue(config)
+        await queue.start()
+        try:
+            # Block worker with a long op
+            f_block = asyncio.ensure_future(
+                queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
+            )
+            await asyncio.sleep(0.05)
+
+            # Submit a request with very short timeout
+            f_stale = asyncio.ensure_future(
+                queue.submit(
+                    unit_id=1,
+                    priority=RequestPriority.READ,
+                    coroutine_factory=tracked_op,
+                    timeout=0.1,
+                )
+            )
+
+            # Wait for the caller-side timeout to expire
+            with pytest.raises(asyncio.TimeoutError):
+                await f_stale
+
+            # Release the blocking op so worker proceeds to the stale request
+            gate.set()
+            await f_block
+
+            # Give worker time to process
+            await asyncio.sleep(0.1)
+
+            # The stale request's coroutine should NOT have been executed
+            assert executed is False
+        finally:
+            await queue.stop()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_requests_freed_from_queue(self):
+        """已取消的 request 被 dequeue 清理，不佔 total_size"""
+        gate = asyncio.Event()
+
+        async def blocking_op():
+            await gate.wait()
+            return "block"
+
+        config = RequestQueueConfig(max_queue_size=5, default_timeout=5.0)
+        queue = ModbusRequestQueue(config)
+        await queue.start()
+        try:
+            # Block worker
+            f_block = asyncio.ensure_future(
+                queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
+            )
+            await asyncio.sleep(0.05)
+
+            # Submit requests with short timeout so they'll be cancelled by caller
+            stale_futures = []
+            for _ in range(3):
+                f = asyncio.ensure_future(
+                    queue.submit(
+                        unit_id=1,
+                        priority=RequestPriority.READ,
+                        coroutine_factory=lambda: _async_value("stale"),
+                        timeout=0.1,
+                    )
+                )
+                stale_futures.append(f)
+
+            # Wait for caller-side timeouts
+            for f in stale_futures:
+                with pytest.raises(asyncio.TimeoutError):
+                    await f
+
+            # Release worker so dequeue runs and cleans cancelled requests
+            gate.set()
+            await f_block
+            await asyncio.sleep(0.1)
+
+            # Cancelled requests should have been freed
+            assert queue.total_size == 0
+        finally:
+            await queue.stop()
+
+    @pytest.mark.asyncio
+    async def test_worker_timeout_triggers_circuit_breaker(self):
+        """worker timeout 正確遞增 CB failure counter，達 threshold 後 OPEN"""
+
+        async def never_return():
+            await asyncio.sleep(3600)
+            return "never"
+
+        config = RequestQueueConfig(
+            default_timeout=0.6,
+            circuit_breaker_threshold=2,
+            circuit_breaker_cooldown=60.0,
+        )
+        queue = ModbusRequestQueue(config)
+        await queue.start()
+        try:
+            # Two timeouts should trip the circuit breaker
+            for _ in range(2):
+                with pytest.raises(asyncio.TimeoutError):
+                    await queue.submit(
+                        unit_id=1,
+                        priority=RequestPriority.READ,
+                        coroutine_factory=never_return,
+                        timeout=0.6,
+                    )
+
+            # CB should now be OPEN
+            cb = queue._get_circuit_breaker(1)
+            assert cb.state == CircuitBreakerState.OPEN
+
+            with pytest.raises(ModbusCircuitBreakerError):
+                await queue.submit(
+                    unit_id=1,
+                    priority=RequestPriority.READ,
+                    coroutine_factory=lambda: _async_value("should_fail"),
+                )
+        finally:
+            await queue.stop()
+
+    @pytest.mark.asyncio
+    async def test_stale_request_no_cb_event(self):
+        """過期跳過的 request 不影響 CB failure_count"""
+        gate = asyncio.Event()
+
+        async def blocking_op():
+            await gate.wait()
+            return "block"
+
+        config = RequestQueueConfig(
+            default_timeout=5.0,
+            circuit_breaker_threshold=2,
+            circuit_breaker_cooldown=60.0,
+        )
+        queue = ModbusRequestQueue(config)
+        await queue.start()
+        try:
+            # Block worker
+            f_block = asyncio.ensure_future(
+                queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
+            )
+            await asyncio.sleep(0.05)
+
+            # Submit requests with very short timeout (will become stale)
+            stale_futures = []
+            for _ in range(3):
+                f = asyncio.ensure_future(
+                    queue.submit(
+                        unit_id=1,
+                        priority=RequestPriority.READ,
+                        coroutine_factory=lambda: _async_value("stale"),
+                        timeout=0.1,
+                    )
+                )
+                stale_futures.append(f)
+
+            # Wait for caller-side timeouts
+            for f in stale_futures:
+                with pytest.raises(asyncio.TimeoutError):
+                    await f
+
+            # Release worker
+            gate.set()
+            await f_block
+            await asyncio.sleep(0.1)
+
+            # CB should still be CLOSED — stale skips don't count as failures
+            cb = queue._get_circuit_breaker(1)
+            assert cb.state == CircuitBreakerState.CLOSED
+            assert cb.failure_count == 0
+        finally:
+            await queue.stop()
+
 
 # ========== Helper coroutines ==========
 
