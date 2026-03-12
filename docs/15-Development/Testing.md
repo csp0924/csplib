@@ -71,16 +71,6 @@ tests/
 
 ---
 
-## 測試環境
-
-在 CI 環境中，設定 `SKIP_CYTHON=1` 以跳過 Cython 編譯：
-
-```bash
-SKIP_CYTHON=1 uv run pytest tests/ -v
-```
-
----
-
 ## 相關頁面
 
 - [[Dev Setup]] - 開發環境設定

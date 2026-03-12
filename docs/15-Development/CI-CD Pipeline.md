@@ -19,7 +19,7 @@ PR (Pull Request)
 
 Tag (v*)
   └── Lint + Test
-       └── Build Wheels（Windows / manylinux）
+       └── Build sdist + wheel
             └── Publish to PyPI
 ```
 
@@ -31,17 +31,8 @@ Tag (v*)
 
 | 步驟 | 平台 | 說明 |
 |------|------|------|
-| Lint | Ubuntu + Windows | Ruff check |
+| Lint | Ubuntu | Ruff check + mypy |
 | Test | Ubuntu + Windows | pytest 全套測試 |
-
-### 測試環境設定
-
-在測試環境中，設定 `SKIP_CYTHON=1` 跳過 Cython 編譯：
-
-```yaml
-env:
-  SKIP_CYTHON: 1
-```
 
 ---
 
@@ -53,14 +44,9 @@ env:
 
 與 PR 流程相同，在 Ubuntu 與 Windows 上執行 lint 與測試。
 
-### 2. Build Wheels
+### 2. Build
 
-在多平台建置 Cython 編譯的 wheel：
-
-| 平台 | 產出 |
-|------|------|
-| Windows x64 | `csp_lib-*-cp313-cp313-win_amd64.whl` |
-| manylinux x64 | `csp_lib-*-cp313-cp313-manylinux_*.whl` |
+建置 pure Python sdist 與 wheel（`py3-none-any`），所有平台通用。
 
 ### 3. Publish to PyPI
 
@@ -88,10 +74,10 @@ CI/CD 設定位於 `.github/workflows/build-wheels.yml`。
 uv run ruff check .
 
 # Test
-SKIP_CYTHON=1 uv run pytest tests/ -v
+uv run pytest tests/ -v
 
 # Build
-python build_wheel.py
+python -m build
 ```
 
 ---
@@ -101,5 +87,4 @@ python build_wheel.py
 - [[Dev Setup]] - 開發環境設定
 - [[Testing]] - 測試指南
 - [[Linting]] - Linting 與格式化
-- [[Cython Build]] - Cython 建置
 - [[Version History]] - 版本歷史

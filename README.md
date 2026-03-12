@@ -1931,14 +1931,12 @@ uv run ruff format .         # Format
 uv run mypy csp_lib/         # Type check
 ```
 
-### Cython 建置
-
-詳見 [BUILDING.md](BUILDING.md)。
+### 建置
 
 ```bash
-python build_wheel.py              # Build Cython-compiled wheel
-python build_wheel.py clean        # Clean build artifacts
-SKIP_CYTHON=1 pip install -e .     # Editable install without Cython
+pip install build
+python -m build                    # Build sdist + pure Python wheel
+pip install -e .                   # Editable install
 ```
 
 ---

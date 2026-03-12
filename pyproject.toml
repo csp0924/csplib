@@ -45,9 +45,9 @@ all = [
     "csp0924_lib[mongo,redis,modbus,can,monitor,cluster,gui]",
 ]
 
-# =============== Build System (Cython Binary Distribution) ===============
+# =============== Build System ===============
 [build-system]
-requires = ["setuptools>=75.0.0", "wheel", "cython>=3.0.0"]
+requires = ["setuptools>=75.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.dynamic]
@@ -61,7 +61,7 @@ include = ["csp_lib", "csp_lib.*"]
 include-package-data = false
 
 [tool.setuptools.package-data]
-"*" = ["*.pyd", "*.so", "*.pyi", "py.typed"]
+"*" = ["*.pyi", "py.typed"]
 "csp_lib.gui" = ["static/**/*"]
 
 # =============== Development Dependencies ===============
@@ -71,8 +71,6 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=6.0.0",
     "pytest-xdist>=3.5.0",
-    "cython>=3.0.0",
-    "setuptools>=80.9.0",
     "build>=1.4.0",
     "mypy>=1.19.1",
     "ruff>=0.11.0",
@@ -112,7 +110,6 @@ ignore = [
 quote-style = "double"
 
 [tool.ruff.lint.per-file-ignores]
-"setup.py" = ["E402"]  # setup.py 需要先檢查環境變數再 import
 "csp_lib/gui/api/*.py" = ["B008"]  # FastAPI Depends() in defaults is the intended pattern
 
 # =============== Mypy (Type Checking) ===============

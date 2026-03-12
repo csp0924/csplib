@@ -24,12 +24,10 @@ uv sync --all-groups --all-extras
 
 此指令會安裝所有 optional dependencies 及開發工具（pytest, ruff, mypy 等）。
 
-### 2. 可編輯安裝（不含 Cython）
-
-若不需要 Cython 編譯，可使用可編輯模式安裝：
+### 2. 可編輯安裝
 
 ```bash
-SKIP_CYTHON=1 pip install -e .
+pip install -e .
 ```
 
 ---
@@ -56,7 +54,6 @@ pip install csp0924_lib[all]        # 所有功能
 | `pytest` | 測試框架 |
 | `ruff` | Linting 與格式化 |
 | `mypy` | 靜態型別檢查 |
-| `cython` | 二進位編譯（生產用） |
 
 ---
 
@@ -64,4 +61,3 @@ pip install csp0924_lib[all]        # 所有功能
 
 - [[Testing]] - 測試指南
 - [[Linting]] - Linting 與格式化
-- [[Cython Build]] - Cython 建置
