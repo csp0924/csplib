@@ -5,3 +5,11 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: local
+    hooks:
+      - id: commit-msg-check
+        name: Check commit message format
+        entry: python scripts/check_commit_msg.py
+        language: python
+        stages: [commit-msg]
+        always_run: true

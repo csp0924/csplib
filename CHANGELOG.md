@@ -6,6 +6,19 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-03-13
+
+### Fixed
+- **Modbus Request Queue**: 修復 worker 信號遺失（clear 後 re-check total_size）和 submit TOCTOU（size 檢查移入 lock 內）(#19, #20)
+- **StrategyExecutor**: 修復 PopOverride bypass 後 executor 卡在 triggered mode 無法恢復的問題 (#18)
+
+## [0.4.1] - 2026-03-10
+
+### Fixed
+- **Installation**: 修復安裝失敗問題 (#15)
+
+## [0.4.0] - 2026-03-09
+
 ### Added
 - **動態點位管理** (`csp_lib.equipment.device`):
   - `ReconfigureSpec`: frozen dataclass，指定要替換的組件（`always_points`、`rotating_points`、`write_points`、`alarm_evaluators`、`capability_bindings`），`None` 表示保持不變
@@ -35,16 +48,14 @@
 - **Demo**: `examples/11_cascading_strategy.py` — CascadingStrategy deep dive showing delta-based clamping, multi-layer allocation, capacity constraints, edge cases, and hierarchical control preview
 - **Demo**: `examples/demo_full_system.py` — full end-to-end system integration demo covering device creation, registry, control loop, mode switching, and protection
 - **Architecture Doc**: `docs/architecture/hierarchical-control.md` — Mermaid diagrams, protocol reference, extension point mapping
+- +49 new tests: 動態點位管理（`test_scheduler_update.py` 9 tests、`test_point_toggle.py` 17 tests、`test_device_reconfigure.py` 23 tests）
+- +258 new tests: frozen dataclass configs, ReadScheduler, DeviceEventSubscriber, NaN/Inf propagation, Modbus exception handling, Protocol runtime checks
+- +50 new tests: SubExecutorAgent Protocol compliance, TransportAdapter Protocol compliance, CascadingStrategy extended scenarios (delta clamping, context propagation, hierarchical integration, edge cases)
 
 ### Fixed
 - **Integration re-exports**: Promoted `_apply_builtin_aggregate` to public API (`apply_builtin_aggregate`), added missing re-exports (`ComputeOffloader`, `ActionCommand`, `CommandResult`, `create_system_alarm_evaluators`), wrapped statistics import in try/except for optional dependency safety
 - **Safety (fail-safe)**: Protection chain now outputs fail-safe (P=0, Q=0) instead of fail-open when a rule raises an exception
 - **Safety (resource cleanup)**: `AsyncModbusDevice.__aexit__` and `SystemController._on_stop` now use try/finally to guarantee cleanup on error
-
-### Tests
-- +49 new tests: 動態點位管理（`test_scheduler_update.py` 9 tests、`test_point_toggle.py` 17 tests、`test_device_reconfigure.py` 23 tests）
-- +258 new tests: frozen dataclass configs, ReadScheduler, DeviceEventSubscriber, NaN/Inf propagation, Modbus exception handling, Protocol runtime checks
-- +50 new tests: SubExecutorAgent Protocol compliance, TransportAdapter Protocol compliance, CascadingStrategy extended scenarios (delta clamping, context propagation, hierarchical integration, edge cases)
 
 ## [0.3.3] - 2026-02-16
 
@@ -61,17 +72,15 @@
   - AggregateFunc / ContextMapping / CommandMapping / DataFeedMapping 宣告式映射 schema
 - AsyncLifecycleMixin (`csp_lib.core`): 通用 async 生命週期管理
 - DeviceEventSubscriber (`csp_lib.manager`): 設備事件訂閱基底類別
+- 新增 GroupControllerManager 測試（26 個測試：驗證、查詢、模式管理、獨立性、生命週期、健康檢查）
+- 新增 integration 模組測試（94 個測試）
+- 新增 AsyncLifecycleMixin 單元測試
+- 新增 core transform 綜合測試
 
 ### Changed
 - 重構管理器使用新基底類別（AlarmPersistenceManager、DataUploadManager、
   StateSyncManager → DeviceEventSubscriber；DeviceManager、UnifiedDeviceManager、
   RedisCommandAdapter → AsyncLifecycleMixin）
-
-### Tests
-- 新增 GroupControllerManager 測試（26 個測試：驗證、查詢、模式管理、獨立性、生命週期、健康檢查）
-- 新增 integration 模組測試（94 個測試）
-- 新增 AsyncLifecycleMixin 單元測試
-- 新增 core transform 綜合測試
 
 ## [0.3.2] - 2026-01-18
 

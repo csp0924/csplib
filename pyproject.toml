@@ -113,3 +113,18 @@ quote-style = "double"
 [tool.ruff.lint.per-file-ignores]
 "setup.py" = ["E402"]  # setup.py 需要先檢查環境變數再 import
 "csp_lib/gui/api/*.py" = ["B008"]  # FastAPI Depends() in defaults is the intended pattern
+
+# =============== Mypy (Type Checking) ===============
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_configs = true
+
+# 第三方 library stubs 不完整，暫時跳過
+[[tool.mypy.overrides]]
+module = [
+    "csp_lib.modbus.clients.client",
+    "csp_lib.redis.client",
+    "csp_lib.cluster.election",
+]
+ignore_errors = true

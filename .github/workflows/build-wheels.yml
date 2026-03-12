@@ -42,6 +42,28 @@ jobs:
       - name: Run Ruff (format check)
         run: uv run ruff format --check .
 
+      - name: Run mypy
+        run: uv run mypy csp_lib/
+
+  # ============ Changelog Check (PR only) ============
+  changelog-check:
+    name: Changelog Check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check CHANGELOG updated
+        if: "!contains(github.event.pull_request.labels.*.name, 'skip-changelog')"
+        run: |
+          if git diff --name-only origin/main...HEAD | grep -q '^CHANGELOG.md$'; then
+            echo "CHANGELOG.md was updated."
+          else
+            echo "::error::CHANGELOG.md was not modified. Add 'skip-changelog' label to bypass."
+            exit 1
+          fi
+
   # ============ 測試 (PR + Tag 都會跑) ============
   test:
     name: Test on ${{ matrix.os }}
@@ -154,6 +176,34 @@ jobs:
       id-token: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches __version__
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(python3 -c "
+          import re
+          m = re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('csp_lib/__init__.py').read())
+          print(m.group(1))
+          ")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match __version__=$PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          python3 -c "
+          import re, os
+          version = '${TAG_VERSION}'
+          content = open('CHANGELOG.md', encoding='utf-8').read()
+          pattern = rf'## \[{re.escape(version)}\].*?\n(.*?)(?=\n## \[|\Z)'
+          m = re.search(pattern, content, re.DOTALL)
+          notes = m.group(1).strip() if m else f'Release {version}'
+          open('release_notes.md', 'w', encoding='utf-8').write(notes)
+          "
+
       - name: Download all wheels
         uses: actions/download-artifact@v4
         with:
@@ -181,3 +231,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.whl
+          body_path: release_notes.md
