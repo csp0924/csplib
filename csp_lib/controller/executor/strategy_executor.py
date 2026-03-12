@@ -65,6 +65,7 @@ class StrategyExecutor:
         self._strategy: Optional[Strategy] = None
         self._last_command = Command()
         self._trigger_event = asyncio.Event()
+        self._strategy_changed_event = asyncio.Event()
         self._stop_event = asyncio.Event()
         self._task: Optional[asyncio.Task] = None
         self._is_running = False
@@ -112,6 +113,10 @@ class StrategyExecutor:
             logger.info(f"啟用策略: {self._strategy}")
             await self._strategy.on_activate()
 
+        # 喚醒可能阻塞在 _wait_for_execution() 的 run loop，
+        # 使其重新讀取新策略的 execution_config
+        self._strategy_changed_event.set()
+
     def trigger(self) -> None:
         """
         手動觸發執行
@@ -148,6 +153,10 @@ class StrategyExecutor:
                 if self._stop_event.is_set():
                     break
 
+                # 策略已切換，跳過執行，回到迴圈頂部重新讀取 config
+                if self._strategy_changed_event.is_set():
+                    continue
+
                 # 執行策略
                 await self._execute_strategy()
 
@@ -161,6 +170,7 @@ class StrategyExecutor:
         """停止執行迴圈"""
         self._stop_event.set()
         self._trigger_event.set()  # 解除等待
+        self._strategy_changed_event.set()  # 解除等待
         if self._offloader is not None:
             self._offloader.shutdown()
 
@@ -180,33 +190,50 @@ class StrategyExecutor:
 
     async def _wait_for_execution(self, config) -> None:
         """根據執行模式等待執行時機"""
+        self._strategy_changed_event.clear()
 
         if config.mode == ExecutionMode.TRIGGERED:
-            # 僅等待觸發
-            await self._trigger_event.wait()
-            self._trigger_event.clear()
+            # 等待觸發或策略切換
+            trigger_task = asyncio.ensure_future(self._trigger_event.wait())
+            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
+            done, pending = await asyncio.wait([trigger_task, changed_task], return_when=asyncio.FIRST_COMPLETED)
+            for t in pending:
+                t.cancel()
+            if trigger_task in done:
+                self._trigger_event.clear()
             return
 
         if config.mode == ExecutionMode.PERIODIC:
-            # 固定週期等待，但可被 stop() 中斷
+            # 固定週期等待，可被 stop() 或策略切換中斷
+            stop_task = asyncio.ensure_future(self._stop_event.wait())
+            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=config.interval_seconds)
-                # 如果 wait 成功返回，表示 stop_event 被設置
+                done, pending = await asyncio.wait(
+                    [stop_task, changed_task], return_when=asyncio.FIRST_COMPLETED, timeout=config.interval_seconds
+                )
+                for t in pending:
+                    t.cancel()
             except asyncio.TimeoutError:
-                # 正常週期到達
-                pass
+                stop_task.cancel()
+                changed_task.cancel()
             return
 
         if config.mode == ExecutionMode.HYBRID:
-            # 週期等待，但可被提前觸發
+            # 週期等待，可被提前觸發或策略切換
+            trigger_task = asyncio.ensure_future(self._trigger_event.wait())
+            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
             try:
-                # 週期到會觸發 TimeoutError
-                await asyncio.wait_for(self._trigger_event.wait(), timeout=config.interval_seconds)
-                self._trigger_event.clear()
-                logger.debug("策略提前觸發執行")
+                done, pending = await asyncio.wait(
+                    [trigger_task, changed_task], return_when=asyncio.FIRST_COMPLETED, timeout=config.interval_seconds
+                )
+                for t in pending:
+                    t.cancel()
+                if trigger_task in done:
+                    self._trigger_event.clear()
+                    logger.debug("策略提前觸發執行")
             except asyncio.TimeoutError:
-                # 正常週期到達
-                pass
+                trigger_task.cancel()
+                changed_task.cancel()
             return
 
     async def _execute_strategy(self) -> Command:

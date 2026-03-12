@@ -238,6 +238,117 @@ class TestStrategyExecutor:
         await task
 
     @pytest.mark.asyncio
+    async def test_switch_triggered_to_periodic_resumes_execution(self):
+        """Regression #17: switching from TRIGGERED to PERIODIC should resume execution without manual trigger.
+
+        The bug was: after set_strategy() from TRIGGERED -> PERIODIC, the run loop stayed blocked
+        on _trigger_event.wait() and never executed the new PERIODIC strategy.
+        """
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext())
+
+        triggered_strategy = MockStrategy(mode=ExecutionMode.TRIGGERED)
+        await executor.set_strategy(triggered_strategy)
+
+        task = asyncio.create_task(executor.run())
+        await asyncio.sleep(0.1)
+
+        # Executor is running but blocked waiting for trigger - no executions yet
+        assert executor.is_running is True
+        assert triggered_strategy.execute_count == 0
+
+        # Switch to PERIODIC (1s interval) - this should wake the run loop
+        periodic_strategy = MockStrategy(
+            return_command=Command(p_target=42.0),
+            mode=ExecutionMode.PERIODIC,
+            interval=1,
+        )
+        await executor.set_strategy(periodic_strategy)
+
+        # Wait for the periodic strategy to execute at least once
+        # The first execution happens after the interval (1s), so wait a bit more
+        await asyncio.sleep(1.5)
+
+        assert periodic_strategy.execute_count >= 1, (
+            "PERIODIC strategy should have executed after switching from TRIGGERED, "
+            f"but execute_count={periodic_strategy.execute_count}"
+        )
+        assert executor.last_command.p_target == 42.0
+
+        executor.stop()
+        await task
+
+    @pytest.mark.asyncio
+    async def test_switch_periodic_to_triggered_blocks_execution(self):
+        """Switching from PERIODIC to TRIGGERED should block execution until trigger() is called."""
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext())
+
+        # Start with PERIODIC strategy (short interval so it executes quickly)
+        periodic_strategy = MockStrategy(
+            return_command=Command(p_target=10.0),
+            mode=ExecutionMode.PERIODIC,
+            interval=1,
+        )
+        await executor.set_strategy(periodic_strategy)
+
+        task = asyncio.create_task(executor.run())
+        await asyncio.sleep(1.5)
+
+        # PERIODIC strategy should have executed at least once
+        assert periodic_strategy.execute_count >= 1
+
+        # Switch to TRIGGERED mode
+        triggered_strategy = MockStrategy(
+            return_command=Command(p_target=99.0),
+            mode=ExecutionMode.TRIGGERED,
+        )
+        await executor.set_strategy(triggered_strategy)
+
+        # Wait and verify it does NOT execute without a trigger
+        await asyncio.sleep(0.5)
+        assert triggered_strategy.execute_count == 0, (
+            "TRIGGERED strategy should not execute without trigger(), "
+            f"but execute_count={triggered_strategy.execute_count}"
+        )
+
+        # Now trigger it - it should execute
+        executor.trigger()
+        await asyncio.sleep(0.1)
+        assert triggered_strategy.execute_count == 1
+
+        executor.stop()
+        await task
+
+    @pytest.mark.asyncio
+    async def test_switch_triggered_to_periodic_skips_stale_execution(self):
+        """After switching strategy, the executor should NOT execute the old strategy.
+
+        The run loop should skip execution on the iteration where strategy_changed_event fires,
+        then re-read the new strategy's config on the next iteration.
+        """
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext())
+
+        triggered_strategy = MockStrategy(mode=ExecutionMode.TRIGGERED)
+        await executor.set_strategy(triggered_strategy)
+
+        task = asyncio.create_task(executor.run())
+        await asyncio.sleep(0.1)
+
+        # Switch to PERIODIC
+        periodic_strategy = MockStrategy(mode=ExecutionMode.PERIODIC, interval=1)
+        await executor.set_strategy(periodic_strategy)
+
+        # Wait for periodic to run
+        await asyncio.sleep(1.5)
+
+        # The old triggered strategy should never have been executed
+        assert triggered_strategy.execute_count == 0
+        # The new periodic strategy should have executed
+        assert periodic_strategy.execute_count >= 1
+
+        executor.stop()
+        await task
+
+    @pytest.mark.asyncio
     async def test_context_immutability(self):
         """context 應使用 dataclasses.replace 保持不可變"""
         base_context = StrategyContext(soc=50.0)
