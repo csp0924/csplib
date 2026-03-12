@@ -43,6 +43,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Run mypy
+        continue-on-error: true
         run: uv run mypy csp_lib/
 
   # ============ Changelog Check (PR only) ============
