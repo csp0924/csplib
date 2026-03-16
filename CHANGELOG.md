@@ -6,11 +6,21 @@
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-03-16
+
+
+
 ## [0.4.2] - 2026-03-13
+
+### Changed
+- **Build**: 移除 Cython build pipeline，改為純 Python 發佈 (#25)
+- **CI/CD**: 新增版本自動化、品質門檻、release workflow (#22)
+- **CI/CD**: 新增 pytest-xdist 平行測試執行與 asyncio auto mode (#24)
 
 ### Fixed
 - **Modbus Request Queue**: 修復 worker 信號遺失（clear 後 re-check total_size）和 submit TOCTOU（size 檢查移入 lock 內）(#19, #20)
 - **StrategyExecutor**: 修復 PopOverride bypass 後 executor 卡在 triggered mode 無法恢復的問題 (#18)
+- **Type Safety**: 修復 11 個檔案共 45 個 mypy type errors (#23)
 
 ## [0.4.1] - 2026-03-10
 

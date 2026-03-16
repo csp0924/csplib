@@ -42,7 +42,7 @@ gui = [
     "python-multipart"
 ]
 all = [
-    "csp0924_lib[mongo,redis,modbus,can,monitor,cluster,gui]",
+    "csp0924_lib[mongo,redis,modbus,can,monitor,gui]",
 ]
 
 # =============== Build System ===============
