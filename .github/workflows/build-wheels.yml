@@ -117,6 +117,15 @@ jobs:
             exit 1
           fi
 
+      - name: Install wheel with all extras
+        run: |
+          WHL=$(ls dist/*.whl)
+          pip install "${WHL}[all]"
+
+      - name: Verify import
+        run: |
+          python -c "import csp_lib; print(f'csp_lib {csp_lib.__version__} imported successfully')"
+
   # ============ 發布 (只有 Tag) ============
   publish:
     name: Publish to PyPI
