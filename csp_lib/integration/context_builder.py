@@ -9,13 +9,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from csp_lib.controller.core import Command, StrategyContext, SystemBase
 from csp_lib.core import get_logger
 
 from .registry import DeviceRegistry
 from .schema import AggregateFunc, CapabilityContextMapping, ContextMapping
+
+if TYPE_CHECKING:
+    from csp_lib.core.runtime_params import RuntimeParameters
 
 logger = get_logger("csp_lib.integration.context_builder")
 
@@ -68,6 +71,7 @@ class ContextBuilder:
         mappings: list[ContextMapping],
         system_base: SystemBase | None = None,
         capability_mappings: list[CapabilityContextMapping] | None = None,
+        runtime_params: RuntimeParameters | None = None,
     ) -> None:
         """
         初始化建構器
@@ -77,11 +81,13 @@ class ContextBuilder:
             mappings: 設備點位 → context 欄位的映射列表
             system_base: 系統基準值（可選），設定於 context.system_base
             capability_mappings: capability-driven context 映射列表（可選）
+            runtime_params: 系統參數（可選），直接引用掛到 context.params
         """
         self._registry = registry
         self._mappings = mappings
         self._system_base = system_base
         self._capability_mappings = capability_mappings or []
+        self._runtime_params = runtime_params
 
     def build(self) -> StrategyContext:
         """
@@ -95,6 +101,7 @@ class ContextBuilder:
         ctx = StrategyContext(
             last_command=Command(),
             system_base=self._system_base,
+            params=self._runtime_params,
         )
 
         for mapping in self._mappings:
