@@ -96,15 +96,15 @@ class RedisSubscriptionSource:
                 data = data.decode()
             payload = json.loads(data)
 
-            if self._batch_mode and isinstance(payload, dict):
-                # Key-value shorthand: {"soc": 75.5, "soh": 98.0}
-                for name, value in payload.items():
-                    if name == "register" or name == "value":
-                        continue  # Skip if it looks like single-message format
-                    try:
-                        await self._update_cb(name, value)
-                    except KeyError:
-                        logger.debug(f"RedisSync: unknown register '{name}', skipping")
+            if isinstance(payload, dict) and "register" in payload and "value" in payload:
+                # Single: {"register": "soc", "value": 75.5}
+                # 優先匹配，避免被 batch_mode shorthand 吞掉
+                name = payload["register"]
+                value = payload["value"]
+                try:
+                    await self._update_cb(name, value)
+                except KeyError:
+                    logger.debug(f"RedisSync: unknown register '{name}', skipping")
             elif isinstance(payload, list):
                 # Batch: [{"register": "soc", "value": 75.5}, ...]
                 for item in payload:
@@ -115,14 +115,13 @@ class RedisSubscriptionSource:
                             await self._update_cb(name, value)
                         except KeyError:
                             logger.debug(f"RedisSync: unknown register '{name}', skipping")
-            elif isinstance(payload, dict) and "register" in payload:
-                # Single: {"register": "soc", "value": 75.5}
-                name = payload["register"]
-                value = payload["value"]
-                try:
-                    await self._update_cb(name, value)
-                except KeyError:
-                    logger.debug(f"RedisSync: unknown register '{name}', skipping")
+            elif self._batch_mode and isinstance(payload, dict):
+                # Key-value shorthand: {"soc": 75.5, "soh": 98.0}
+                for name, value in payload.items():
+                    try:
+                        await self._update_cb(name, value)
+                    except KeyError:
+                        logger.debug(f"RedisSync: unknown register '{name}', skipping")
 
         except (json.JSONDecodeError, TypeError, KeyError):
             logger.opt(exception=True).warning(f"RedisSync: invalid message on {self._channel}")
