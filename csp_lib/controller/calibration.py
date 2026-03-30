@@ -293,8 +293,7 @@ class FFCalibrationStrategy(Strategy):
             import asyncio
 
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self._on_complete(dict(self._results)))
+                asyncio.ensure_future(self._on_complete(dict(self._results)))
             except RuntimeError:
                 logger.warning("FFCalibration: no running event loop for on_complete callback")
 
