@@ -33,6 +33,7 @@ class CommunicationWatchdog:
 
     Args:
         config: Watchdog configuration (timeout, check interval, enabled).
+        clock: Time source callable (default ``time.monotonic``). Override for testing.
 
     Example::
 
@@ -44,9 +45,10 @@ class CommunicationWatchdog:
         watchdog.touch()
     """
 
-    def __init__(self, config: WatchdogConfig) -> None:
+    def __init__(self, config: WatchdogConfig, clock: Callable[[], float] | None = None) -> None:
         self._config = config
-        self._last_comm: float = time.monotonic()
+        self._clock = clock or time.monotonic
+        self._last_comm: float = self._clock()
         self._timed_out: bool = False
         self._timeout_callbacks: list[Callable[[], Awaitable[None]]] = []
         self._recover_callbacks: list[Callable[[], Awaitable[None]]] = []
@@ -57,7 +59,7 @@ class CommunicationWatchdog:
 
         Thread-safe: performs a single atomic float write.
         """
-        self._last_comm = time.monotonic()
+        self._last_comm = self._clock()
 
     @property
     def is_timed_out(self) -> bool:
@@ -72,7 +74,7 @@ class CommunicationWatchdog:
     @property
     def elapsed(self) -> float:
         """Seconds since the last recorded communication event."""
-        return time.monotonic() - self._last_comm
+        return self._clock() - self._last_comm
 
     def on_timeout(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Register an async callback to be invoked when a timeout is detected.
@@ -97,7 +99,7 @@ class CommunicationWatchdog:
         """
         if not self._config.enabled:
             return
-        self._last_comm = time.monotonic()
+        self._last_comm = self._clock()
         self._timed_out = False
         self._task = asyncio.create_task(self._check_loop(), name="gateway_watchdog")
         logger.info(
@@ -120,7 +122,7 @@ class CommunicationWatchdog:
         try:
             while True:
                 await asyncio.sleep(self._config.check_interval)
-                elapsed = time.monotonic() - self._last_comm
+                elapsed = self._clock() - self._last_comm
 
                 if elapsed > self._config.timeout_seconds and not self._timed_out:
                     self._timed_out = True
