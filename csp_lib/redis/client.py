@@ -56,7 +56,7 @@ class TLSConfig:
         ```
     """
 
-    ca_certs: str
+    ca_certs: str | None = None
     certfile: str | None = None
     keyfile: str | None = None
     cert_reqs: Literal["required", "optional", "none"] = "required"
@@ -66,10 +66,16 @@ class TLSConfig:
         # certfile 和 keyfile 必須同時提供或同時不提供
         if (self.certfile is None) != (self.keyfile is None):
             raise ValueError("certfile 和 keyfile 必須同時提供（雙向 TLS）或同時不提供（單向 TLS）")
+        # cert_reqs != "none" 時建議提供 ca_certs
+        if self.cert_reqs != "none" and self.ca_certs is None:
+            raise ValueError("cert_reqs 非 'none' 時必須提供 ca_certs")
 
     def to_ssl_context(self) -> ssl.SSLContext:
         """
         建立 SSLContext
+
+        當 cert_reqs="none" 且無 ca_certs 時，建立不驗證憑證的 SSLContext。
+        適用於需要 TLS 加密但環境中沒有 CA 憑證的場景（如開發/測試環境）。
 
         Returns:
             配置好的 ssl.SSLContext 實例
@@ -81,7 +87,14 @@ class TLSConfig:
             "none": ssl.CERT_NONE,
         }
 
-        context = ssl.create_default_context(cafile=self.ca_certs)
+        if self.ca_certs:
+            context = ssl.create_default_context(cafile=self.ca_certs)
+        else:
+            # 無 CA 憑證：建立不驗證的 context（用於 cert_reqs="none"）
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
         context.check_hostname = self.cert_reqs == "required"
         context.verify_mode = cert_reqs_map[self.cert_reqs]
 
@@ -550,6 +563,45 @@ class RedisClient:
         if not self._client:
             raise ConnectionError("Redis 尚未連線")
         return await self._client.keys(pattern)
+
+    # ================ Pub/Sub ================
+
+    def pubsub(self) -> Any:
+        """
+        取得 PubSub 實例
+
+        Returns:
+            redis.asyncio.client.PubSub 實例
+
+        Example:
+            ```python
+            ps = client.pubsub()
+            await ps.subscribe("channel:data")
+            async for msg in ps.listen():
+                print(msg)
+            ```
+        """
+        if not self._client:
+            raise ConnectionError("Redis 尚未連線")
+        return self._client.pubsub()
+
+    # ================ Scan 操作 ================
+
+    async def scan(self, cursor: int = 0, match: str | None = None, count: int | None = None) -> tuple[int, list[str]]:
+        """
+        增量掃描 Key
+
+        Args:
+            cursor: 起始游標（0 開始，回傳 0 表示掃描完成）
+            match: 匹配模式（e.g., "device:*:alarms"）
+            count: 每次掃描的建議數量
+
+        Returns:
+            (next_cursor, keys) 元組
+        """
+        if not self._client:
+            raise ConnectionError("Redis 尚未連線")
+        return await self._client.scan(cursor=cursor, match=match, count=count)
 
     # ================ Context Manager ================
 
