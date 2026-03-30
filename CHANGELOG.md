@@ -6,9 +6,106 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-31
+### Added
+- **RuntimeParameters** (`csp_lib.core.runtime_params`): Thread-safe 即時參數容器
+  - 支援 `get` / `set` / `update` / `snapshot` / `delete` / `setdefault` 操作
+  - Observer pattern：`on_change(callback)` 在值變更時觸發通知（在鎖外同步呼叫）
+  - 以 `threading.Lock` 保護，Modbus hook thread 與 asyncio event loop 之間安全存取
+  - 適用於需從外部系統（EMS / Modbus / Redis）即時推送的參數（如 SOC 上下限、功率限制）
+- **CommandProcessor Protocol** (`csp_lib.controller.core.processor`): Post-Protection 命令處理器
+  - `@runtime_checkable Protocol`，定義 `async def process(command, context) -> Command` 介面
+  - 插入於 `ProtectionGuard` 與 `CommandRouter` 之間，支援功率補償、命令日誌、審計追蹤
+  - `SystemControllerConfig` 新增 `post_protection_processors` 欄位以組合多個處理器
+- **DroopStrategy** (`csp_lib.controller.strategies.droop_strategy`): 標準下垂一次頻率響應策略
+  - 根據頻率偏差透過下垂公式計算功率：`gain = 100 / (f_base × droop)`
+  - `DroopConfig` 可配置下垂係數、死區寬度、基準頻率、最大 AFC 功率與執行週期
+  - 支援 `schedule_p + dreg_power` 疊加，自動 clamp 於額定功率範圍
+  - `context.extra` 無頻率資料時維持上一次命令（fail-safe hold）
+- **PowerCompensator** (`csp_lib.controller.compensator`): 前饋 + 積分閉環功率補償器
+  - 實作 `CommandProcessor` Protocol，可直接加入 `post_protection_processors`
+  - 前饋表（FF table）按功率區間查表，補償 PCS 非線性與輔電損耗
+  - 積分修正含 deadband、anti-windup、rate limiting
+  - 穩態自動學習：I 項貢獻吸收進 FF 表，長期自適應
+  - 暫態閘門：setpoint 變更後等 PCS 到位才啟動積分
+  - FF 表持久化支援 `FFTableRepository` Protocol（可注入 JSON / MongoDB 等後端）
+  - `PowerCompensator.async_init()` 支援 async repository（如 MongoDB）啟動後載入
+  - `SystemController._on_start()` 自動呼叫 processors 的 `async_init()`
+- **動態保護規則** (`csp_lib.controller.system.dynamic_protection`): 從 RuntimeParameters 讀取動態參數
+  - `DynamicSOCProtection`：每次 `evaluate()` 從 `RuntimeParameters` 讀取 `soc_max` / `soc_min`，支援 EMS 即時更新
+  - `GridLimitProtection`：外部功率限制保護（電力公司 / 排程上限）
+  - `RampStopProtection`：故障 / 告警時斜坡降功率至 0（graceful ramp-down）；已標記 deprecated，建議改用 `RampStopStrategy`
+- **RampStopStrategy** (`csp_lib.controller.strategies.ramp_stop`): 斜坡降功率策略
+  - 替代 `RampStopProtection`，本質上是「接管控制」而非「修改數值」，更適合作為 Strategy
+  - 使用實際 dt（monotonic clock）計算每步降幅，不依賴固定 interval
+  - 搭配 `EventDrivenOverride` + `ModeManager(PROTECTION)` 使用
+  - 不同停止原因可觸發不同策略：通訊中斷 → `RampStopStrategy`，告警 → `StopStrategy`
+- **FFCalibrationStrategy** (`csp_lib.controller.calibration`): FF Table 步階校準策略
+  - 維護型一次性操作（類似 SOC 校正），自動遍歷各功率 bin 量測 FF ratio
+  - 狀態機：IDLE → STEPPING → DONE，完成後寫入 `PowerCompensator` FF Table
+  - 支援 `on_complete` callback，可配合 `RuntimeParameters` 或 Redis 觸發
+  - `FFCalibrationConfig` 可配置步幅、穩態門檻、settle wait 等
+- **FFTableRepository Protocol** (`csp_lib.controller.compensator`): FF Table 持久化介面
+  - `JsonFFTableRepository`：JSON 檔案持久化（預設，向後相容）
+  - `MongoFFTableRepository`：MongoDB 持久化（async save + async_load）
+  - `PowerCompensator` 新增 `repository` 參數，可注入任意後端
+  - `PowerCompensator.load_ff_table(table)` 方法供外部校準或 async load 使用
+- **StrategyContext.params** (`csp_lib.controller.core.context`): 系統參數直接引用
+  - 新增 `params: RuntimeParameters | None` 欄位，區隔系統參數（EMS 指令）與設備讀值（extra）
+  - `SystemControllerConfig` 新增 `runtime_params` 欄位，`ContextBuilder` 自動注入
+  - 向後相容：`params=None` 為預設值，不影響現有使用 extra 的程式碼
+- **ModbusGatewayServer** (`csp_lib.modbus_gateway`): 完整 Modbus TCP Gateway Server 模組
+  - 宣告式暫存器映射（`GatewayRegisterDef`），支援 HR（Holding）/ IR（Input）分區
+  - Write validation chain：`AddressWhitelistValidator`、composable `WriteRule` Protocol（見下方）
+  - Write hooks：`RedisPublishHook`、`CallbackHook`、`StatePersistHook`
+  - 資料同步來源：`RedisSubscriptionSource`、`PollingCallbackSource`
+  - 通訊 watchdog：含 timeout / recovery 回呼（`CommunicationWatchdog`）
+  - Thread-safe pymodbus 整合，含 asyncio bridge
+  - `ModbusGatewayServer` 實作 `AsyncLifecycleMixin`，透過 `async with` 管理完整生命週期
+- **WriteRule Protocol** (`csp_lib.modbus_gateway.protocol`): 可組合寫入規則介面
+  - `apply(register_name, value) -> (value, rejected)` 簽名，支援值轉換與拒絕
+  - **RangeRule**: 連續範圍驗證，支援 clamp / reject 模式（取代原 `WriteRule` dataclass）
+  - **AllowedValuesRule**: 離散值白名單（如模式暫存器只接受 `{0, 1, 3, 7}`）
+  - **StepRule**: 步進量化（如 `step=0.5` 對齊 0.5 kW 解析度），永不拒絕
+  - **CompositeRule**: 串接多個 rule 依序套用，任一拒絕即短路
+- **SystemControllerConfigBuilder** (`csp_lib.integration.system_controller`): Fluent builder
+  - `SystemControllerConfig.builder()` 回傳 builder 物件，支援鏈式呼叫
+  - `.map_context()` / `.map_command()` / `.protect()` / `.processor()` / `.params()` 等方法
+  - 不破壞現有 dataclass 直接建構方式（純加法）
+
+### Changed
+- **DRegStrategy → DroopStrategy** (`csp_lib.controller.strategies.droop_strategy`): 重新命名
+  - `DRegConfig` → `DroopConfig`，`DRegStrategy` → `DroopStrategy`
+  - `max_dreg_power` → `max_droop_power`，檔案 `dreg_strategy.py` → `droop_strategy.py`
+- **StrategyContext** (`csp_lib.controller.core.context`): 新增 `params` 欄位（`RuntimeParameters | None`）
+  - 系統參數與設備讀值分離：`params` 放 EMS 指令/保護設定，`extra` 放頻率/功率等設備讀值
+  - `ContextBuilder` 新增 `runtime_params` 參數，build 時自動注入
+- **SOCBalancingDistributor** (`csp_lib.integration.distributor`): 新增個別設備功率上限參數
+  - `per_device_max_p` 與 `per_device_max_q`：對各設備的輸出做硬體 clamp
+  - 四次算法：clamp → 溢出重分配 → 再次 clamp → 二次溢出按剩餘 headroom 分配，確保總容量足夠時不會少分配
+- **RedisClient** (`csp_lib.redis.client`): 功能擴充
+  - `TLSConfig.ca_certs` 改為 Optional（`cert_reqs="none"` 時可不提供 CA 憑證）
+  - 新增 `pubsub()` 方法，回傳 redis-py PubSub 實例以供 Pub/Sub 操作
+  - 新增 `scan()` 方法，支援增量 key 掃描（cursor-based iteration）
+- **WritePipeline** (`csp_lib.modbus_gateway.pipeline`): 寫入規則改用 `WriteRule` Protocol
+  - `_apply_rule` 簡化為委派 `rule.apply()`，不再內建 min/max/clamp 邏輯
+  - `write_rules` 參數型別從 `Sequence[WriteRule]` 改為 `Mapping[str, WriteRule]`（name → rule 映射）
+
+### Fixed
+- **SOCBalancingDistributor** (`csp_lib.integration.distributor`): 修復 clamp 溢出重分配後二次溢出被丟棄的問題
+  - 當 Pass 2 重分配導致新設備超限時，Pass 3 re-clamp 產生的溢出未被分配，造成總功率不足
+  - 新增 Pass 4：二次溢出按剩餘 headroom 分配給未飽和設備，確保總容量足夠時功率守恆
+
+### Deprecated
+- **RampStopProtection** (`csp_lib.controller.system.dynamic_protection`): 建議改用 `RampStopStrategy` + `EventDrivenOverride`
+  - RampStop 本質上是「接管控制」而非「修改數值」，更適合作為 Strategy
+  - `RampStopProtection` 保留但不再建議使用
+
 ## [0.4.3] - 2026-03-16
 
+* fix: hot fix cluster dependency problem.
 
+* feat: add wheel installation with extras and import verification
 
 ## [0.4.2] - 2026-03-13
 
