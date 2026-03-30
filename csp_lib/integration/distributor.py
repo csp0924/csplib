@@ -162,6 +162,8 @@ class SOCBalancingDistributor:
         soc_capability: SOC capability 名稱
         soc_slot: SOC slot 名稱
         gain: SOC 偏差增益（預設 2.0）
+        per_device_max_p: 單台設備最大有功功率限制 (kW)，None 表示不限制
+        per_device_max_q: 單台設備最大無功功率限制 (kVar)，None 表示不限制
     """
 
     def __init__(
@@ -170,11 +172,15 @@ class SOCBalancingDistributor:
         soc_capability: str = "soc_readable",
         soc_slot: str = "soc",
         gain: float = 2.0,
+        per_device_max_p: float | None = None,
+        per_device_max_q: float | None = None,
     ) -> None:
         self._rated_key = rated_key
         self._soc_capability = soc_capability
         self._soc_slot = soc_slot
         self._gain = gain
+        self._per_device_max_p = per_device_max_p
+        self._per_device_max_q = per_device_max_q
 
     def distribute(self, command: Command, devices: list[DeviceSnapshot]) -> dict[str, Command]:
         n = len(devices)
@@ -233,7 +239,99 @@ class SOCBalancingDistributor:
                 p_target=command.p_target * p_ratio,
                 q_target=command.q_target * q_ratio,
             )
+
+        # 硬體限幅 + 溢出轉移
+        if self._per_device_max_p is not None:
+            result = self._apply_clamp_and_overflow(result, "p_target", self._per_device_max_p)
+        if self._per_device_max_q is not None:
+            result = self._apply_clamp_and_overflow(result, "q_target", self._per_device_max_q)
+
         return result
+
+    def _apply_clamp_and_overflow(
+        self,
+        result: dict[str, Command],
+        field: str,
+        max_val: float,
+    ) -> dict[str, Command]:
+        """
+        對已分配結果執行硬體限幅與溢出轉移。
+
+        演算法：
+            1. 遍歷每台設備，若 |assigned| > max_val，限幅至 max_val（保留符號），
+               累計溢出量。
+            2. 將溢出量依未飽和設備的當前分配值按比例重新分配。
+            3. 再執行一次限幅，處理重分配後超限的邊界情況。
+
+        Args:
+            result: device_id → Command 的映射（初始分配結果）
+            field: 要限幅的 Command 欄位名稱 ("p_target" | "q_target")
+            max_val: 單台設備的絕對值上限
+
+        Returns:
+            限幅並重分配後的 device_id → Command 映射
+        """
+        # Pass 1: clamp and collect overflow
+        overflow = 0.0
+        saturated: set[str] = set()
+        values: dict[str, float] = {}
+
+        for dev_id, cmd in result.items():
+            val: float = getattr(cmd, field)
+            if abs(val) > max_val:
+                clamped = max_val if val > 0 else -max_val
+                overflow += val - clamped
+                values[dev_id] = clamped
+                saturated.add(dev_id)
+            else:
+                values[dev_id] = val
+
+        # Pass 2: redistribute overflow to non-saturated devices
+        if abs(overflow) > 1e-9:
+            unsaturated = {did: values[did] for did in values if did not in saturated}
+            total_unsaturated = sum(abs(v) for v in unsaturated.values())
+
+            for did in unsaturated:
+                if total_unsaturated > 1e-9:
+                    share = abs(unsaturated[did]) / total_unsaturated
+                else:
+                    # All unsaturated have zero assignment — split equally
+                    share = 1.0 / len(unsaturated) if unsaturated else 0.0
+                values[did] += overflow * share
+
+        # Pass 3: re-clamp after redistribution, collect second overflow
+        overflow2 = 0.0
+        saturated2: set[str] = set(saturated)
+        for dev_id in values:
+            val = values[dev_id]
+            if abs(val) > max_val:
+                clamped = max_val if val > 0 else -max_val
+                overflow2 += val - clamped
+                values[dev_id] = clamped
+                saturated2.add(dev_id)
+
+        # Pass 4: distribute remaining overflow to devices with headroom
+        if abs(overflow2) > 1e-9:
+            headroom = {did: max_val - abs(values[did]) for did in values if did not in saturated2}
+            total_headroom = sum(headroom.values())
+            if total_headroom > 1e-9:
+                sign = 1.0 if overflow2 > 0 else -1.0
+                remaining = abs(overflow2)
+                for did, hr in headroom.items():
+                    share = min(hr, remaining * (hr / total_headroom))
+                    values[did] += sign * share
+                    remaining -= share
+                    if remaining < 1e-9:
+                        break
+
+        # Build updated result
+        updated: dict[str, Command] = {}
+        for dev_id, cmd in result.items():
+            if field == "p_target":
+                updated[dev_id] = Command(p_target=values[dev_id], q_target=cmd.q_target)
+            else:
+                updated[dev_id] = Command(p_target=cmd.p_target, q_target=values[dev_id])
+        return updated
 
 
 __all__ = [

@@ -23,7 +23,14 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
-from csp_lib.controller.core import Command, ExecutionConfig, ExecutionMode, StrategyContext, SystemBase
+from csp_lib.controller.core import (
+    Command,
+    CommandProcessor,
+    ExecutionConfig,
+    ExecutionMode,
+    StrategyContext,
+    SystemBase,
+)
 from csp_lib.controller.executor import StrategyExecutor
 from csp_lib.controller.services import PVDataService
 from csp_lib.controller.strategies import StopStrategy
@@ -111,6 +118,256 @@ class SystemControllerConfig:
     heartbeat_capability_constant_value: int = 1
     heartbeat_capability_increment_max: int = 65535
     power_distributor: PowerDistributor | None = None
+    post_protection_processors: list[CommandProcessor] = field(default_factory=list)
+    runtime_params: Any = None  # RuntimeParameters | None, 自動注入到 StrategyContext.params
+
+    @classmethod
+    def builder(cls) -> "SystemControllerConfigBuilder":
+        """回傳 fluent builder 以逐步建構配置"""
+        return SystemControllerConfigBuilder()
+
+
+class SystemControllerConfigBuilder:
+    """
+    SystemControllerConfig 的 Fluent Builder
+
+    透過鏈式呼叫逐步建構配置，最後 build() 回傳 frozen 的 config。
+
+    Usage::
+
+        config = (
+            SystemControllerConfig.builder()
+            .system_base(p_base=2000)
+            .map_context(device_id="MTD1", point_name="f", target="extra.frequency")
+            .map_context(trait="bms", point_name="soc", target="soc")
+            .map_command(field="p_target", device_id="PCS1", point_name="set_p")
+            .protect(DynamicSOCProtection(params))
+            .processor(compensator)
+            .params(runtime_params)
+            .build()
+        )
+    """
+
+    def __init__(self) -> None:
+        self._context_mappings: list[ContextMapping] = []
+        self._command_mappings: list[CommandMapping] = []
+        self._cap_context_mappings: list[CapabilityContextMapping] = []
+        self._cap_command_mappings: list[CapabilityCommandMapping] = []
+        self._system_base: SystemBase | None = None
+        self._data_feed_mapping: DataFeedMapping | None = None
+        self._pv_max_history: int = 300
+        self._protection_rules: list[ProtectionRule] = []
+        self._auto_stop_on_alarm: bool = True
+        self._system_alarm_key: str = "system_alarm"
+        self._capacity_kva: float | None = None
+        self._alarm_mode: str = "system_wide"
+        self._on_device_alarm: Callable | None = None
+        self._on_device_alarm_clear: Callable | None = None
+        self._heartbeat_mappings: list[HeartbeatMapping] = []
+        self._heartbeat_interval: float = 1.0
+        self._use_heartbeat_capability: bool = False
+        self._heartbeat_capability_mode: HeartbeatMode = HeartbeatMode.TOGGLE
+        self._heartbeat_capability_constant_value: int = 1
+        self._heartbeat_capability_increment_max: int = 65535
+        self._power_distributor: PowerDistributor | None = None
+        self._processors: list[CommandProcessor] = []
+        self._runtime_params: Any = None
+
+    # ─────────────── 系統基準 ───────────────
+
+    def system_base(self, p_base: float, q_base: float = 0.0) -> "SystemControllerConfigBuilder":
+        """設定系統基準值 (kW / kVar)"""
+        self._system_base = SystemBase(p_base=p_base, q_base=q_base)
+        return self
+
+    # ─────────────── Context Mapping ───────────────
+
+    def map_context(
+        self,
+        point_name: str,
+        target: str,
+        *,
+        device_id: str | None = None,
+        trait: str | None = None,
+        aggregate: Any = None,
+        default: Any = None,
+        transform: Callable | None = None,
+    ) -> "SystemControllerConfigBuilder":
+        """
+        新增 context mapping（設備讀值 → StrategyContext）
+
+        Args:
+            point_name: 設備點位名稱
+            target: context 欄位（如 "soc", "extra.frequency"）
+            device_id: 指定設備（與 trait 二擇一）
+            trait: 設備群組（與 device_id 二擇一）
+            aggregate: 多設備聚合函式（trait 模式用）
+            default: 無值時的預設
+            transform: 值轉換函式
+        """
+        kwargs: dict[str, Any] = {"point_name": point_name, "context_field": target}
+        if device_id is not None:
+            kwargs["device_id"] = device_id
+        if trait is not None:
+            kwargs["trait"] = trait
+        if aggregate is not None:
+            kwargs["aggregate"] = aggregate
+        if default is not None:
+            kwargs["default"] = default
+        if transform is not None:
+            kwargs["transform"] = transform
+        self._context_mappings.append(ContextMapping(**kwargs))
+        return self
+
+    # ─────────────── Command Mapping ───────────────
+
+    def map_command(
+        self,
+        field: str,
+        point_name: str,
+        *,
+        device_id: str | None = None,
+        trait: str | None = None,
+        transform: Callable | None = None,
+    ) -> "SystemControllerConfigBuilder":
+        """
+        新增 command mapping（Command → 設備寫入）
+
+        Args:
+            field: Command 欄位（如 "p_target", "q_target"）
+            point_name: 設備寫入點位名稱
+            device_id: 指定設備（與 trait 二擇一）
+            trait: 設備群組（與 device_id 二擇一）
+            transform: 值轉換函式
+        """
+        kwargs: dict[str, Any] = {"command_field": field, "point_name": point_name}
+        if device_id is not None:
+            kwargs["device_id"] = device_id
+        if trait is not None:
+            kwargs["trait"] = trait
+        if transform is not None:
+            kwargs["transform"] = transform
+        self._command_mappings.append(CommandMapping(**kwargs))
+        return self
+
+    # ─────────────── Capability Mapping ───────────────
+
+    def map_capability_context(self, mapping: CapabilityContextMapping) -> "SystemControllerConfigBuilder":
+        """新增 capability context mapping"""
+        self._cap_context_mappings.append(mapping)
+        return self
+
+    def map_capability_command(self, mapping: CapabilityCommandMapping) -> "SystemControllerConfigBuilder":
+        """新增 capability command mapping"""
+        self._cap_command_mappings.append(mapping)
+        return self
+
+    # ─────────────── 保護 ───────────────
+
+    def protect(self, rule: ProtectionRule) -> "SystemControllerConfigBuilder":
+        """新增保護規則"""
+        self._protection_rules.append(rule)
+        return self
+
+    def auto_stop(self, enabled: bool = True, alarm_key: str = "system_alarm") -> "SystemControllerConfigBuilder":
+        """設定自動停機"""
+        self._auto_stop_on_alarm = enabled
+        self._system_alarm_key = alarm_key
+        return self
+
+    # ─────────────── Post-Protection Processor ───────────────
+
+    def processor(self, proc: CommandProcessor) -> "SystemControllerConfigBuilder":
+        """新增 post-protection 命令處理器（如 PowerCompensator）"""
+        self._processors.append(proc)
+        return self
+
+    # ─────────────── RuntimeParameters ───────────────
+
+    def params(self, runtime_params: Any) -> "SystemControllerConfigBuilder":
+        """設定 RuntimeParameters（注入到 StrategyContext.params）"""
+        self._runtime_params = runtime_params
+        return self
+
+    # ─────────────── 功率分配 ───────────────
+
+    def distributor(self, dist: PowerDistributor) -> "SystemControllerConfigBuilder":
+        """設定功率分配器"""
+        self._power_distributor = dist
+        return self
+
+    # ─────────────── 心跳 ───────────────
+
+    def heartbeat(
+        self,
+        mappings: list[HeartbeatMapping] | None = None,
+        interval: float = 1.0,
+        use_capability: bool = False,
+        mode: HeartbeatMode = HeartbeatMode.TOGGLE,
+    ) -> "SystemControllerConfigBuilder":
+        """設定心跳服務"""
+        if mappings:
+            self._heartbeat_mappings = mappings
+        self._heartbeat_interval = interval
+        self._use_heartbeat_capability = use_capability
+        self._heartbeat_capability_mode = mode
+        return self
+
+    # ─────────────── 告警模式 ───────────────
+
+    def alarm_mode_per_device(
+        self,
+        on_alarm: Callable | None = None,
+        on_clear: Callable | None = None,
+    ) -> "SystemControllerConfigBuilder":
+        """設定 per-device 告警模式"""
+        self._alarm_mode = "per_device"
+        self._on_device_alarm = on_alarm
+        self._on_device_alarm_clear = on_clear
+        return self
+
+    # ─────────────── PV / 級聯 ───────────────
+
+    def data_feed(self, mapping: DataFeedMapping, max_history: int = 300) -> "SystemControllerConfigBuilder":
+        """設定 PV 資料餵入"""
+        self._data_feed_mapping = mapping
+        self._pv_max_history = max_history
+        return self
+
+    def cascading(self, capacity_kva: float) -> "SystemControllerConfigBuilder":
+        """設定多 base mode 級聯的最大視在功率"""
+        self._capacity_kva = capacity_kva
+        return self
+
+    # ─────────────── Build ───────────────
+
+    def build(self) -> "SystemControllerConfig":
+        """建構 SystemControllerConfig"""
+        return SystemControllerConfig(
+            context_mappings=self._context_mappings,
+            command_mappings=self._command_mappings,
+            capability_context_mappings=self._cap_context_mappings,
+            capability_command_mappings=self._cap_command_mappings,
+            system_base=self._system_base,
+            data_feed_mapping=self._data_feed_mapping,
+            pv_max_history=self._pv_max_history,
+            protection_rules=self._protection_rules,
+            auto_stop_on_alarm=self._auto_stop_on_alarm,
+            system_alarm_key=self._system_alarm_key,
+            capacity_kva=self._capacity_kva,
+            alarm_mode=self._alarm_mode,
+            on_device_alarm=self._on_device_alarm,
+            on_device_alarm_clear=self._on_device_alarm_clear,
+            heartbeat_mappings=self._heartbeat_mappings,
+            heartbeat_interval=self._heartbeat_interval,
+            use_heartbeat_capability=self._use_heartbeat_capability,
+            heartbeat_capability_mode=self._heartbeat_capability_mode,
+            heartbeat_capability_constant_value=self._heartbeat_capability_constant_value,
+            heartbeat_capability_increment_max=self._heartbeat_capability_increment_max,
+            power_distributor=self._power_distributor,
+            post_protection_processors=self._processors,
+            runtime_params=self._runtime_params,
+        )
 
 
 class _OverrideState:
@@ -167,6 +424,7 @@ class SystemController(AsyncLifecycleMixin):
             config.context_mappings,
             system_base=config.system_base,
             capability_mappings=config.capability_context_mappings or None,
+            runtime_params=config.runtime_params,
         )
 
         # Command 路由器
@@ -308,6 +566,10 @@ class SystemController(AsyncLifecycleMixin):
 
     async def _on_start(self) -> None:
         """啟動系統控制器"""
+        # 初始化 post-protection processors（async_init for MongoDB etc.）
+        for proc in self._config.post_protection_processors:
+            if hasattr(proc, "async_init"):
+                await proc.async_init()
         if self._data_feed is not None:
             self._data_feed.attach()
         if self._heartbeat is not None:
@@ -350,7 +612,7 @@ class SystemController(AsyncLifecycleMixin):
         return context
 
     async def _on_command(self, command: Command) -> None:
-        """命令回呼：套用保護鏈 → 處理告警 → 路由到設備"""
+        """命令回呼：套用保護鏈 → post-protection processors → 路由到設備"""
         # 取得最近的 context（由 executor 在 _execute_strategy 中呼叫 _build_context 後產生）
         context = self._cached_context
         if context is None:
@@ -360,6 +622,14 @@ class SystemController(AsyncLifecycleMixin):
         result = self._protection_guard.apply(command, context)
         protected_command = result.protected_command
 
+        # 套用 post-protection processors（補償、日誌、審計等）
+        final_command = protected_command
+        for processor in self._config.post_protection_processors:
+            try:
+                final_command = await processor.process(final_command, context)
+            except Exception:
+                logger.opt(exception=True).warning(f"CommandProcessor {type(processor).__name__} failed, skipping")
+
         # 評估事件驅動 overrides（包含自動停機）
         if self._event_overrides:
             await self._evaluate_event_overrides(context)
@@ -367,10 +637,10 @@ class SystemController(AsyncLifecycleMixin):
         # 路由到設備（is_protected 設備由 CommandRouter 防禦性跳過）
         if self._config.power_distributor is not None and self._config.capability_command_mappings:
             snapshots = self._build_device_snapshots()
-            per_device = self._config.power_distributor.distribute(protected_command, snapshots)
-            await self._command_router.route_per_device(protected_command, per_device)
+            per_device = self._config.power_distributor.distribute(final_command, snapshots)
+            await self._command_router.route_per_device(final_command, per_device)
         else:
-            await self._command_router.route(protected_command)
+            await self._command_router.route(final_command)
 
         # 處理設備級告警（per_device 模式）
         if self._config.alarm_mode == "per_device":

@@ -5,6 +5,7 @@
 from .command import Command, ConfigMixin, SystemBase
 from .context import StrategyContext
 from .execution import ExecutionConfig, ExecutionMode
+from .processor import CommandProcessor
 from .strategy import Strategy
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     # Execution
     "ExecutionMode",
     "ExecutionConfig",
+    # Processor
+    "CommandProcessor",
     # Strategy
     "Strategy",
 ]

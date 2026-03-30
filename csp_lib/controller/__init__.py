@@ -5,8 +5,11 @@
 # 提供便捷的 import 路徑：
 #   from csp_lib.controller import Strategy, Command, StrategyExecutor
 
+from .calibration import FFCalibrationConfig, FFCalibrationStrategy
+from .compensator import PowerCompensator, PowerCompensatorConfig
 from .core import (
     Command,
+    CommandProcessor,
     ConfigMixin,
     ExecutionConfig,
     ExecutionMode,
@@ -20,6 +23,8 @@ from .protocol import GridControllerBase, GridControllerProtocol
 from .services import PVDataService
 from .strategies import (
     BypassStrategy,
+    DroopConfig,
+    DroopStrategy,
     FPConfig,
     FPStrategy,
     IslandModeConfig,
@@ -33,6 +38,7 @@ from .strategies import (
     PVSmoothStrategy,
     QVConfig,
     QVStrategy,
+    RampStopStrategy,
     RelayProtocol,
     RemainingTimeCondition,
     ScheduleStrategy,
@@ -46,13 +52,16 @@ from .system import (
     CapacityConfig,
     CascadingStrategy,
     ContextKeyOverride,
+    DynamicSOCProtection,
     EventDrivenOverride,
+    GridLimitProtection,
     ModeDefinition,
     ModeManager,
     ModePriority,
     ProtectionGuard,
     ProtectionResult,
     ProtectionRule,
+    RampStopProtection,
     ReversePowerProtection,
     ScheduleModeController,
     SOCProtection,
@@ -62,6 +71,12 @@ from .system import (
 )
 
 __all__ = [
+    # Calibration
+    "FFCalibrationConfig",
+    "FFCalibrationStrategy",
+    # Compensator
+    "PowerCompensator",
+    "PowerCompensatorConfig",
     # Discovery
     "ENTRY_POINT_GROUP",
     "StrategyDescriptor",
@@ -71,6 +86,7 @@ __all__ = [
     "GridControllerProtocol",
     # Core
     "Command",
+    "CommandProcessor",
     "SystemBase",
     "ConfigMixin",
     "StrategyContext",
@@ -84,6 +100,8 @@ __all__ = [
     "PVDataService",
     # Strategies
     "BypassStrategy",
+    "DroopConfig",
+    "DroopStrategy",
     "FPConfig",
     "FPStrategy",
     "IslandModeConfig",
@@ -98,6 +116,7 @@ __all__ = [
     "QVConfig",
     "QVStrategy",
     "RelayProtocol",
+    "RampStopStrategy",
     "RemainingTimeCondition",
     "ScheduleStrategy",
     "ShedCondition",
@@ -109,7 +128,10 @@ __all__ = [
     "CapacityConfig",
     "CascadingStrategy",
     "ContextKeyOverride",
+    "DynamicSOCProtection",
     "EventDrivenOverride",
+    "GridLimitProtection",
+    "RampStopProtection",
     "ScheduleModeController",
     "SwitchSource",
     "ModePriority",

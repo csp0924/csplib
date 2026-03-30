@@ -17,6 +17,7 @@ from .errors import AlarmError, CommunicationError, ConfigurationError, DeviceCo
 from .health import HealthCheckable, HealthReport, HealthStatus
 from .lifecycle import AsyncLifecycleMixin
 from .resilience import CircuitBreaker, CircuitState, RetryPolicy
+from .runtime_params import RuntimeParameters
 
 if TYPE_CHECKING:
     from loguru import Logger
@@ -209,4 +210,6 @@ __all__ = [
     "CircuitState",
     "CircuitBreaker",
     "RetryPolicy",
+    # Runtime Parameters
+    "RuntimeParameters",
 ]
