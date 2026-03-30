@@ -244,6 +244,16 @@ class GatewayRegisterMap:
         """All register definitions as a shallow copy."""
         return dict(self._defs)
 
+    @property
+    def default_byte_order(self) -> Any:
+        """Server default byte order."""
+        return self._config.byte_order
+
+    @property
+    def default_register_order(self) -> Any:
+        """Server default register order."""
+        return self._config.register_order
+
     # ------------------------------------------------------------------
     # Internal (caller must hold self._lock)
     # ------------------------------------------------------------------

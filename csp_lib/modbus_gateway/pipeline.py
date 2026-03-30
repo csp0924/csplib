@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from csp_lib.core import get_logger
+from csp_lib.modbus import ModbusCodec
 from csp_lib.modbus_gateway.config import RegisterType
 
 logger = get_logger(__name__)
@@ -43,6 +44,9 @@ class WritePipeline:
         self._write_rules: dict[str, Any] = dict(write_rules) if write_rules else {}
         self._validators: list[Any] = []  # WriteValidator instances
         self._hooks: list[Any] = []  # WriteHook instances
+        self._codec = ModbusCodec()
+        self._default_byte_order = register_map.default_byte_order
+        self._default_register_order = register_map.default_register_order
 
     def add_validator(self, validator: Any) -> None:
         """Add a write validator."""
@@ -87,12 +91,9 @@ class WritePipeline:
             raw_slice = values[offset : offset + reg_count]
 
             # Decode to physical value
-            bo = reg_def.byte_order or self._register_map._config.byte_order
-            ro = reg_def.register_order or self._register_map._config.register_order
-            from csp_lib.modbus import ModbusCodec
-
-            codec = ModbusCodec()
-            decoded = codec.decode(reg_def.data_type, raw_slice, bo, ro)
+            bo = reg_def.byte_order or self._default_byte_order
+            ro = reg_def.register_order or self._default_register_order
+            decoded = self._codec.decode(reg_def.data_type, raw_slice, bo, ro)
             physical = decoded / reg_def.scale if reg_def.scale != 1.0 else decoded
 
             # Read old value
