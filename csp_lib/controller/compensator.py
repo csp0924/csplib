@@ -548,10 +548,7 @@ class PowerCompensator:
         if abs(new_ff - old_ff) > 1e-6:
             self._ff_table[idx] = new_ff
             self._integral = 0.0
-            logger.debug(
-                f"FF learn: bin[{idx}]({idx * cfg.power_bin_step_pct}%) "
-                f"ff: {old_ff:.4f} → {new_ff:.4f}"
-            )
+            logger.debug(f"FF learn: bin[{idx}]({idx * cfg.power_bin_step_pct}%) ff: {old_ff:.4f} → {new_ff:.4f}")
             self._save_ff_table()
 
         self._steady_count = 0

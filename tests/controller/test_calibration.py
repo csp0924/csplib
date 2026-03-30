@@ -80,8 +80,12 @@ class TestFFCalibrationStrategy:
         """When measurement matches setpoint for N cycles, FF is recorded."""
         cal = FFCalibrationStrategy(
             config=FFCalibrationConfig(
-                step_pct=50, min_pct=50, max_pct=50,
-                steady_cycles=3, settle_wait_cycles=0, steady_threshold=0.05,
+                step_pct=50,
+                min_pct=50,
+                max_pct=50,
+                steady_cycles=3,
+                settle_wait_cycles=0,
+                steady_threshold=0.05,
             ),
             rated_power=1000.0,
         )
@@ -108,8 +112,12 @@ class TestFFCalibrationStrategy:
 
         cal = FFCalibrationStrategy(
             config=FFCalibrationConfig(
-                step_pct=100, min_pct=-100, max_pct=100,
-                steady_cycles=2, settle_wait_cycles=0, steady_threshold=0.05,
+                step_pct=100,
+                min_pct=-100,
+                max_pct=100,
+                steady_cycles=2,
+                settle_wait_cycles=0,
+                steady_threshold=0.05,
             ),
             compensator=None,
             rated_power=1000.0,
@@ -139,8 +147,11 @@ class TestFFCalibrationStrategy:
         """After DONE, execute returns P=0."""
         cal = FFCalibrationStrategy(
             config=FFCalibrationConfig(
-                step_pct=100, min_pct=100, max_pct=100,
-                steady_cycles=1, settle_wait_cycles=0,
+                step_pct=100,
+                min_pct=100,
+                max_pct=100,
+                steady_cycles=1,
+                settle_wait_cycles=0,
             ),
             rated_power=1000.0,
         )
@@ -195,8 +206,11 @@ class TestFFCalibrationStrategy:
         comp = FakeCompensator()
         cal = FFCalibrationStrategy(
             config=FFCalibrationConfig(
-                step_pct=100, min_pct=100, max_pct=100,
-                steady_cycles=1, settle_wait_cycles=0,
+                step_pct=100,
+                min_pct=100,
+                max_pct=100,
+                steady_cycles=1,
+                settle_wait_cycles=0,
             ),
             compensator=comp,
             rated_power=1000.0,
@@ -214,8 +228,11 @@ class TestFFCalibrationStrategy:
         """After switching bins, settle_wait_cycles are skipped."""
         cal = FFCalibrationStrategy(
             config=FFCalibrationConfig(
-                step_pct=100, min_pct=100, max_pct=100,
-                steady_cycles=1, settle_wait_cycles=3,
+                step_pct=100,
+                min_pct=100,
+                max_pct=100,
+                steady_cycles=1,
+                settle_wait_cycles=3,
             ),
             rated_power=1000.0,
         )

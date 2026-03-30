@@ -155,9 +155,7 @@ class RuntimeParameters:
             try:
                 cb(key, old, new)
             except Exception:
-                logger.opt(exception=True).warning(
-                    f"RuntimeParameters observer 執行失敗: key={key}"
-                )
+                logger.opt(exception=True).warning(f"RuntimeParameters observer 執行失敗: key={key}")
 
     # ─────────────────────── 表示 ───────────────────────
 

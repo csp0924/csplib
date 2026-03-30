@@ -219,8 +219,7 @@ class FFCalibrationStrategy(Strategy):
         """校準被中斷或完成"""
         if self._state == _CalibrationState.STEPPING:
             logger.warning(
-                f"FFCalibration interrupted at bin {self._bin_index}/{len(self._bin_sequence)}, "
-                f"FF table NOT updated"
+                f"FFCalibration interrupted at bin {self._bin_index}/{len(self._bin_sequence)}, FF table NOT updated"
             )
         self._state = _CalibrationState.IDLE
 

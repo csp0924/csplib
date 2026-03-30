@@ -39,12 +39,14 @@ class RedisPublishHook:
         self._channel = channel
 
     async def on_write(self, register_name: str, old_value: Any, new_value: Any) -> None:
-        payload = json.dumps({
-            "register": register_name,
-            "old": old_value,
-            "new": new_value,
-            "ts": time.time(),
-        })
+        payload = json.dumps(
+            {
+                "register": register_name,
+                "old": old_value,
+                "new": new_value,
+                "ts": time.time(),
+            }
+        )
         try:
             await self._redis.publish(self._channel, payload)
         except Exception:

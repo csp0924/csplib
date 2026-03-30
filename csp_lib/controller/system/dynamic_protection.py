@@ -83,9 +83,7 @@ class DynamicSOCProtection(ProtectionRule):
         if soc >= soc_max:
             if p < 0:
                 self._is_triggered = True
-                logger.warning(
-                    f"DynamicSOC: SOC={soc:.1f}% >= {soc_max}%, block charging, P: {p:.1f} → 0"
-                )
+                logger.warning(f"DynamicSOC: SOC={soc:.1f}% >= {soc_max}%, block charging, P: {p:.1f} → 0")
                 return command.with_p(0.0)
             self._is_triggered = False
             return command
@@ -94,9 +92,7 @@ class DynamicSOCProtection(ProtectionRule):
         if soc <= soc_min:
             if p > 0:
                 self._is_triggered = True
-                logger.warning(
-                    f"DynamicSOC: SOC={soc:.1f}% <= {soc_min}%, block discharging, P: {p:.1f} → 0"
-                )
+                logger.warning(f"DynamicSOC: SOC={soc:.1f}% <= {soc_min}%, block discharging, P: {p:.1f} → 0")
                 return command.with_p(0.0)
             self._is_triggered = False
             return command
@@ -259,8 +255,7 @@ class RampStopProtection(ProtectionRule):
             target_p = current_p + ramp_step
 
         logger.debug(
-            f"RampStop: triggered, current_p={current_p:.1f}kW, "
-            f"ramp_step={ramp_step:.1f}kW, target={target_p:.1f}kW"
+            f"RampStop: triggered, current_p={current_p:.1f}kW, ramp_step={ramp_step:.1f}kW, target={target_p:.1f}kW"
         )
         return command.with_p(target_p)
 

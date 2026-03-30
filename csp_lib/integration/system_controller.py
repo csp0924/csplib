@@ -628,9 +628,7 @@ class SystemController(AsyncLifecycleMixin):
             try:
                 final_command = await processor.process(final_command, context)
             except Exception:
-                logger.opt(exception=True).warning(
-                    f"CommandProcessor {type(processor).__name__} failed, skipping"
-                )
+                logger.opt(exception=True).warning(f"CommandProcessor {type(processor).__name__} failed, skipping")
 
         # 評估事件驅動 overrides（包含自動停機）
         if self._event_overrides:

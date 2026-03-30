@@ -107,10 +107,16 @@ async def demo():
 
     # ── 4. 保護規則（只放 clamp 型，RampStop 改用 Strategy）──
 
-    compensator = PowerCompensator(PowerCompensatorConfig(
-        rated_power=2000.0, output_min=-2200.0, output_max=2200.0,
-        ki=0.3, deadband=0.5, measurement_key="meter_power",
-    ))
+    compensator = PowerCompensator(
+        PowerCompensatorConfig(
+            rated_power=2000.0,
+            output_min=-2200.0,
+            output_max=2200.0,
+            ki=0.3,
+            deadband=0.5,
+            measurement_key="meter_power",
+        )
+    )
 
     # ── 5. Builder 建構 config ──
 
@@ -143,8 +149,11 @@ async def demo():
     # ── 6. SOCBalancingDistributor ──
 
     _distributor = SOCBalancingDistributor(  # noqa: F841
-        rated_key="rated_p", soc_capability="soc_readable", soc_slot="soc",
-        gain=2.0, per_device_max_p=1100.0,
+        rated_key="rated_p",
+        soc_capability="soc_readable",
+        soc_slot="soc",
+        gain=2.0,
+        per_device_max_p=1100.0,
     )
     logger.info("[6] SOCBalancingDistributor: gain=2.0, per_device_max_p=1100kW")
 
