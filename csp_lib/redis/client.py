@@ -66,7 +66,10 @@ class TLSConfig:
         # certfile 和 keyfile 必須同時提供或同時不提供
         if (self.certfile is None) != (self.keyfile is None):
             raise ValueError("certfile 和 keyfile 必須同時提供（雙向 TLS）或同時不提供（單向 TLS）")
-        # cert_reqs != "none" 時建議提供 ca_certs
+        # ca_certs 若提供則不能為空字串
+        if self.ca_certs is not None and not self.ca_certs.strip():
+            raise ValueError("ca_certs 不能為空字串，請提供有效路徑或設為 None")
+        # cert_reqs != "none" 時必須提供 ca_certs
         if self.cert_reqs != "none" and self.ca_certs is None:
             raise ValueError("cert_reqs 非 'none' 時必須提供 ca_certs")
 
@@ -87,7 +90,7 @@ class TLSConfig:
             "none": ssl.CERT_NONE,
         }
 
-        if self.ca_certs:
+        if self.ca_certs is not None:
             context = ssl.create_default_context(cafile=self.ca_certs)
         else:
             # 無 CA 憑證：建立不驗證的 context（用於 cert_reqs="none"）
