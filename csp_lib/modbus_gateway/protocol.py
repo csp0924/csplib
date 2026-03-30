@@ -94,42 +94,9 @@ class DataSyncSource(Protocol):
         ...
 
 
-@runtime_checkable
-class WriteRule(Protocol):
-    """Composable write rule that can transform or reject a proposed value.
-
-    Implementations inspect the register name and proposed value,
-    returning a (possibly transformed) value and a rejection flag.
-
-    Example:
-        @dataclass(frozen=True, slots=True)
-        class MyRule:
-            threshold: float = 100.0
-
-            def apply(self, register_name: str, value: float) -> tuple[float, bool]:
-                if value > self.threshold:
-                    return self.threshold, False  # clamp
-                return value, False
-    """
-
-    def apply(self, register_name: str, value: float) -> tuple[float, bool]:
-        """Apply this rule to a proposed write value.
-
-        Args:
-            register_name: Logical name of the target register (for logging).
-            value: The proposed write value.
-
-        Returns:
-            Tuple of (possibly_transformed_value, rejected).
-            If rejected is True, the value should be discarded.
-        """
-        ...
-
-
 __all__ = [
     "DataSyncSource",
     "UpdateRegisterCallback",
     "WriteHook",
-    "WriteRule",
     "WriteValidator",
 ]

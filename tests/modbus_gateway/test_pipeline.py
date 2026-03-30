@@ -6,10 +6,10 @@ from csp_lib.modbus.types.numeric import UInt16
 from csp_lib.modbus_gateway.config import (
     GatewayRegisterDef,
     GatewayServerConfig,
+    WriteRule,
 )
 from csp_lib.modbus_gateway.pipeline import WritePipeline
 from csp_lib.modbus_gateway.register_map import GatewayRegisterMap
-from csp_lib.modbus_gateway.rules import RangeRule
 
 # ===========================================================================
 # Helpers
@@ -18,7 +18,7 @@ from csp_lib.modbus_gateway.rules import RangeRule
 
 def _make_pipeline(
     register_defs: list[GatewayRegisterDef] | None = None,
-    write_rules: dict[str, RangeRule] | None = None,
+    write_rules: dict[str, WriteRule] | None = None,
 ) -> tuple[WritePipeline, GatewayRegisterMap]:
     """Create a WritePipeline with a backing GatewayRegisterMap."""
     cfg = GatewayServerConfig(host="127.0.0.1", port=502, register_space_size=1000)
@@ -67,20 +67,20 @@ class TestPipelineBasicWrite:
 
 class TestPipelineWriteRuleClamp:
     def test_clamp_below_min(self):
-        rules = {"power": RangeRule( min_value=10, max_value=1000, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", min_value=10, max_value=1000, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         changes = pipeline.process_write(0, [5])  # below min
         assert rmap.get_value("power") == 10  # clamped to min
         assert len(changes) == 1
 
     def test_clamp_above_max(self):
-        rules = {"power": RangeRule( min_value=0, max_value=500, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", min_value=0, max_value=500, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         pipeline.process_write(0, [999])  # above max
         assert rmap.get_value("power") == 500  # clamped to max
 
     def test_clamp_within_range_no_change(self):
-        rules = {"power": RangeRule( min_value=0, max_value=1000, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", min_value=0, max_value=1000, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         pipeline.process_write(0, [250])
         assert rmap.get_value("power") == 250
@@ -93,7 +93,7 @@ class TestPipelineWriteRuleClamp:
 
 class TestPipelineWriteRuleReject:
     def test_reject_below_min(self):
-        rules = {"power": RangeRule( min_value=10, max_value=1000, clamp=False)}
+        rules = {"power": WriteRule(register_name="power", min_value=10, max_value=1000, clamp=False)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         changes = pipeline.process_write(0, [5])  # below min
         # Rejected: register not updated (stays 0)
@@ -101,14 +101,14 @@ class TestPipelineWriteRuleReject:
         assert changes == []
 
     def test_reject_above_max(self):
-        rules = {"power": RangeRule( min_value=0, max_value=500, clamp=False)}
+        rules = {"power": WriteRule(register_name="power", min_value=0, max_value=500, clamp=False)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         changes = pipeline.process_write(0, [999])  # above max
         assert rmap.get_value("power") == 0  # not updated
         assert changes == []
 
     def test_accept_within_range(self):
-        rules = {"power": RangeRule( min_value=0, max_value=1000, clamp=False)}
+        rules = {"power": WriteRule(register_name="power", min_value=0, max_value=1000, clamp=False)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         changes = pipeline.process_write(0, [250])
         assert rmap.get_value("power") == 250
@@ -122,13 +122,13 @@ class TestPipelineWriteRuleReject:
 
 class TestPipelineWriteRuleOneSided:
     def test_min_only(self):
-        rules = {"power": RangeRule( min_value=10, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", min_value=10, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         pipeline.process_write(0, [5])
         assert rmap.get_value("power") == 10  # clamped
 
     def test_max_only(self):
-        rules = {"power": RangeRule( max_value=500, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", max_value=500, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         pipeline.process_write(0, [999])
         assert rmap.get_value("power") == 500  # clamped
@@ -175,7 +175,7 @@ class TestPipelineValidatorChain:
 
     def test_validator_runs_before_rule(self):
         """Validator rejects -> WriteRule is never reached."""
-        rules = {"power": RangeRule( min_value=0, max_value=1000, clamp=True)}
+        rules = {"power": WriteRule(register_name="power", min_value=0, max_value=1000, clamp=True)}
         pipeline, rmap = _make_pipeline(write_rules=rules)
         validator = MagicMock()
         validator.validate.return_value = False

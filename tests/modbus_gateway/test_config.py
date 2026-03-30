@@ -9,8 +9,8 @@ from csp_lib.modbus_gateway.config import (
     GatewayServerConfig,
     RegisterType,
     WatchdogConfig,
+    WriteRule,
 )
-from csp_lib.modbus_gateway.rules import RangeRule
 
 # ===========================================================================
 # GatewayRegisterDef
@@ -56,19 +56,19 @@ class TestGatewayRegisterDef:
 
 
 # ===========================================================================
-# RangeRule
+# WriteRule
 # ===========================================================================
 
 
-class TestRangeRule:
+class TestWriteRule:
     def test_defaults(self):
-        rule = RangeRule()
+        rule = WriteRule(register_name="test")
         assert rule.min_value is None
         assert rule.max_value is None
         assert rule.clamp is False
 
     def test_with_bounds(self):
-        rule = RangeRule(min_value=-1000, max_value=1000, clamp=True)
+        rule = WriteRule(register_name="test", min_value=-1000, max_value=1000, clamp=True)
         assert rule.min_value == -1000
         assert rule.max_value == 1000
         assert rule.clamp is True
