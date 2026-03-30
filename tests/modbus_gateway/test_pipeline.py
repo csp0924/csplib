@@ -7,9 +7,9 @@ from csp_lib.modbus_gateway.config import (
     GatewayRegisterDef,
     GatewayServerConfig,
 )
-from csp_lib.modbus_gateway.rules import RangeRule
 from csp_lib.modbus_gateway.pipeline import WritePipeline
 from csp_lib.modbus_gateway.register_map import GatewayRegisterMap
+from csp_lib.modbus_gateway.rules import RangeRule
 
 # ===========================================================================
 # Helpers
