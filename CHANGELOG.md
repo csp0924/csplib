@@ -26,6 +26,18 @@
 - **Device 重複註冊檢查** (`csp_lib.manager.device.manager`): register() 和 register_group() 檢查 duplicate device_id
 - **DeviceConfig 驗證加強**: `reconnect_interval <= 0` 拒絕（防止 tight loop）
 - **WriteRule 驗證加強**: `min_value > max_value` 拒絕
+- **Redis Sentinel disconnect**: `disconnect()` 時釋放 `_sentinel` 引用，防止 Sentinel 連線洩漏
+- **NotificationBatcher flush retry**: `_on_stop()` flush 失敗時重試一次，記錄 dropped notification 數量
+- **CircuitBreaker 指數退避**: 加 `max_cooldown`、`backoff_factor` 參數，故障恢復時加 jitter 防止 thundering herd
+- **ModbusRequestQueue 清理 log**: `stop()` 加 cancelled/done futures summary log
+- **Device 狀態 asyncio.Lock** (`csp_lib.equipment.device.base`): `_status_lock` 保護 responsive/failure 狀態更新，防止並發競態
+- **UnifiedDeviceManager 註冊 threading.Lock**: `_register_lock` 防止並發註冊重複訂閱
+- **StatisticsEngine 去重**: `register_power_sum_devices()` 去重防止累計值翻倍
+- **DataFeed attach 回滾**: `attach()` 部分失敗時回滾已訂閱的 handler，防止洩漏
+- **Heartbeat point 驗證**: `_on_start()` 時驗證 heartbeat point 在目標設備上是否存在
+
+### Added
+- **WeakRef event listener** (`csp_lib.equipment.device.events`): `on(event, handler, weak=True)` 支援弱引用 handler，GC 後自動清理
 
 ## [0.5.0] - 2026-03-31
 ### Added
