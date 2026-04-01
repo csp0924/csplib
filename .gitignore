@@ -166,3 +166,5 @@ __pypackages__/
 CLAUDE.md
 .coverage
 .ruff_cache/
+
+BACKLOG.md
