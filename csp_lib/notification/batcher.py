@@ -96,9 +96,29 @@ class NotificationBatcher(AsyncLifecycleMixin):
             except asyncio.CancelledError:
                 pass
             self._flush_task = None
-        # 確保所有殘留通知都已發送
-        await self.flush()
+        # 確保所有殘留通知都已發送（含重試）
+        await self._final_flush()
         logger.info("NotificationBatcher: 已停止")
+
+    async def _final_flush(self) -> None:
+        """停止時的最終 flush，含一次重試"""
+        pending = len(self._queue)
+        if pending == 0:
+            return
+        try:
+            await self.flush()
+        except Exception:
+            logger.warning(f"NotificationBatcher: 停止時 flush 失敗，{pending} 則通知待重試", exc_info=True)
+            await asyncio.sleep(1)
+            remaining = len(self._queue)
+            if remaining == 0:
+                return
+            try:
+                await self.flush()
+            except Exception:
+                dropped = len(self._queue)
+                self._queue.clear()
+                logger.error(f"NotificationBatcher: 重試仍失敗，{dropped} notifications dropped")
 
     # ================ Public API ================
 
