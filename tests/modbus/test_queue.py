@@ -106,8 +106,8 @@ class TestUnitCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
 
         with patch("csp_lib.core.resilience.time") as mock_time:
-            # Simulate cooldown elapsed
-            mock_time.monotonic.return_value = time.monotonic() + 1.0
+            # Simulate cooldown elapsed (must exceed max backoff with jitter)
+            mock_time.monotonic.return_value = time.monotonic() + 5.0
             assert cb.state == CircuitBreakerState.HALF_OPEN
             assert cb.allows_request() is True
 
@@ -117,8 +117,8 @@ class TestUnitCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
 
         with patch("csp_lib.core.resilience.time") as mock_time:
-            # Simulate cooldown elapsed → HALF_OPEN
-            mock_time.monotonic.return_value = time.monotonic() + 200.0
+            # Simulate cooldown elapsed → HALF_OPEN (must exceed max backoff with jitter)
+            mock_time.monotonic.return_value = time.monotonic() + 500.0
             assert cb.state == CircuitBreakerState.HALF_OPEN
 
             cb.record_success()
@@ -130,8 +130,8 @@ class TestUnitCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
 
         with patch("csp_lib.core.resilience.time") as mock_time:
-            # Simulate cooldown elapsed → HALF_OPEN
-            mock_time.monotonic.return_value = time.monotonic() + 200.0
+            # Simulate cooldown elapsed → HALF_OPEN (must exceed max backoff with jitter)
+            mock_time.monotonic.return_value = time.monotonic() + 500.0
             assert cb.state == CircuitBreakerState.HALF_OPEN
 
             # Failure in HALF_OPEN → back to OPEN
@@ -369,8 +369,8 @@ class TestModbusRequestQueue:
                     coroutine_factory=lambda: _async_raise(ModbusError("fail")),
                 )
 
-            # Wait for cooldown
-            await asyncio.sleep(0.2)
+            # Wait for cooldown (must exceed max backoff with jitter: 0.1 * 2 * 1.2 = 0.24)
+            await asyncio.sleep(0.5)
 
             # Should work now (HALF_OPEN → CLOSED)
             result = await queue.submit(

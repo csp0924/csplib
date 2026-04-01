@@ -18,9 +18,12 @@ from enum import IntEnum
 from heapq import heappop, heappush
 from typing import Any, Callable, Coroutine
 
+from csp_lib.core import get_logger
 from csp_lib.core.resilience import CircuitBreaker, CircuitState
 
 from ..exceptions import ModbusCircuitBreakerError, ModbusError, ModbusQueueFullError
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -223,15 +226,22 @@ class ModbusRequestQueue:
             self._worker_task = None
 
         # 取消所有剩餘的請求
+        cancelled = 0
+        already_done = 0
         async with self._lock:
             for unit_id in list(self._unit_queues.keys()):
                 for request in self._unit_queues[unit_id]:
                     if not request.future.done():
                         request.future.cancel()
+                        cancelled += 1
+                    else:
+                        already_done += 1
                 self._unit_queues[unit_id].clear()
             self._unit_queues.clear()
             self._round_robin.clear()
             self._total_size = 0
+
+        logger.info(f"Queue stopped: {cancelled} futures cancelled, {already_done} already done")
 
     async def _worker(self) -> None:
         """背景 worker：逐一處理佇列中的請求"""
