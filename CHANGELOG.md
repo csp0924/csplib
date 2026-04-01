@@ -6,6 +6,7 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-01
 ## [0.5.1] - 2026-04-01
 ### Changed
 - **錯誤階層擴充**: 新增 `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 結構化例外，取代裸 `RuntimeError` / `ValueError`
