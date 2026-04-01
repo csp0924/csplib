@@ -8,6 +8,9 @@ from csp_lib.core.errors import (
     ConfigurationError,
     DeviceConnectionError,
     DeviceError,
+    DeviceRegistryError,
+    ProtectionError,
+    StrategyExecutionError,
 )
 
 
@@ -51,3 +54,52 @@ class TestConfigurationError:
         assert not isinstance(err, DeviceError)
         assert isinstance(err, Exception)
         assert "invalid mapping" in str(err)
+
+
+class TestStrategyExecutionError:
+    def test_instantiation_and_attributes(self):
+        err = StrategyExecutionError("PQStrategy", "power limit exceeded")
+        assert err.strategy_name == "PQStrategy"
+        assert "Strategy 'PQStrategy': power limit exceeded" == str(err)
+
+    def test_not_device_error(self):
+        err = StrategyExecutionError("FPStrategy", "frequency drift")
+        assert not isinstance(err, DeviceError)
+        assert isinstance(err, Exception)
+
+    def test_caught_by_own_type(self):
+        with pytest.raises(StrategyExecutionError):
+            raise StrategyExecutionError("QVStrategy", "voltage out of range")
+
+
+class TestProtectionError:
+    def test_instantiation_and_attributes(self):
+        err = ProtectionError("over_voltage", "voltage above 110%")
+        assert err.rule_name == "over_voltage"
+        assert "Protection rule 'over_voltage': voltage above 110%" == str(err)
+
+    def test_not_device_error(self):
+        err = ProtectionError("under_frequency", "freq below 59.5Hz")
+        assert not isinstance(err, DeviceError)
+        assert isinstance(err, Exception)
+
+    def test_caught_by_own_type(self):
+        with pytest.raises(ProtectionError):
+            raise ProtectionError("soc_limit", "SOC below minimum")
+
+
+class TestDeviceRegistryError:
+    def test_instantiation_and_attributes(self):
+        err = DeviceRegistryError("pcs1", "device not found")
+        assert err.device_id == "pcs1"
+        assert "[pcs1]" in str(err)
+        assert "device not found" in str(err)
+
+    def test_is_device_error(self):
+        err = DeviceRegistryError("bms2", "already registered")
+        assert isinstance(err, DeviceError)
+        assert isinstance(err, Exception)
+
+    def test_caught_by_device_error(self):
+        with pytest.raises(DeviceError):
+            raise DeviceRegistryError("pcs3", "lookup failed")

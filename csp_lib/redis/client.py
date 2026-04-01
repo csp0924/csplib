@@ -350,6 +350,12 @@ class RedisClient:
 
         await self._client.aclose()
         self._client = None
+
+        # 釋放 Sentinel 連線資源
+        if self._sentinel is not None:
+            self._sentinel = None
+            logger.debug("Redis Sentinel 參考已釋放")
+
         logger.info("Redis 已斷線")
 
     # ================ Hash 操作 ================

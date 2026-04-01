@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
+from csp_lib.core import get_logger
 from csp_lib.core.errors import CommunicationError, ConfigurationError, DeviceConnectionError
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.equipment.alarm import AlarmEvaluator, AlarmStateManager
@@ -50,6 +51,8 @@ if TYPE_CHECKING:
     from csp_lib.equipment.core import PointMetadata, ReadPoint, WritePoint
     from csp_lib.modbus.clients.base import AsyncModbusClientBase
     from csp_lib.modbus.types import ModbusDataType
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +165,7 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         self._device_responsive = False  # 通訊層級：設備是否有回應
         self._consecutive_failures = 0  # 連續讀取失敗次數
         self._last_failure_time: float | None = None  # 最後一次讀取失敗的時間（monotonic）
+        self._status_lock = asyncio.Lock()  # 保護狀態欄位的非同步鎖
         self._stop_event = asyncio.Event()
         self._read_task: asyncio.Task[None] | None = None
 
@@ -482,9 +486,10 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         except Exception as e:
             raise DeviceConnectionError(self._config.device_id, f"連線失敗: {e}") from e
         await self._emitter.start()  # 啟動事件處理 worker
-        self._client_connected = True
-        self._device_responsive = True  # 假設連線成功即可回應，讀取失敗會更新
-        self._consecutive_failures = 0
+        async with self._status_lock:
+            self._client_connected = True
+            self._device_responsive = True  # 假設連線成功即可回應，讀取失敗會更新
+            self._consecutive_failures = 0
         await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
 
     async def disconnect(self) -> None:
@@ -500,10 +505,11 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
                 await self._client.disconnect()
             except Exception as e:
                 raise DeviceConnectionError(self._config.device_id, f"斷線失敗: {e}") from e
-            self._client_connected = False
-            self._device_responsive = False
-            self._consecutive_failures = 0
-            self._last_failure_time = None
+            async with self._status_lock:
+                self._client_connected = False
+                self._device_responsive = False
+                self._consecutive_failures = 0
+                self._last_failure_time = None
             await self._emitter.emit_await(
                 EVENT_DISCONNECTED,
                 DisconnectPayload(device_id=self._config.device_id, reason="normal", consecutive_failures=0),
@@ -572,26 +578,34 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         if not self._client_connected:
             try:
                 await self._client.connect()
-                self._client_connected = True
-                # 注意：_device_responsive 保持 False，等讀取成功後才設為 True 並發送 EVENT_CONNECTED
-                self._consecutive_failures = 0
+                async with self._status_lock:
+                    self._client_connected = True
+                    # 注意：_device_responsive 保持 False，等讀取成功後才設為 True 並發送 EVENT_CONNECTED
+                    self._consecutive_failures = 0
             except DeviceConnectionError:
-                self._last_failure_time = time.monotonic()
+                async with self._status_lock:
+                    self._last_failure_time = time.monotonic()
                 raise
             except Exception as e:
-                self._last_failure_time = time.monotonic()
+                async with self._status_lock:
+                    self._last_failure_time = time.monotonic()
                 raise DeviceConnectionError(self._config.device_id, f"重連失敗: {e}") from e
 
         start_time = time.monotonic()
 
         try:
             values = await self._read_all()
-            self._consecutive_failures = 0
-            self._last_failure_time = None
 
-            # 設備恢復回應
-            if not self._device_responsive:
-                self._device_responsive = True
+            # 更新狀態（成功路徑）
+            async with self._status_lock:
+                self._consecutive_failures = 0
+                self._last_failure_time = None
+                was_unresponsive = not self._device_responsive
+                if was_unresponsive:
+                    self._device_responsive = True
+
+            # 設備恢復回應（在鎖外發送事件，避免死鎖）
+            if was_unresponsive:
                 await self._emitter.emit_await(
                     EVENT_CONNECTED,
                     ConnectedPayload(device_id=self._config.device_id),
@@ -618,18 +632,18 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         except CommunicationError as e:
             # 已有正確 device_id 的 CommunicationError 直接傳播
             if e.device_id != "unknown":
-                self._handle_read_failure(str(e))
+                await self._handle_read_failure(str(e))
                 await self._check_disconnect_threshold(str(e))
                 raise
             # transport 層的 "unknown" device_id → 替換為正確 device_id
             err = CommunicationError(self._config.device_id, str(e))
             err.__cause__ = e.__cause__
-            self._handle_read_failure(str(err))
+            await self._handle_read_failure(str(err))
             await self._check_disconnect_threshold(str(err))
             raise err from e.__cause__
         except Exception as e:
             err = CommunicationError(self._config.device_id, f"讀取失敗: {e}")
-            self._handle_read_failure(str(err))
+            await self._handle_read_failure(str(err))
             await self._check_disconnect_threshold(str(err))
             raise err from e
 
@@ -667,51 +681,63 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
             if not self._client_connected:
                 try:
                     await self._client.connect()
-                    self._client_connected = True
-                    self._device_responsive = True
-                    self._consecutive_failures = 0
+                    async with self._status_lock:
+                        self._client_connected = True
+                        self._device_responsive = True
+                        self._consecutive_failures = 0
                     await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
                 except DeviceConnectionError:
                     # 重連失敗，等待後重試
                     await asyncio.sleep(reconnect_interval)
                     continue
-                except Exception:
+                except Exception as e:
                     # 重連失敗，等待後重試
+                    logger.warning(f"[{self._config.device_id}] Reconnect failed: {e}")
                     await asyncio.sleep(reconnect_interval)
                     continue
 
             try:
                 await self.read_once()
-            except Exception:
-                pass  # read_once 已處理錯誤事件
+            except Exception as e:
+                logger.warning(f"[{self._config.device_id}] Read loop error: {e}")
 
             elapsed = time.monotonic() - start_time
             sleep_time = max(0, interval - elapsed)
             await asyncio.sleep(sleep_time)
 
-    def _handle_read_failure(self, error_msg: str) -> None:
+    async def _handle_read_failure(self, error_msg: str) -> None:
         """處理讀取失敗：累加計數 + 記錄失敗時間 + 發送錯誤事件"""
-        self._consecutive_failures += 1
-        self._last_failure_time = time.monotonic()
+        async with self._status_lock:
+            self._consecutive_failures += 1
+            self._last_failure_time = time.monotonic()
+            failures = self._consecutive_failures
         self._emitter.emit(
             EVENT_READ_ERROR,
             ReadErrorPayload(
                 device_id=self._config.device_id,
                 error=error_msg,
-                consecutive_failures=self._consecutive_failures,
+                consecutive_failures=failures,
             ),
         )
 
     async def _check_disconnect_threshold(self, error_msg: str) -> None:
         """達到斷線閾值時標記設備無回應"""
-        if self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive:
-            self._device_responsive = False
+        failures = 0
+        async with self._status_lock:
+            should_disconnect = (
+                self._consecutive_failures >= self._config.disconnect_threshold and self._device_responsive
+            )
+            if should_disconnect:
+                self._device_responsive = False
+                failures = self._consecutive_failures
+
+        if should_disconnect:
             await self._emitter.emit_await(
                 EVENT_DISCONNECTED,
                 DisconnectPayload(
                     device_id=self._config.device_id,
                     reason=error_msg,
-                    consecutive_failures=self._consecutive_failures,
+                    consecutive_failures=failures,
                 ),
             )
 
@@ -720,18 +746,21 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         for name, new_value in values.items():
             if name in self._disabled_points:
                 continue
-            old_value = self._latest_values.get(name)
-            if old_value != new_value:
-                self._emitter.emit(
-                    EVENT_VALUE_CHANGE,
-                    ValueChangePayload(
-                        device_id=self._config.device_id,
-                        point_name=name,
-                        old_value=old_value,
-                        new_value=new_value,
-                    ),
-                )
-            self._latest_values[name] = new_value
+            try:
+                old_value = self._latest_values.get(name)
+                if old_value != new_value:
+                    self._emitter.emit(
+                        EVENT_VALUE_CHANGE,
+                        ValueChangePayload(
+                            device_id=self._config.device_id,
+                            point_name=name,
+                            old_value=old_value,
+                            new_value=new_value,
+                        ),
+                    )
+                self._latest_values[name] = new_value
+            except Exception as e:
+                logger.warning(f"[{self._config.device_id}] Event processing failed for point '{name}': {e}")
 
     # =============== Magic Methods =========
 

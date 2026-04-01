@@ -86,8 +86,9 @@ class DataUploadManager(DeviceEventSubscriber):
         uploader = MongoBatchUploader(db).start()
         data_manager = DataUploadManager(uploader)
 
-        # 訂閱設備
-        data_manager.subscribe(device, collection_name="device_data")
+        # 配置並訂閱設備
+        data_manager.configure(device.device_id, collection_name="device_data")
+        data_manager.subscribe(device)
 
         # 設備讀取時資料自動上傳
         # 設備斷線時自動上傳空值記錄
@@ -110,34 +111,56 @@ class DataUploadManager(DeviceEventSubscriber):
 
     # ================ 訂閱管理 ================
 
-    def subscribe(  # type: ignore[override]
+    def configure(
         self,
-        device: AsyncModbusDevice,
+        device_id: str,
         collection_name: str,
-        save_interval: float = 0,
+        save_interval: float | None = None,
     ) -> None:
+        """
+        預先配置設備的上傳參數
+
+        必須在 ``subscribe()`` 之前呼叫，設定該設備對應的 MongoDB collection
+        與儲存間隔。若未呼叫 ``configure()`` 就直接 ``subscribe()``，將使用
+        預設 collection ``"device_data"``。
+
+        Args:
+            device_id: 設備 ID
+            collection_name: 資料上傳的 MongoDB collection 名稱
+            save_interval: 最小儲存間隔（秒）。``None`` 或 ``0`` 表示每次讀取都儲存。
+        """
+        self._device_collection[device_id] = collection_name
+        self._uploader.register_collection(collection_name)
+        if save_interval and save_interval > 0:
+            self._save_intervals[device_id] = save_interval
+        else:
+            self._save_intervals.pop(device_id, None)
+        logger.debug(f"資料上傳管理器: 已配置設備 {device_id} -> {collection_name} (save_interval={save_interval})")
+
+    def subscribe(self, device: AsyncModbusDevice) -> None:
         """
         訂閱設備事件
 
         訂閱設備的 read_complete 與 disconnected 事件。
         若已訂閱則不重複訂閱。
 
+        需先呼叫 ``configure()`` 設定 collection_name，否則使用預設值 ``"device_data"``。
+
         Args:
             device: 要訂閱的 Modbus 設備
-            collection_name: 資料上傳的 MongoDB collection 名稱
-            save_interval: 最小儲存間隔（秒）。設為 0 表示每次讀取都儲存。
-                例如設備每 1 秒讀取一次，save_interval=30 則約每 30 秒才存一筆至 MongoDB。
         """
         device_id = device.device_id
         if device_id in self._unsubscribes:
             return
 
-        self._device_collection[device_id] = collection_name
-        self._uploader.register_collection(collection_name)
+        # 若未 configure，使用預設 collection
+        collection_name = self._device_collection.get(device_id)
+        if not collection_name:
+            collection_name = "device_data"
+            self._device_collection[device_id] = collection_name
+            self._uploader.register_collection(collection_name)
 
-        if save_interval > 0:
-            self._save_intervals[device_id] = save_interval
-
+        save_interval = self._save_intervals.get(device_id, 0)
         self._unsubscribes[device_id] = self._register_events(device)
         logger.info(f"資料上傳管理器已訂閱設備: {device_id} -> {collection_name} (save_interval={save_interval}s)")
 

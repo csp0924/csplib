@@ -130,7 +130,8 @@ class TestDataUploadManagerSubscription:
         """subscribe 應註冊事件處理器"""
         device = MockDevice("device_001")
 
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         # 應有 2 個事件被註冊
         assert len(device._handlers.get(EVENT_READ_COMPLETE, [])) == 1
@@ -143,8 +144,10 @@ class TestDataUploadManagerSubscription:
         """重複 subscribe 同一設備應無效果"""
         device = MockDevice("device_001")
 
-        manager.subscribe(device, collection_name="device_data")
-        manager.subscribe(device, collection_name="device_data")  # 第二次
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)  # 第二次
 
         # 仍只有 1 個處理器
         assert len(device._handlers.get(EVENT_READ_COMPLETE, [])) == 1
@@ -153,7 +156,8 @@ class TestDataUploadManagerSubscription:
         """unsubscribe 應移除所有事件處理器"""
         device = MockDevice("device_001")
 
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
         manager.unsubscribe(device)
 
         # 所有處理器應被移除
@@ -170,8 +174,10 @@ class TestDataUploadManagerSubscription:
         device1 = MockDevice("device_001")
         device2 = MockDevice("device_002")
 
-        manager.subscribe(device1, collection_name="device1_data")
-        manager.subscribe(device2, collection_name="device2_data")
+        manager.configure(device1.device_id, "device1_data")
+        manager.subscribe(device1)
+        manager.configure(device2.device_id, "device2_data")
+        manager.subscribe(device2)
 
         assert len(device1._handlers.get(EVENT_READ_COMPLETE, [])) == 1
         assert len(device2._handlers.get(EVENT_READ_COMPLETE, [])) == 1
@@ -195,7 +201,8 @@ class TestDataUploadManagerReadComplete:
     async def test_on_read_complete_enqueues_data(self, manager: DataUploadManager, uploader: MockUploader):
         """read_complete 應將資料加入 queue"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         timestamp = datetime.now(timezone.utc)
         payload = ReadCompletePayload(
@@ -218,7 +225,8 @@ class TestDataUploadManagerReadComplete:
     async def test_on_read_complete_caches_values(self, manager: DataUploadManager, uploader: MockUploader):
         """read_complete 應快取值結構"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         payload = ReadCompletePayload(
             device_id="device_001",
@@ -249,7 +257,8 @@ class TestDataUploadManagerDisconnected:
     async def test_on_disconnected_enqueues_null_values(self, manager: DataUploadManager, uploader: MockUploader):
         """disconnected 應上傳空值記錄"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         # 先讀取一次建立快取
         read_payload = ReadCompletePayload(
@@ -280,7 +289,8 @@ class TestDataUploadManagerDisconnected:
     async def test_on_disconnected_preserves_nested_structure(self, manager: DataUploadManager, uploader: MockUploader):
         """disconnected 應保留巢狀結構"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         # 先讀取一次建立快取（含巢狀結構）
         read_payload = ReadCompletePayload(
@@ -315,7 +325,8 @@ class TestDataUploadManagerDisconnected:
     async def test_on_disconnected_no_cache_skips_upload(self, manager: DataUploadManager, uploader: MockUploader):
         """無快取時斷線應跳過上傳"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="device_data")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
 
         # 直接斷線（無先前讀取）
         disconnect_payload = DisconnectPayload(
@@ -354,7 +365,8 @@ class TestDataUploadManagerSaveInterval:
     async def test_no_interval_saves_every_read(self, manager: DataUploadManager, uploader: MockUploader):
         """save_interval=0（預設）時每次讀取都儲存"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="data")
+        manager.configure(device.device_id, "data")
+        manager.subscribe(device)
 
         for _ in range(5):
             await device.emit(EVENT_READ_COMPLETE, self._make_payload())
@@ -365,7 +377,8 @@ class TestDataUploadManagerSaveInterval:
     async def test_interval_skips_within_window(self, manager: DataUploadManager, uploader: MockUploader):
         """在 save_interval 內的讀取應被跳過"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="data", save_interval=30)
+        manager.configure(device.device_id, "data", save_interval=30)
+        manager.subscribe(device)
 
         fake_time = 1000.0
 
@@ -382,7 +395,8 @@ class TestDataUploadManagerSaveInterval:
     async def test_interval_saves_after_elapsed(self, manager: DataUploadManager, uploader: MockUploader):
         """超過 save_interval 後應再次儲存"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="data", save_interval=30)
+        manager.configure(device.device_id, "data", save_interval=30)
+        manager.subscribe(device)
 
         fake_time = [1000.0]
 
@@ -408,7 +422,8 @@ class TestDataUploadManagerSaveInterval:
     async def test_interval_always_caches_values(self, manager: DataUploadManager, uploader: MockUploader):
         """即使跳過儲存，仍應更新快取（供斷線空值記錄使用）"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="data", save_interval=30)
+        manager.configure(device.device_id, "data", save_interval=30)
+        manager.subscribe(device)
 
         fake_time = [1000.0]
 
@@ -437,8 +452,10 @@ class TestDataUploadManagerSaveInterval:
         """不同設備的 save_interval 獨立運作"""
         device_fast = MockDevice("fast")
         device_slow = MockDevice("slow")
-        manager.subscribe(device_fast, collection_name="fast_data", save_interval=0)  # 每次都存
-        manager.subscribe(device_slow, collection_name="slow_data", save_interval=60)
+        manager.configure(device_fast.device_id, "fast_data", save_interval=0)
+        manager.subscribe(device_fast)  # 每次都存
+        manager.configure(device_slow.device_id, "slow_data", save_interval=60)
+        manager.subscribe(device_slow)
 
         fake_time = [1000.0]
 
@@ -463,7 +480,8 @@ class TestDataUploadManagerSaveInterval:
     async def test_unsubscribe_cleans_interval_state(self, manager: DataUploadManager):
         """取消訂閱後應清理 interval 相關狀態"""
         device = MockDevice("device_001")
-        manager.subscribe(device, collection_name="data", save_interval=30)
+        manager.configure(device.device_id, "data", save_interval=30)
+        manager.subscribe(device)
 
         assert "device_001" in manager._save_intervals
 

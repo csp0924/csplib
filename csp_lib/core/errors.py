@@ -8,6 +8,9 @@
 #   - CommunicationError: 讀寫逾時/解碼錯誤
 #   - AlarmError: 告警觸發
 #   - ConfigurationError: 配置無效（非設備層級）
+#   - StrategyExecutionError: 策略執行失敗（非設備層級）
+#   - ProtectionError: 保護鏈失敗（非設備層級）
+#   - DeviceRegistryError: 設備註冊/查詢失敗
 
 from __future__ import annotations
 
@@ -40,10 +43,33 @@ class ConfigurationError(Exception):
     """配置無效（非設備層級）"""
 
 
+class StrategyExecutionError(Exception):
+    """Strategy execution failure (not device-scoped)."""
+
+    def __init__(self, strategy_name: str, message: str) -> None:
+        self.strategy_name = strategy_name
+        super().__init__(f"Strategy '{strategy_name}': {message}")
+
+
+class ProtectionError(Exception):
+    """Protection chain failure (not device-scoped)."""
+
+    def __init__(self, rule_name: str, message: str) -> None:
+        self.rule_name = rule_name
+        super().__init__(f"Protection rule '{rule_name}': {message}")
+
+
+class DeviceRegistryError(DeviceError):
+    """Device registry lookup/registration failure."""
+
+
 __all__ = [
     "DeviceError",
     "DeviceConnectionError",
     "CommunicationError",
     "AlarmError",
     "ConfigurationError",
+    "StrategyExecutionError",
+    "ProtectionError",
+    "DeviceRegistryError",
 ]

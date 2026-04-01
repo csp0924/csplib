@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from .config import DistributedConfig
 
-logger = get_logger("csp_lib.integration.distributed.subscriber")
+logger = get_logger(__name__)
 
 
 class DeviceStateSubscriber(AsyncLifecycleMixin):
@@ -95,7 +95,7 @@ class DeviceStateSubscriber(AsyncLifecycleMixin):
             except asyncio.CancelledError:
                 return
             except Exception:
-                logger.exception("Failed to poll device states")
+                logger.opt(exception=True).warning("Failed to poll device states")
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)

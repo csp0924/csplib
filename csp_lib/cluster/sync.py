@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.system import ModeManager, ProtectionGuard
     from csp_lib.redis import RedisClient
 
-logger = get_logger("csp_lib.cluster.sync")
+logger = get_logger(__name__)
 
 
 # ================ Snapshot ================
@@ -134,8 +134,10 @@ class ClusterStatePublisher(AsyncLifecycleMixin):
         # 清除 leader key
         try:
             await self._redis.delete(self._config.redis_key("leader"))
-        except Exception:
-            logger.exception("Failed to clear leader key on stop")
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"Failed to clear leader key on stop: key={self._config.redis_key('leader')}, {e}"
+            )
 
         logger.info("ClusterStatePublisher stopped.")
 
@@ -147,8 +149,11 @@ class ClusterStatePublisher(AsyncLifecycleMixin):
                 await self._publish_all()
             except asyncio.CancelledError:
                 return
-            except Exception:
-                logger.exception("Failed to publish cluster state")
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Cluster state publish failed: instance={self._config.instance_id}, "
+                    f"retry will occur next cycle: {e}"
+                )
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
@@ -274,8 +279,10 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
                 await self._poll_all()
             except asyncio.CancelledError:
                 return
-            except Exception:
-                logger.exception("Failed to poll cluster state")
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Cluster state poll failed: instance={self._config.instance_id}, retry will occur next cycle: {e}"
+                )
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=interval)
@@ -370,8 +377,8 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
                 state = await self._redis.hgetall(f"device:{device_id}:state")
                 if state:
                     self._device_states[device_id] = state
-            except Exception:
-                logger.debug(f"Failed to read device state for {device_id}")
+            except Exception as e:
+                logger.debug(f"Failed to read device state: device_id={device_id}, {e}")
 
 
 __all__ = [

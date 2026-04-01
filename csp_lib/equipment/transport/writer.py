@@ -67,7 +67,7 @@ class ValidatedWriter:
         Returns:
             寫入結果
         """
-        logger.debug(
+        logger.trace(
             f"[ValidatedWriter] write 開始: point={point.name}, value={value}, type={type(value).__name__}, verify={verify}"
         )
 
@@ -86,23 +86,23 @@ class ValidatedWriter:
             if point.pipeline is not None:
                 original = value
                 value = point.pipeline.process(value)
-                logger.debug(f"[ValidatedWriter] pipeline 轉換: {original} → {value}")
+                logger.trace(f"[ValidatedWriter] pipeline 轉換: {original} → {value}")
 
             # pipeline 回傳 float 但整數型態需要 int，自動轉換整數值
             if isinstance(value, float) and value.is_integer():
                 value = int(value)
-                logger.debug(f"[ValidatedWriter] float→int 自動轉換: {value}")
+                logger.trace(f"[ValidatedWriter] float→int 自動轉換: {value}")
 
             # 編碼
             encoded = self._encode(point, value)
-            logger.debug(f"[ValidatedWriter] 編碼完成: point={point.name}, encoded={encoded}, fc={point.function_code}")
+            logger.trace(f"[ValidatedWriter] 編碼完成: point={point.name}, encoded={encoded}, fc={point.function_code}")
 
             await self._write_to_device(point, encoded)
-            logger.debug(f"[ValidatedWriter] 寫入設備完成: point={point.name}")
+            logger.trace(f"[ValidatedWriter] 寫入設備完成: point={point.name}")
 
             if verify:
                 read_value = await self._read_back(point)
-                logger.debug(f"[ValidatedWriter] 讀回驗證: point={point.name}, 期望={value}, 實際={read_value}")
+                logger.trace(f"[ValidatedWriter] 讀回驗證: point={point.name}, 期望={value}, 實際={read_value}")
                 if not self._values_equal(value, read_value):
                     return WriteResult(
                         status=WriteStatus.VERIFICATION_FAILED,
@@ -153,7 +153,7 @@ class ValidatedWriter:
         """寫入暫存器"""
         address = point.address + self._address_offset
         function_code = point.function_code
-        logger.debug(
+        logger.trace(
             f"[ValidatedWriter] _write_to_device: point={point.name}, address={address} "
             f"(base={point.address}+offset={self._address_offset}), fc={function_code}, "
             f"unit_id={self._unit_id}, encoded={encoded}"

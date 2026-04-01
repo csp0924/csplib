@@ -168,19 +168,19 @@ class TestModbusCircuitBreakerError:
         """只帶 unit_id 時應產生預設訊息"""
         err = ModbusCircuitBreakerError(unit_id=5)
         assert err.unit_id == 5
-        assert str(err) == "Circuit breaker is open for unit_id=5"
+        assert "Circuit breaker is open for unit_id=5" in str(err)
 
     def test_instantiate_with_unit_id_and_message(self):
         """帶 unit_id 和自訂訊息時應使用自訂訊息"""
         err = ModbusCircuitBreakerError(unit_id=3, message="custom error")
         assert err.unit_id == 3
-        assert str(err) == "custom error"
+        assert "custom error" in str(err)
 
     def test_default_message_format_various_ids(self):
         """不同 unit_id 應產生對應的預設訊息"""
         for uid in (0, 1, 127, 255):
             err = ModbusCircuitBreakerError(unit_id=uid)
-            assert str(err) == f"Circuit breaker is open for unit_id={uid}"
+            assert f"Circuit breaker is open for unit_id={uid}" in str(err)
             assert err.unit_id == uid
 
     def test_unit_id_attribute_is_set(self):
@@ -191,7 +191,7 @@ class TestModbusCircuitBreakerError:
     def test_message_none_uses_default(self):
         """message=None 時應使用預設訊息"""
         err = ModbusCircuitBreakerError(unit_id=10, message=None)
-        assert str(err) == "Circuit breaker is open for unit_id=10"
+        assert "Circuit breaker is open for unit_id=10" in str(err)
 
     def test_isinstance_of_modbus_error(self):
         """實例應為 ModbusError 的 isinstance"""
@@ -208,7 +208,7 @@ class TestModbusCircuitBreakerError:
         with pytest.raises(ModbusCircuitBreakerError) as exc_info:
             raise ModbusCircuitBreakerError(unit_id=99, message="breaker open")
         assert exc_info.value.unit_id == 99
-        assert str(exc_info.value) == "breaker open"
+        assert "breaker open" in str(exc_info.value)
 
     def test_not_instance_of_sibling(self):
         """不應為兄弟類別的 isinstance"""
@@ -221,12 +221,12 @@ class TestModbusCircuitBreakerError:
     def test_args_tuple_contains_message(self):
         """Exception.args 應包含訊息字串"""
         err = ModbusCircuitBreakerError(unit_id=5)
-        assert err.args == ("Circuit breaker is open for unit_id=5",)
+        assert "Circuit breaker is open for unit_id=5" in err.args[0]
 
     def test_args_tuple_with_custom_message(self):
         """自訂訊息時 Exception.args 應包含自訂訊息"""
         err = ModbusCircuitBreakerError(unit_id=5, message="my message")
-        assert err.args == ("my message",)
+        assert "my message" in err.args[0]
 
 
 # =============== ModbusQueueFullError Tests ===============

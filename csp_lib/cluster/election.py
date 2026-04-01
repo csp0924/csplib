@@ -16,7 +16,7 @@ from csp_lib.core import AsyncLifecycleMixin, get_logger
 
 from .config import ClusterConfig
 
-logger = get_logger("csp_lib.cluster.election")
+logger = get_logger(__name__)
 
 
 class ElectionState(enum.Enum):
@@ -140,8 +140,11 @@ class LeaderElector(AsyncLifecycleMixin):
             try:
                 await self._client.lease_revoke(self._lease)
                 logger.info("Lease revoked (resigned).")
-            except Exception:
-                logger.exception("Failed to revoke lease during resign")
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Failed to revoke lease during resign: instance={self._config.instance_id}, "
+                    f"state={self._state.value}: {e}"
+                )
             self._lease = None
 
     async def _campaign_loop(self) -> None:
@@ -151,8 +154,11 @@ class LeaderElector(AsyncLifecycleMixin):
                 await self._try_campaign()
             except asyncio.CancelledError:
                 return
-            except Exception:
-                logger.exception(f"Campaign failed, retrying in {self._config.campaign_retry_delay}s")
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Election campaign failed: instance={self._config.instance_id}, "
+                    f"state={self._state.value}, retrying in {self._config.campaign_retry_delay}s: {e}"
+                )
                 try:
                     await asyncio.wait_for(self._stop_event.wait(), timeout=self._config.campaign_retry_delay)
                     return  # stopped
@@ -202,8 +208,8 @@ class LeaderElector(AsyncLifecycleMixin):
             # 撤銷我們的無用 lease
             try:
                 await self._client.lease_revoke(lease_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to revoke unused lease after losing election: {e}")
             self._lease = None
 
             # Watch key 等待 leader 離開
@@ -227,9 +233,12 @@ class LeaderElector(AsyncLifecycleMixin):
                 consecutive_failures = 0
             except asyncio.CancelledError:
                 return
-            except Exception:
+            except Exception as e:
                 consecutive_failures += 1
-                logger.warning(f"Lease keepalive failed ({consecutive_failures}/{max_failures})")
+                logger.warning(
+                    f"Lease keepalive failed (attempt {consecutive_failures}/{max_failures}): "
+                    f"instance={self._config.instance_id}, state={self._state.value}: {e}"
+                )
                 if consecutive_failures >= max_failures:
                     logger.error("Lease keepalive failed too many times, self-fencing")
                     await self._handle_demotion()
@@ -266,8 +275,11 @@ class LeaderElector(AsyncLifecycleMixin):
                     return
             except asyncio.CancelledError:
                 return
-            except Exception:
-                logger.exception("Error polling leader key")
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Error polling leader key: instance={self._config.instance_id}, "
+                    f"state={self._state.value}, key={self._config.election_key}: {e}"
+                )
 
     async def _handle_demotion(self) -> None:
         """處理從 leader 降級"""

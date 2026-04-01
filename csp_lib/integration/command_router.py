@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.core import Command
     from csp_lib.equipment.device import AsyncModbusDevice
 
-logger = get_logger("csp_lib.integration.command_router")
+logger = get_logger(__name__)
 
 
 class CommandRouter:
@@ -257,4 +257,4 @@ class CommandRouter:
         try:
             await device.write(point_name, value)
         except DeviceError:
-            logger.warning(f"Write failed for device '{device.device_id}' point '{point_name}'.", exc_info=True)
+            logger.opt(exception=True).warning(f"Write failed for device '{device.device_id}' point '{point_name}'.")

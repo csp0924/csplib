@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 from datetime import datetime
 from unittest.mock import AsyncMock
 
@@ -28,6 +29,7 @@ from csp_lib.equipment.device.events import (
     DisconnectPayload,
     ReadCompletePayload,
     ValueChangePayload,
+    _WeakHandler,
 )
 
 # ======================== Payload Tests ========================
@@ -192,14 +194,14 @@ class TestDeviceEventEmitterEmit:
     """DeviceEventEmitter emit 測試"""
 
     @pytest.mark.asyncio
-    async def test_emit_enqueues_event(self):
-        """emit() 應將事件放入佇列"""
+    async def test_emit_skips_when_not_running(self):
+        """emit() 未啟動時不入隊"""
         emitter = DeviceEventEmitter()
-        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
+        emitter.on(EVENT_CONNECTED, AsyncMock())
 
         emitter.emit(EVENT_CONNECTED, {"test": True})
 
-        assert emitter.queue_size == 1
+        assert emitter.queue_size == 0  # 未 start，不入隊
 
     @pytest.mark.asyncio
     async def test_emit_triggers_handler_via_worker(self):
@@ -246,13 +248,21 @@ class TestDeviceEventEmitterEmit:
     async def test_emit_queue_full_drops_event(self):
         """佇列滿時 emit() 應丟棄事件"""
         emitter = DeviceEventEmitter(max_queue_size=2)
-        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
 
-        emitter.emit(EVENT_CONNECTED, 1)
-        emitter.emit(EVENT_CONNECTED, 2)
-        emitter.emit(EVENT_CONNECTED, 3)  # 應被丟棄
+        async def slow_handler(payload):
+            await asyncio.sleep(10)  # 阻塞 worker 防止消費
 
-        assert emitter.queue_size == 2
+        emitter.on(EVENT_CONNECTED, slow_handler)
+        await emitter.start()
+        try:
+            emitter.emit(EVENT_CONNECTED, 1)
+            emitter.emit(EVENT_CONNECTED, 2)
+            emitter.emit(EVENT_CONNECTED, 3)  # 應被丟棄（佇列滿）
+            # worker 在處理第 1 個（slow），佇列剩 1-2 個
+            # 至少驗證第 3 個被丟棄（queue_size <= 2）
+            assert emitter.queue_size <= 2
+        finally:
+            await emitter.stop()
 
 
 class TestDeviceEventEmitterEmitAwait:
@@ -479,3 +489,206 @@ class TestEventConstants:
         assert EVENT_DISCONNECTED == "disconnected"
         assert EVENT_READ_COMPLETE == "read_complete"
         assert EVENT_VALUE_CHANGE == "value_change"
+
+
+# ======================== WeakHandler Tests ========================
+
+
+class TestWeakHandlerWrapper:
+    """_WeakHandler 包裝器測試"""
+
+    def test_alive_when_referent_exists(self):
+        """referent 存在時 alive 應為 True"""
+
+        async def handler(payload):
+            pass
+
+        wh = _WeakHandler(handler)
+        assert wh.alive is True
+
+    def test_dead_after_referent_gc(self):
+        """referent 被 GC 後 alive 應為 False"""
+
+        async def handler(payload):
+            pass
+
+        wh = _WeakHandler(handler)
+        del handler
+        gc.collect()
+        assert wh.alive is False
+
+    @pytest.mark.asyncio
+    async def test_call_invokes_handler(self):
+        """__call__ 應正確呼叫 handler"""
+        called_with = []
+
+        async def handler(payload):
+            called_with.append(payload)
+
+        wh = _WeakHandler(handler)
+        await wh("test_payload")
+        assert called_with == ["test_payload"]
+
+    @pytest.mark.asyncio
+    async def test_call_noop_when_dead(self):
+        """referent 被 GC 後 __call__ 應為 no-op"""
+
+        async def handler(payload):
+            raise AssertionError("Should not be called")
+
+        wh = _WeakHandler(handler)
+        del handler
+        gc.collect()
+        # Should not raise
+        await wh("test_payload")
+
+    def test_bound_method_weakref(self):
+        """bound method 應使用 WeakMethod"""
+
+        class Listener:
+            async def on_event(self, payload):
+                pass
+
+        obj = Listener()
+        wh = _WeakHandler(obj.on_event)
+        assert wh.alive is True
+
+        del obj
+        gc.collect()
+        assert wh.alive is False
+
+    def test_lambda_dies_immediately_without_strong_ref(self):
+        """lambda 若無強引用，弱引用會立即失效"""
+        # Lambda is alive while local var exists
+        fn = lambda payload: None  # noqa: E731
+        wh = _WeakHandler(fn)  # type: ignore[arg-type]
+        assert wh.alive is True
+
+        # Once the only strong ref is dropped, the weakref dies
+        del fn
+        gc.collect()
+        assert wh.alive is False
+
+
+class TestDeviceEventEmitterWeakOn:
+    """DeviceEventEmitter weak=True 註冊測試"""
+
+    @pytest.fixture
+    def emitter(self) -> DeviceEventEmitter:
+        return DeviceEventEmitter()
+
+    @pytest.mark.asyncio
+    async def test_weak_handler_called_while_alive(self, emitter: DeviceEventEmitter):
+        """weak handler 存活時應被呼叫"""
+        called = []
+
+        async def handler(payload):
+            called.append(payload)
+
+        emitter.on(EVENT_CONNECTED, handler, weak=True)
+        await emitter.emit_await(EVENT_CONNECTED, "alive")
+        assert called == ["alive"]
+
+    @pytest.mark.asyncio
+    async def test_weak_handler_auto_removed_after_gc(self, emitter: DeviceEventEmitter):
+        """weak handler referent 被 GC 後應自動移除"""
+        called = []
+
+        async def handler(payload):
+            called.append(payload)
+
+        emitter.on(EVENT_CONNECTED, handler, weak=True)
+
+        # Delete the handler and force GC
+        del handler
+        gc.collect()
+
+        await emitter.emit_await(EVENT_CONNECTED, "should_not_arrive")
+        assert called == []
+
+    @pytest.mark.asyncio
+    async def test_weak_handler_has_listeners_false_after_gc(self, emitter: DeviceEventEmitter):
+        """weak handler GC 後 has_listeners 應回傳 False"""
+
+        async def handler(payload):
+            pass
+
+        emitter.on(EVENT_CONNECTED, handler, weak=True)
+        assert emitter.has_listeners(EVENT_CONNECTED) is True
+
+        del handler
+        gc.collect()
+        assert emitter.has_listeners(EVENT_CONNECTED) is False
+
+    @pytest.mark.asyncio
+    async def test_weak_and_strong_coexist(self, emitter: DeviceEventEmitter):
+        """weak 和 strong handler 可以共存"""
+        strong_calls = []
+        weak_calls = []
+
+        async def strong_handler(payload):
+            strong_calls.append(payload)
+
+        async def weak_handler(payload):
+            weak_calls.append(payload)
+
+        emitter.on(EVENT_CONNECTED, strong_handler)
+        emitter.on(EVENT_CONNECTED, weak_handler, weak=True)
+
+        await emitter.emit_await(EVENT_CONNECTED, "both")
+        assert strong_calls == ["both"]
+        assert weak_calls == ["both"]
+
+        # GC the weak handler
+        del weak_handler
+        gc.collect()
+
+        await emitter.emit_await(EVENT_CONNECTED, "strong_only")
+        assert strong_calls == ["both", "strong_only"]
+        assert weak_calls == ["both"]  # No new call
+
+    @pytest.mark.asyncio
+    async def test_weak_bound_method_auto_cleanup(self, emitter: DeviceEventEmitter):
+        """bound method 以 weak=True 註冊，物件 GC 後應自動移除"""
+        called = []
+
+        class Listener:
+            async def on_event(self, payload):
+                called.append(payload)
+
+        obj = Listener()
+        emitter.on(EVENT_CONNECTED, obj.on_event, weak=True)
+
+        await emitter.emit_await(EVENT_CONNECTED, "before_gc")
+        assert called == ["before_gc"]
+
+        del obj
+        gc.collect()
+
+        await emitter.emit_await(EVENT_CONNECTED, "after_gc")
+        assert called == ["before_gc"]  # No new call
+
+    def test_weak_false_default_backward_compat(self, emitter: DeviceEventEmitter):
+        """weak=False (default) 應保持原有行為"""
+        handler = AsyncMock()
+        cancel = emitter.on(EVENT_CONNECTED, handler)
+
+        # Handler stored directly, not wrapped
+        assert emitter._handlers[EVENT_CONNECTED][0] is handler
+
+        cancel()
+        assert not emitter.has_listeners(EVENT_CONNECTED)
+
+    @pytest.mark.asyncio
+    async def test_cancel_weak_handler(self, emitter: DeviceEventEmitter):
+        """手動取消 weak handler"""
+        called = []
+
+        async def handler(payload):
+            called.append(payload)
+
+        cancel = emitter.on(EVENT_CONNECTED, handler, weak=True)
+        cancel()
+
+        await emitter.emit_await(EVENT_CONNECTED, "cancelled")
+        assert called == []

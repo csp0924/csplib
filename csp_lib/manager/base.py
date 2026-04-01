@@ -61,8 +61,10 @@ class DeviceEventSubscriber:
         """
         device_id = device.device_id
         if device_id in self._unsubscribes:
+            logger.debug(f"Device '{device_id}' already subscribed, skipping")
             return
         self._unsubscribes[device_id] = self._register_events(device)
+        logger.info(f"Subscribed to device '{device_id}'")
 
     def unsubscribe(self, device: AsyncModbusDevice) -> None:
         """
@@ -75,10 +77,12 @@ class DeviceEventSubscriber:
         """
         device_id = device.device_id
         if device_id not in self._unsubscribes:
+            logger.debug(f"Device '{device_id}' not subscribed, skipping unsubscribe")
             return
         for unsub in self._unsubscribes.pop(device_id):
             unsub()
         self._on_unsubscribe(device_id)
+        logger.info(f"Unsubscribed from device '{device_id}'")
 
     def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
         """

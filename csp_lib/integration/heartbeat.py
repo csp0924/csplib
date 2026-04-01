@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from .registry import DeviceRegistry
 
-logger = get_logger("csp_lib.integration.heartbeat")
+logger = get_logger(__name__)
 
 
 class HeartbeatService:
@@ -199,7 +199,9 @@ class HeartbeatService:
         try:
             await device.write(point_name, value)
         except DeviceError:
-            logger.warning(f"Heartbeat write failed: device='{device.device_id}' point='{point_name}'", exc_info=True)
+            logger.opt(exception=True).warning(
+                f"Heartbeat write failed: device='{device.device_id}' point='{point_name}'"
+            )
 
 
 __all__ = [

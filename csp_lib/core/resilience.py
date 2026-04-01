@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -35,20 +36,40 @@ class CircuitBreaker:
     Args:
         threshold: 連續失敗次數達到此值後觸發斷路器
         cooldown: 斷路器開啟後的冷卻時間 (秒)
+        max_cooldown: 指數退避的最大冷卻時間 (秒)
+        backoff_factor: 指數退避的倍率
     """
 
-    def __init__(self, threshold: int, cooldown: float) -> None:
+    def __init__(
+        self,
+        threshold: int,
+        cooldown: float,
+        max_cooldown: float = 300.0,
+        backoff_factor: float = 2.0,
+    ) -> None:
         self._threshold = threshold
         self._cooldown = cooldown
+        self._max_cooldown = max_cooldown
+        self._backoff_factor = backoff_factor
         self._state = CircuitState.CLOSED
         self._failure_count = 0
+        self._consecutive_failures = 0
         self._last_failure_time: float = 0.0
+        self._current_cooldown: float = cooldown
+
+    def _compute_cooldown(self) -> float:
+        """計算帶指數退避 + jitter 的冷卻時間（進入 OPEN 時呼叫一次）"""
+        exponent = min(self._consecutive_failures, 5)
+        base = self._cooldown * (self._backoff_factor**exponent)
+        base = min(base, self._max_cooldown)
+        jitter = 0.8 + 0.4 * random.random()  # noqa: S311
+        return base * jitter
 
     @property
     def state(self) -> CircuitState:
         """取得目前狀態 (含自動 OPEN → HALF_OPEN 轉換)"""
         if self._state == CircuitState.OPEN:
-            if time.monotonic() - self._last_failure_time >= self._cooldown:
+            if time.monotonic() - self._last_failure_time >= self._current_cooldown:
                 self._state = CircuitState.HALF_OPEN
         return self._state
 
@@ -60,6 +81,7 @@ class CircuitBreaker:
     def record_success(self) -> None:
         """記錄成功：重置斷路器"""
         self._failure_count = 0
+        self._consecutive_failures = 0
         self._state = CircuitState.CLOSED
 
     def record_failure(self) -> None:
@@ -67,11 +89,14 @@ class CircuitBreaker:
         self._failure_count += 1
         self._last_failure_time = time.monotonic()
         if self._failure_count >= self._threshold:
+            self._consecutive_failures += 1
+            self._current_cooldown = self._compute_cooldown()
             self._state = CircuitState.OPEN
 
     def reset(self) -> None:
         """手動重置斷路器"""
         self._failure_count = 0
+        self._consecutive_failures = 0
         self._state = CircuitState.CLOSED
         self._last_failure_time = 0.0
 

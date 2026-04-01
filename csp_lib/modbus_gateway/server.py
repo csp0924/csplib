@@ -131,12 +131,11 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
         loop = asyncio.get_running_loop()
 
         # Lazy import pymodbus
-        from csp_lib.modbus_server.server import _ensure_pymodbus_imported
+        from csp_lib.modbus._pymodbus import get_ModbusDeviceContext, get_ModbusServerContext, get_ModbusTcpServer
 
-        _ensure_pymodbus_imported()
-
-        from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext
-        from pymodbus.server import ModbusTcpServer
+        ModbusTcpServer = get_ModbusTcpServer()
+        ModbusDeviceContext = get_ModbusDeviceContext()
+        ModbusServerContext = get_ModbusServerContext()
 
         # Create DataBlocks
         hr_block = create_hr_datablock(self._register_map, self._pipeline, self._watchdog, loop)

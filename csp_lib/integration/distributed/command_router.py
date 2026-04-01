@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .config import DistributedConfig
     from .subscriber import DeviceStateSubscriber
 
-logger = get_logger("csp_lib.integration.distributed.command_router")
+logger = get_logger(__name__)
 
 
 class RemoteCommandRouter:
@@ -139,7 +139,7 @@ class RemoteCommandRouter:
             await self._redis.publish(channel, payload)
             logger.debug(f"Published command: {device_id}.{point_name} = {value} -> {channel}")
         except Exception:
-            logger.exception(f"Failed to publish command to {channel}")
+            logger.opt(exception=True).warning(f"Failed to publish command to {channel}")
 
 
 __all__ = [

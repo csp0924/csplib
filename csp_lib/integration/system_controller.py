@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
     from csp_lib.equipment.device import AsyncModbusDevice
 
-logger = get_logger("csp_lib.integration.system_controller")
+logger = get_logger(__name__)
 
 _AUTO_STOP_MODE = "__auto_stop__"
 _SCHEDULE_MODE = "__schedule__"
@@ -573,6 +573,7 @@ class SystemController(AsyncLifecycleMixin):
         if self._data_feed is not None:
             self._data_feed.attach()
         if self._heartbeat is not None:
+            self._validate_heartbeat_points()
             await self._heartbeat.start()
         self._run_task = asyncio.create_task(self._executor.run())
         logger.info("SystemController started.")
@@ -592,6 +593,28 @@ class SystemController(AsyncLifecycleMixin):
                 if self._data_feed is not None:
                     self._data_feed.detach()
         logger.info("SystemController stopped.")
+
+    def _validate_heartbeat_points(self) -> None:
+        """驗證心跳映射的 point_name 是否存在於目標設備（僅 warning，不中斷啟動）"""
+        for mapping in self._config.heartbeat_mappings:
+            if mapping.device_id is not None:
+                device = self._registry.get_device(mapping.device_id)
+                if device is not None and mapping.point_name not in device.all_point_names:
+                    logger.warning(
+                        "Heartbeat point '{}' not found on device '{}'.",
+                        mapping.point_name,
+                        mapping.device_id,
+                    )
+            elif mapping.trait is not None:
+                devices = self._registry.get_devices_by_trait(mapping.trait)
+                for device in devices:
+                    if mapping.point_name not in device.all_point_names:
+                        logger.warning(
+                            "Heartbeat point '{}' not found on device '{}' (trait='{}').",
+                            mapping.point_name,
+                            device.device_id,
+                            mapping.trait,
+                        )
 
     # ---- 內部流程 ----
 

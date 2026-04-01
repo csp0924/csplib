@@ -239,7 +239,7 @@ class SystemMetricsCollector:
 
                     self._last_iface_time = now_iface
             except Exception:
-                logger.warning("無法收集網路介面指標", exc_info=True)
+                logger.opt(exception=True).warning("無法收集網路介面指標")
 
         return SystemMetrics(
             cpu_percent=cpu_percent,

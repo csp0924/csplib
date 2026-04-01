@@ -20,7 +20,7 @@ from typing import Any, Protocol, runtime_checkable
 from csp_lib.controller.core import Command
 from csp_lib.core import get_logger
 
-logger = get_logger("csp_lib.integration.distributor")
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

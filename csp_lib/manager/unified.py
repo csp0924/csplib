@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 
@@ -117,6 +118,7 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         Args:
             config: 統一管理器配置
         """
+        self._config = config
         self._device_manager = DeviceManager()
 
         # 根據配置初始化子管理器（可選）
@@ -147,6 +149,8 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             except ImportError:
                 logger.warning("Statistics module not available, skipping StatisticsManager initialization")
 
+        self._register_lock = threading.Lock()
+
         logger.info(
             f"UnifiedDeviceManager 初始化: "
             f"alarm={self._alarm_manager is not None}, "
@@ -162,18 +166,25 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         self,
         device: AsyncModbusDevice,
         collection_name: str | None = None,
+        traits: Sequence[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         註冊獨立設備
 
         設備將使用自己的 read_loop 進行讀取，並自動訂閱所有已啟用的子管理器。
+        若配置了 DeviceRegistry，會同時將設備註冊到 Registry。
 
         Args:
             device: Modbus 設備
             collection_name: MongoDB collection 名稱（Data Upload 用，選填）
+            traits: 設備 trait 標籤列表（選填，用於 DeviceRegistry）
+            metadata: 設備靜態資訊（選填，用於 DeviceRegistry）
         """
-        self._device_manager.register(device)
-        self._subscribe_all(device, collection_name)
+        with self._register_lock:
+            self._device_manager.register(device)
+            self._subscribe_all(device, collection_name)
+            self._register_to_registry(device, traits, metadata)
         logger.info(f"UnifiedDeviceManager: 已註冊設備 {device.device_id}")
 
     def register_group(
@@ -181,23 +192,51 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         devices: Sequence[AsyncModbusDevice],
         interval: float = 1.0,
         collection_name: str | None = None,
+        traits: Sequence[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """
         註冊設備群組
 
         群組內設備將順序讀取，並自動訂閱所有已啟用的子管理器。
         群組內設備共用同一 collection_name。
+        若配置了 DeviceRegistry，所有設備會同時註冊（共用相同 traits/metadata）。
 
         Args:
             devices: 設備列表（必須共用同一 Client）
             interval: 完整讀取一輪的間隔時間（秒）
             collection_name: MongoDB collection 名稱（群組共用，選填）
+            traits: 設備 trait 標籤列表（選填，套用到群組所有設備）
+            metadata: 設備靜態資訊（選填，套用到群組所有設備）
         """
-        self._device_manager.register_group(devices, interval)
-        for device in devices:
-            self._subscribe_all(device, collection_name)
+        with self._register_lock:
+            self._device_manager.register_group(devices, interval)
+            for device in devices:
+                self._subscribe_all(device, collection_name)
+                self._register_to_registry(device, traits, metadata)
         device_ids = [d.device_id for d in devices]
         logger.info(f"UnifiedDeviceManager: 已註冊設備群組 {device_ids}")
+
+    def _register_to_registry(
+        self,
+        device: AsyncModbusDevice,
+        traits: Sequence[str] | None,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        """
+        若配置了 DeviceRegistry，將設備註冊到 Registry。
+
+        Args:
+            device: Modbus 設備
+            traits: trait 標籤列表（可選）
+            metadata: 靜態資訊（可選）
+        """
+        if self._config.device_registry is not None:
+            self._config.device_registry.register(
+                device,
+                traits=list(traits) if traits else [],
+                metadata=metadata or {},
+            )
 
     def _subscribe_all(
         self,
@@ -218,7 +257,8 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             self._command_manager.register_device(device)
 
         if self._data_manager and collection_name:
-            self._data_manager.subscribe(device, collection_name)
+            self._data_manager.configure(device.device_id, collection_name)
+            self._data_manager.subscribe(device)
 
         if self._state_manager:
             self._state_manager.subscribe(device)

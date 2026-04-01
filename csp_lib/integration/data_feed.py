@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.services import PVDataService
     from csp_lib.equipment.device import ReadCompletePayload
 
-logger = get_logger("csp_lib.integration.data_feed")
+logger = get_logger(__name__)
 
 
 class DeviceDataFeed:
@@ -61,6 +61,8 @@ class DeviceDataFeed:
         trait 模式：訂閱所有匹配設備（含非 responsive），
         任一設備 read_complete 時觸發聚合計算。
         無法解析時 log warning 並跳過。
+
+        部分訂閱失敗時自動回滾已完成的訂閱，避免洩漏。
         """
         if self._mapping.device_id is not None:
             device = self._registry.get_device(self._mapping.device_id)
@@ -77,8 +79,18 @@ class DeviceDataFeed:
                     "DeviceDataFeed: no devices with trait '%s', data feed not attached.", self._mapping.trait
                 )
                 return
-            for device in devices:
-                self._unsubscribes.append(device.on(EVENT_READ_COMPLETE, self._on_read_complete))
+            pending: list[Callable[[], None]] = []
+            try:
+                for device in devices:
+                    pending.append(device.on(EVENT_READ_COMPLETE, self._on_read_complete))
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "DeviceDataFeed: partial subscribe failure for trait '%s', rolling back.", self._mapping.trait
+                )
+                for unsub in pending:
+                    unsub()
+                return
+            self._unsubscribes.extend(pending)
 
     def detach(self) -> None:
         """取消訂閱所有設備的事件"""

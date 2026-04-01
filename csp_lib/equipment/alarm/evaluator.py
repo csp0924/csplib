@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from csp_lib.core import get_logger
+
 from .definition import AlarmDefinition
+
+logger = get_logger(__name__)
 
 
 class AlarmEvaluator(ABC):
@@ -86,6 +90,10 @@ class BitMaskAlarmEvaluator(AlarmEvaluator):
         for bit_pos, alarm in self.bit_alarms.items():
             is_triggered = bool((value >> bit_pos) & 1)
             result[alarm.code] = is_triggered
+            if is_triggered:
+                logger.debug(f"Alarm '{alarm.name}' triggered: point={self.point_name}, value={value}")
+            else:
+                logger.debug(f"Alarm '{alarm.name}' cleared: point={self.point_name}, value={value}")
         return result
 
     def get_alarms(self) -> list[AlarmDefinition]:
@@ -137,6 +145,9 @@ class TableAlarmEvaluator(AlarmEvaluator):
         if value in self.table:
             alarm = self.table[value]
             result[alarm.code] = True
+            logger.debug(f"Alarm '{alarm.name}' triggered: point={self.point_name}, value={value}")
+        else:
+            logger.debug(f"No alarm matched: point={self.point_name}, value={value}")
 
         return result
 
@@ -234,7 +245,12 @@ class ThresholdAlarmEvaluator(AlarmEvaluator):
 
         result: dict[str, bool] = {}
         for condition in self.conditions:
-            result[condition.alarm.code] = condition.check(value)
+            is_triggered = condition.check(value)
+            result[condition.alarm.code] = is_triggered
+            if is_triggered:
+                logger.debug(f"Alarm '{condition.alarm.name}' triggered: point={self.point_name}, value={value}")
+            else:
+                logger.debug(f"Alarm '{condition.alarm.name}' cleared: point={self.point_name}, value={value}")
         return result
 
     def get_alarms(self) -> list[AlarmDefinition]:

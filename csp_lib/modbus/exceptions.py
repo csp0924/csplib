@@ -18,7 +18,33 @@ class ModbusError(Exception):
     Modbus 基礎例外
 
     所有 Modbus 相關例外的父類別，方便統一捕捉。
+
+    Attributes:
+        address: Modbus 暫存器起始位址
+        unit_id: 設備位址 (slave ID)
+        function_code: Modbus 功能碼 (e.g., "FC03")
     """
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        address: int | None = None,
+        unit_id: int | None = None,
+        function_code: str | None = None,
+    ) -> None:
+        self.address = address
+        self.unit_id = unit_id
+        self.function_code = function_code
+        context_parts: list[str] = []
+        if address is not None:
+            context_parts.append(f"addr={address}")
+        if unit_id is not None:
+            context_parts.append(f"unit={unit_id}")
+        if function_code is not None:
+            context_parts.append(f"fc={function_code}")
+        full_msg = f"{message} [{', '.join(context_parts)}]" if context_parts else message
+        super().__init__(full_msg)
 
 
 class ModbusEncodeError(ModbusError):
@@ -63,8 +89,7 @@ class ModbusCircuitBreakerError(ModbusError):
     """
 
     def __init__(self, unit_id: int, message: str | None = None) -> None:
-        self.unit_id = unit_id
-        super().__init__(message or f"Circuit breaker is open for unit_id={unit_id}")
+        super().__init__(message or f"Circuit breaker is open for unit_id={unit_id}", unit_id=unit_id)
 
 
 class ModbusQueueFullError(ModbusError):

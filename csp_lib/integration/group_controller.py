@@ -29,7 +29,7 @@ from .system_controller import SystemController, SystemControllerConfig
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
 
-logger = get_logger("csp_lib.integration.group_controller")
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

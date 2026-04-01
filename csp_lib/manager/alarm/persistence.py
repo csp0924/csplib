@@ -205,7 +205,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent(event.value))
             await self._dispatcher.dispatch(notification)
         except Exception:
-            logger.warning(f"告警通知發送失敗: {record.alarm_key}", exc_info=True)
+            logger.opt(exception=True).warning(f"告警通知發送失敗: {record.alarm_key}")
 
     async def _notify_resolved(self, alarm_key: str, resolved_at: datetime) -> None:
         """發送解除通知（從 alarm_key 拆解 device_id，不查 DB）"""
@@ -229,4 +229,4 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             )
             await self._dispatcher.dispatch(notification)
         except Exception:
-            logger.warning(f"告警解除通知發送失敗: {alarm_key}", exc_info=True)
+            logger.opt(exception=True).warning(f"告警解除通知發送失敗: {alarm_key}")

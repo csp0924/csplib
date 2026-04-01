@@ -65,6 +65,7 @@ class DeviceManager(AsyncLifecycleMixin):
         """初始化設備管理器"""
         self._standalone: list[AsyncModbusDevice] = []
         self._groups: list[DeviceGroup] = []
+        self._registered_ids: set[str] = set()
         self._running = False
 
     # ================ 註冊 ================
@@ -77,8 +78,14 @@ class DeviceManager(AsyncLifecycleMixin):
 
         Args:
             device: 要註冊的設備
+
+        Raises:
+            ValueError: 設備 ID 已被註冊
         """
+        if device.device_id in self._registered_ids:
+            raise ValueError(f"Device '{device.device_id}' already registered")
         self._standalone.append(device)
+        self._registered_ids.add(device.device_id)
         logger.debug(f"已註冊獨立設備: {device.device_id}")
 
     def register_group(
@@ -94,9 +101,18 @@ class DeviceManager(AsyncLifecycleMixin):
         Args:
             devices: 設備列表
             interval: 完整讀取一輪的間隔時間（秒）
+
+        Raises:
+            ValueError: 設備 ID 已被註冊
         """
+        new_ids: set[str] = set()
+        for device in devices:
+            if device.device_id in self._registered_ids or device.device_id in new_ids:
+                raise ValueError(f"Device '{device.device_id}' already registered")
+            new_ids.add(device.device_id)
         group = DeviceGroup(devices=list(devices), interval=interval)
         self._groups.append(group)
+        self._registered_ids.update(new_ids)
         logger.debug(f"已註冊設備群組: {group.device_ids}")
 
     # ================ 生命週期 ================

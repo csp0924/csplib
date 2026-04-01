@@ -13,7 +13,7 @@ from ..behaviors import NoiseBehavior, RampBehavior
 from ..config import ControllabilityMode, LoadSimConfig, SimulatedDeviceConfig, SimulatedPoint
 from .base import BaseDeviceSimulator
 
-logger = get_logger("csp_lib.modbus_server.simulator.load")
+logger = get_logger(__name__)
 
 
 def default_load_config(

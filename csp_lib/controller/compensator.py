@@ -36,7 +36,7 @@ from typing import Any, Protocol, runtime_checkable
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
 
-logger = get_logger("csp_lib.controller.compensator")
+logger = get_logger(__name__)
 
 
 # =============== FF Table Repository ===============

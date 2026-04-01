@@ -8,6 +8,13 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.modbus._pymodbus import (
+    ensure_pymodbus_server,
+    get_BaseModbusDataBlock,
+    get_ModbusDeviceContext,
+    get_ModbusServerContext,
+    get_ModbusTcpServer,
+)
 
 from .config import ServerConfig
 
@@ -15,36 +22,12 @@ if TYPE_CHECKING:
     from .microgrid import MicrogridSimulator
     from .simulator.base import BaseDeviceSimulator
 
-logger = get_logger("csp_lib.modbus_server.server")
-
-# ========== Lazy Import for Optional Dependency ==========
-
-_ModbusTcpServer: type | None = None
-_ModbusDeviceContext: type | None = None
-_ModbusServerContext: type | None = None
-_BaseModbusDataBlock: type | None = None
+logger = get_logger(__name__)
 
 
 def _ensure_pymodbus_imported() -> None:
-    """確保 pymodbus server 相關模組已載入"""
-    global _ModbusTcpServer, _ModbusDeviceContext, _ModbusServerContext, _BaseModbusDataBlock
-
-    if _ModbusTcpServer is not None:
-        return
-
-    try:
-        from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext
-        from pymodbus.datastore.store import BaseModbusDataBlock
-        from pymodbus.server import ModbusTcpServer
-
-        _ModbusTcpServer = ModbusTcpServer
-        _ModbusDeviceContext = ModbusDeviceContext
-        _ModbusServerContext = ModbusServerContext
-        _BaseModbusDataBlock = BaseModbusDataBlock
-    except ImportError as e:
-        raise ImportError(
-            "Modbus server requires 'pymodbus' package. Install with: uv pip install csp_lib[modbus]"
-        ) from e
+    """確保 pymodbus server 相關模組已載入 (backward-compat wrapper)."""
+    ensure_pymodbus_server()
 
 
 class SimulatorDataBlock:
@@ -148,7 +131,7 @@ class SimulationServer(AsyncLifecycleMixin):
         for unit_id, sim in self._simulators.items():
             data_block = _create_datablock(sim)
             # ModbusDeviceContext: di=discrete inputs, co=coils, hr=holding registers, ir=input registers
-            slave_ctx = _ModbusDeviceContext(  # type: ignore[misc]
+            slave_ctx = get_ModbusDeviceContext()(  # type: ignore[misc]
                 di=data_block,
                 co=data_block,
                 hr=data_block,
@@ -159,11 +142,11 @@ class SimulationServer(AsyncLifecycleMixin):
         if not slaves:
             logger.warning("No simulators registered, server will start with empty context")
             data_block = _create_empty_pymodbus_block()
-            slaves[0] = _ModbusDeviceContext(di=data_block, co=data_block, hr=data_block, ir=data_block)  # type: ignore[misc]
+            slaves[0] = get_ModbusDeviceContext()(di=data_block, co=data_block, hr=data_block, ir=data_block)  # type: ignore[misc]
 
-        server_ctx = _ModbusServerContext(devices=slaves, single=False)  # type: ignore[misc]
+        server_ctx = get_ModbusServerContext()(devices=slaves, single=False)  # type: ignore[misc]
 
-        self._server = _ModbusTcpServer(  # type: ignore[misc]
+        self._server = get_ModbusTcpServer()(  # type: ignore[misc]
             context=server_ctx,
             address=(self._config.host, self._config.port),
         )
@@ -230,10 +213,9 @@ def _create_datablock(simulator: BaseDeviceSimulator) -> Any:
     注意: pymodbus 3.12 的 ModbusDeviceContext 在呼叫 datablock 前會
     自動 address += 1，因此 datablock 內需要 address -= 1 來補償。
     """
-    _ensure_pymodbus_imported()
     wrapper = SimulatorDataBlock(simulator)
 
-    class _PymodbusDataBlock(_BaseModbusDataBlock):  # type: ignore[valid-type, misc]
+    class _PymodbusDataBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
         def __init__(self):
             self.address = 0
             self.default_value = 0
@@ -253,9 +235,8 @@ def _create_datablock(simulator: BaseDeviceSimulator) -> Any:
 
 def _create_empty_pymodbus_block() -> Any:
     """建立空的 pymodbus DataBlock"""
-    _ensure_pymodbus_imported()
 
-    class _EmptyBlock(_BaseModbusDataBlock):  # type: ignore[valid-type, misc]
+    class _EmptyBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
         def __init__(self):
             self.address = 0
             self.default_value = 0

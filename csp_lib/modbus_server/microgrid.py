@@ -16,7 +16,7 @@ from .simulator.pcs import PCSSimulator
 from .simulator.power_meter import PowerMeterSimulator
 from .simulator.solar import SolarSimulator
 
-logger = get_logger("csp_lib.modbus_server.microgrid")
+logger = get_logger(__name__)
 
 
 class MicrogridSimulator:

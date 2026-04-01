@@ -13,7 +13,7 @@ from ..behaviors import AlarmBehavior, NoiseBehavior
 from ..config import AlarmPointConfig, SimulatedDeviceConfig, SimulatedPoint, SolarSimConfig
 from .base import BaseDeviceSimulator
 
-logger = get_logger("csp_lib.modbus_server.simulator.solar")
+logger = get_logger(__name__)
 
 
 class SolarState(IntEnum):

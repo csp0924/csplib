@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from typing import Sequence
 
+from csp_lib.core import get_logger
+
 from .base import ReadGroup
+
+logger = get_logger(__name__)
 
 
 class ReadScheduler:
@@ -100,6 +104,10 @@ class ReadScheduler:
         if rotating_groups is not None:
             self._rotating_groups = [list(g) for g in rotating_groups]
             self._rotating_index = 0
+        if always_groups is not None or rotating_groups is not None:
+            logger.info(
+                f"ReadScheduler groups updated: always={len(self._always_groups)}, rotating={len(self._rotating_groups)}"
+            )
 
     def reset(self) -> None:
         """重置輪詢狀態"""
