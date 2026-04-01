@@ -5,7 +5,7 @@
 # 提供資料類型定義與編解碼功能，以及 pymodbus 非同步客戶端封裝。
 #
 # 安裝方式：
-#     uv pip install csp_lib[modbus]
+#     uv pip install csp0924_lib[modbus]
 #
 # Usage:
 #     from csp_lib.modbus import (

@@ -57,7 +57,7 @@ def _ensure_pymodbus_imported() -> None:
         _AsyncModbusSerialClient = AsyncModbusSerialClient
     except ImportError as e:
         raise ImportError(
-            "Pymodbus client requires 'pymodbus' package. Install with: uv pip install csp_lib[modbus]"
+            "Pymodbus client requires 'pymodbus' package. Install with: uv pip install csp0924_lib[modbus]"
         ) from e
 
 

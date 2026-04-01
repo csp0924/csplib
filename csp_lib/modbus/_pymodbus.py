@@ -35,7 +35,7 @@ def ensure_pymodbus_server() -> None:
         _BaseModbusDataBlock = BaseModbusDataBlock
     except ImportError as e:
         raise ImportError(
-            "pymodbus server requires 'pymodbus' package. Install with: pip install csp_lib[modbus]"
+            "pymodbus server requires 'pymodbus' package. Install with: pip install csp0924_lib[modbus]"
         ) from e
 
 
