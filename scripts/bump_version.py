@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # {v} = new version, {date} = today's date (YYYY-MM-DD)
 REPLACEMENTS: list[tuple[str, str, str]] = [
     ("csp_lib/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{v}"'),
-    ("README.md", r"version-[\d.]+-green", "version-{v}-green"),
+    ("README.md", r"version-[\d.]+-blue", "version-{v}-blue"),
     ("README.md", r"version = \{[\d.]+\}", "version = {{{v}}}"),
     ("README.md", r"目前版本：`[\d.]+`", "目前版本：`{v}`"),
     ("CITATION.cff", r"^version:\s*[\d.]+", "version: {v}"),
