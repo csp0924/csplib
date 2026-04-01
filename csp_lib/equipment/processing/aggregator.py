@@ -9,6 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
+from csp_lib.core import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class Processor(Protocol):
@@ -104,7 +108,8 @@ class ComputedValueAggregator:
         try:
             computed = self.compute_fn(*source_values)
             result[self.output_name] = computed
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Compute failed for '{self.output_name}': {e}")
             result[self.output_name] = None
 
         return result

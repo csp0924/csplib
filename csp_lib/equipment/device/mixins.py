@@ -76,15 +76,20 @@ class AlarmMixin:
             if point_value is None:
                 continue
 
-            evaluations = evaluator.evaluate(point_value)
-            events = self._alarm_manager.update(evaluations)
+            try:
+                evaluations = evaluator.evaluate(point_value)
+                events = self._alarm_manager.update(evaluations)
 
-            for event in events:
-                payload = DeviceAlarmPayload(device_id=self._config.device_id, alarm_event=event)
-                if event.event_type == AlarmEventType.TRIGGERED:
-                    await self._emitter.emit_await(EVENT_ALARM_TRIGGERED, payload)
-                else:
-                    await self._emitter.emit_await(EVENT_ALARM_CLEARED, payload)
+                for event in events:
+                    payload = DeviceAlarmPayload(device_id=self._config.device_id, alarm_event=event)
+                    if event.event_type == AlarmEventType.TRIGGERED:
+                        await self._emitter.emit_await(EVENT_ALARM_TRIGGERED, payload)
+                    else:
+                        await self._emitter.emit_await(EVENT_ALARM_CLEARED, payload)
+            except Exception as e:
+                logger.warning(
+                    f"[{self._config.device_id}] Alarm evaluation failed for point '{evaluator.point_name}': {e}"
+                )
 
 
 class WriteMixin:
@@ -200,10 +205,10 @@ class WriteMixin:
                         f"[{device_id}] execute_action 失敗: action={action}, status={result.status.value}, error={result.error_message}"
                     )
                 else:
-                    logger.info(f"[{device_id}] execute_action 成功: action={action}")
+                    logger.debug(f"[{device_id}] execute_action 成功: action={action}")
                 return result
 
-            logger.info(f"[{device_id}] execute_action 成功: action={action}")
+            logger.debug(f"[{device_id}] execute_action 成功: action={action}")
             return WriteResult(
                 status=WriteStatus.SUCCESS,
                 point_name=action,
