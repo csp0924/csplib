@@ -17,6 +17,7 @@ from typing import Any
 from csp_lib.core import get_logger
 from csp_lib.modbus import ModbusCodec
 from csp_lib.modbus_gateway.config import RegisterType
+from csp_lib.modbus_gateway.errors import WriteRejectedError
 
 logger = get_logger(__name__)
 
@@ -103,7 +104,10 @@ class WritePipeline:
             rejected = False
             for validator in self._validators:
                 if not validator.validate(reg_def.name, physical):
-                    logger.debug(f"Write rejected by {type(validator).__name__}: {reg_def.name}={physical}")
+                    err = WriteRejectedError(
+                        reg_def.address, f"Rejected by {type(validator).__name__}: {reg_def.name}={physical}"
+                    )
+                    logger.warning(str(err))
                     rejected = True
                     break
             if rejected:
@@ -114,6 +118,10 @@ class WritePipeline:
             if rule is not None:
                 physical, rule_rejected = self._apply_rule(rule, reg_def.name, physical)
                 if rule_rejected:
+                    err = WriteRejectedError(
+                        reg_def.address, f"Rejected by {type(rule).__name__}: {reg_def.name}={physical}"
+                    )
+                    logger.warning(str(err))
                     continue
 
             # 3. Update register

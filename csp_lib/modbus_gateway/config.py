@@ -136,6 +136,10 @@ class WriteRule:
     max_value: float | None = None
     clamp: bool = False
 
+    def __post_init__(self) -> None:
+        if self.min_value is not None and self.max_value is not None and self.min_value > self.max_value:
+            raise ValueError(f"min_value must be <= max_value, got min={self.min_value} max={self.max_value}")
+
     def apply(self, name: str, value: float) -> tuple[float, bool]:
         """Apply rule: return (possibly_clamped_value, rejected)."""
         if self.min_value is not None and value < self.min_value:
