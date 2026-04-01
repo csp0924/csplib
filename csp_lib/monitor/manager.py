@@ -85,7 +85,7 @@ class SystemMonitor(AsyncLifecycleMixin):
             try:
                 await self._publisher.register_node()
             except Exception:
-                logger.warning("節點註冊失敗", exc_info=True)
+                logger.opt(exception=True).warning("節點註冊失敗")
 
         self._task = asyncio.create_task(self._run_loop())
         logger.info("系統監控器已啟動")
@@ -110,7 +110,7 @@ class SystemMonitor(AsyncLifecycleMixin):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.error("系統監控迴圈異常", exc_info=True)
+                logger.opt(exception=True).error("系統監控迴圈異常")
 
             try:
                 await asyncio.sleep(self._config.interval_seconds)
@@ -131,7 +131,7 @@ class SystemMonitor(AsyncLifecycleMixin):
             try:
                 await self._publisher.publish_metrics(metrics)
             except Exception:
-                logger.warning("Redis 發布指標失敗", exc_info=True)
+                logger.opt(exception=True).warning("Redis 發布指標失敗")
 
         # 4. 處理告警事件
         for event in events:
@@ -140,7 +140,7 @@ class SystemMonitor(AsyncLifecycleMixin):
                 try:
                     await self._publisher.publish_alarm_event(event)
                 except Exception:
-                    logger.warning("Redis 發布告警失敗", exc_info=True)
+                    logger.opt(exception=True).warning("Redis 發布告警失敗")
 
             # 發送通知
             await self._notify_alarm(event)
@@ -154,7 +154,7 @@ class SystemMonitor(AsyncLifecycleMixin):
                 try:
                     await self._publisher.publish_module_health(snapshot)
                 except Exception:
-                    logger.warning("Redis 發布模組健康失敗", exc_info=True)
+                    logger.opt(exception=True).warning("Redis 發布模組健康失敗")
 
     async def _notify_alarm(self, event: AlarmEvent) -> None:
         """透過 NotificationDispatcher 發送告警通知"""
@@ -184,7 +184,7 @@ class SystemMonitor(AsyncLifecycleMixin):
         try:
             await self._dispatcher.dispatch(notification)
         except Exception:
-            logger.warning("通知分發失敗", exc_info=True)
+            logger.opt(exception=True).warning("通知分發失敗")
 
     # ================ HealthCheckable ================
 

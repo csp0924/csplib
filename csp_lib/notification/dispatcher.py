@@ -61,7 +61,7 @@ class NotificationDispatcher:
             try:
                 await channel.send(notification)
             except Exception:
-                logger.warning(f"通知通道 '{channel.name}' 發送失敗", exc_info=True)
+                logger.opt(exception=True).warning(f"通知通道 '{channel.name}' 發送失敗")
 
     @staticmethod
     def from_alarm_record(
@@ -118,7 +118,7 @@ class NotificationDispatcher:
             try:
                 await channel.send_batch(list(notifications))
             except Exception:
-                logger.warning(f"通知通道 '{channel.name}' 批次發送失敗", exc_info=True)
+                logger.opt(exception=True).warning(f"通知通道 '{channel.name}' 批次發送失敗")
 
     @property
     def channels(self) -> list[NotificationChannel]:

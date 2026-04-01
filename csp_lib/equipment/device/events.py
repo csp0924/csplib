@@ -322,7 +322,7 @@ class DeviceEventEmitter:
         try:
             self._queue.put_nowait((event, payload))
         except asyncio.QueueFull:
-            logger.warning("事件佇列已滿，丟棄事件: event=%s", event)
+            logger.warning("事件佇列已滿，丟棄事件: event={}", event)
 
     async def emit_await(self, event: str, payload: Any = None) -> None:
         """

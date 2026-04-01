@@ -601,7 +601,7 @@ class SystemController(AsyncLifecycleMixin):
                 device = self._registry.get_device(mapping.device_id)
                 if device is not None and mapping.point_name not in device.all_point_names:
                     logger.warning(
-                        "Heartbeat point '%s' not found on device '%s'.",
+                        "Heartbeat point '{}' not found on device '{}'.",
                         mapping.point_name,
                         mapping.device_id,
                     )
@@ -610,7 +610,7 @@ class SystemController(AsyncLifecycleMixin):
                 for device in devices:
                     if mapping.point_name not in device.all_point_names:
                         logger.warning(
-                            "Heartbeat point '%s' not found on device '%s' (trait='%s').",
+                            "Heartbeat point '{}' not found on device '{}' (trait='{}').",
                             mapping.point_name,
                             device.device_id,
                             mapping.trait,

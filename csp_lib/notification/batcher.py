@@ -108,7 +108,7 @@ class NotificationBatcher(AsyncLifecycleMixin):
         try:
             await self.flush()
         except Exception:
-            logger.warning(f"NotificationBatcher: 停止時 flush 失敗，{pending} 則通知待重試", exc_info=True)
+            logger.opt(exception=True).warning(f"NotificationBatcher: 停止時 flush 失敗，{pending} 則通知待重試")
             await asyncio.sleep(1)
             remaining = len(self._queue)
             if remaining == 0:
@@ -250,7 +250,7 @@ class NotificationBatcher(AsyncLifecycleMixin):
             try:
                 await channel.send_batch(items)
             except Exception:
-                logger.warning(f"NotificationBatcher: 通道 '{channel.name}' 批次發送失敗", exc_info=True)
+                logger.opt(exception=True).warning(f"NotificationBatcher: 通道 '{channel.name}' 批次發送失敗")
 
     # ================ Properties ================
 

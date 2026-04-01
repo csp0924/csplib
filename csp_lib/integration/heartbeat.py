@@ -199,7 +199,9 @@ class HeartbeatService:
         try:
             await device.write(point_name, value)
         except DeviceError:
-            logger.warning(f"Heartbeat write failed: device='{device.device_id}' point='{point_name}'", exc_info=True)
+            logger.opt(exception=True).warning(
+                f"Heartbeat write failed: device='{device.device_id}' point='{point_name}'"
+            )
 
 
 __all__ = [

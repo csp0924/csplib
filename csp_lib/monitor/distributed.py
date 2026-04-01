@@ -159,7 +159,7 @@ class ClusterMonitorAggregator(AsyncLifecycleMixin):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.error("叢集聚合迴圈異常", exc_info=True)
+                logger.opt(exception=True).error("叢集聚合迴圈異常")
 
             try:
                 await asyncio.sleep(self._config.aggregation_interval)
@@ -204,7 +204,7 @@ class ClusterMonitorAggregator(AsyncLifecycleMixin):
                         )
                     )
             except Exception:
-                logger.warning(f"讀取節點註冊失敗: {key}", exc_info=True)
+                logger.opt(exception=True).warning(f"讀取節點註冊失敗: {key}")
 
         return nodes
 
@@ -224,13 +224,13 @@ class ClusterMonitorAggregator(AsyncLifecycleMixin):
                 updated_at = raw_metrics.pop("updated_at", "")
                 metrics = raw_metrics
         except Exception:
-            logger.warning(f"讀取節點指標失敗: {instance_id}", exc_info=True)
+            logger.opt(exception=True).warning(f"讀取節點指標失敗: {instance_id}")
 
         try:
             alarm_set = await self._redis.smembers(alarms_key)
             active_alarms = sorted(alarm_set)
         except Exception:
-            logger.warning(f"讀取節點告警失敗: {instance_id}", exc_info=True)
+            logger.opt(exception=True).warning(f"讀取節點告警失敗: {instance_id}")
 
         # 判斷是否在線：節點是否仍在 known_nodes 中（TTL 存活代表在線）
         is_online = instance_id in self._known_nodes

@@ -257,4 +257,4 @@ class CommandRouter:
         try:
             await device.write(point_name, value)
         except DeviceError:
-            logger.warning(f"Write failed for device '{device.device_id}' point '{point_name}'.", exc_info=True)
+            logger.opt(exception=True).warning(f"Write failed for device '{device.device_id}' point '{point_name}'.")
