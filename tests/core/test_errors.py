@@ -67,8 +67,8 @@ class TestStrategyExecutionError:
         assert not isinstance(err, DeviceError)
         assert isinstance(err, Exception)
 
-    def test_caught_by_exception(self):
-        with pytest.raises(Exception):
+    def test_caught_by_own_type(self):
+        with pytest.raises(StrategyExecutionError):
             raise StrategyExecutionError("QVStrategy", "voltage out of range")
 
 
@@ -83,8 +83,8 @@ class TestProtectionError:
         assert not isinstance(err, DeviceError)
         assert isinstance(err, Exception)
 
-    def test_caught_by_exception(self):
-        with pytest.raises(Exception):
+    def test_caught_by_own_type(self):
+        with pytest.raises(ProtectionError):
             raise ProtectionError("soc_limit", "SOC below minimum")
 
 

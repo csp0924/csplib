@@ -224,7 +224,8 @@ class TestRegister:
         manager = UnifiedDeviceManager(config)
         manager.register(mock_device, collection_name="meter")
 
-        mock_dum.subscribe.assert_called_once_with(mock_device, "meter")
+        mock_dum.configure.assert_called_once_with(mock_device.device_id, "meter")
+        mock_dum.subscribe.assert_called_once_with(mock_device)
 
     @patch("csp_lib.manager.unified.DataUploadManager")
     def test_register_without_collection_skips_data_upload(
@@ -279,8 +280,9 @@ class TestRegisterGroup:
         manager = UnifiedDeviceManager(config)
         manager.register_group(mock_devices, collection_name="rtu_data")
 
+        assert mock_dum.configure.call_count == len(mock_devices)
         assert mock_dum.subscribe.call_count == len(mock_devices)
-        for call in mock_dum.subscribe.call_args_list:
+        for call in mock_dum.configure.call_args_list:
             assert call.args[1] == "rtu_data"
 
 

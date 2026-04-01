@@ -252,7 +252,8 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             self._command_manager.register_device(device)
 
         if self._data_manager and collection_name:
-            self._data_manager.subscribe(device, collection_name)
+            self._data_manager.configure(device.device_id, collection_name)
+            self._data_manager.subscribe(device)
 
         if self._state_manager:
             self._state_manager.subscribe(device)

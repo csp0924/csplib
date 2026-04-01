@@ -135,7 +135,9 @@ class ClusterStatePublisher(AsyncLifecycleMixin):
         try:
             await self._redis.delete(self._config.redis_key("leader"))
         except Exception as e:
-            logger.opt(exception=True).warning(f"Failed to clear leader key on stop: key={self._config.redis_key('leader')}, {e}")
+            logger.opt(exception=True).warning(
+                f"Failed to clear leader key on stop: key={self._config.redis_key('leader')}, {e}"
+            )
 
         logger.info("ClusterStatePublisher stopped.")
 
@@ -279,8 +281,7 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
                 return
             except Exception as e:
                 logger.opt(exception=True).warning(
-                    f"Cluster state poll failed: instance={self._config.instance_id}, "
-                    f"retry will occur next cycle: {e}"
+                    f"Cluster state poll failed: instance={self._config.instance_id}, retry will occur next cycle: {e}"
                 )
 
             try:

@@ -312,7 +312,9 @@ class LoadSheddingStrategy(Strategy):
                             await circuit.restore()
                             logger.info(f"Circuit '{circuit.name}' restored (stage: {stage_name})")
                     except Exception:
-                        logger.opt(exception=True).warning(f"Failed to {action} circuit '{circuit.name}' (stage: {stage_name})")
+                        logger.opt(exception=True).warning(
+                            f"Failed to {action} circuit '{circuit.name}' (stage: {stage_name})"
+                        )
 
     async def _restore_all(self) -> None:
         """恢復所有已卸載的迴路（priority 降序）"""
@@ -326,7 +328,9 @@ class LoadSheddingStrategy(Strategy):
                         await circuit.restore()
                         logger.info(f"Auto-restore circuit '{circuit.name}' (stage: {stage.name})")
                 except Exception:
-                    logger.opt(exception=True).warning(f"Failed to auto-restore circuit '{circuit.name}' (stage: {stage.name})")
+                    logger.opt(exception=True).warning(
+                        f"Failed to auto-restore circuit '{circuit.name}' (stage: {stage.name})"
+                    )
 
     def __str__(self) -> str:
         shed_count = sum(1 for s in self._states.values() if s.is_shed)
