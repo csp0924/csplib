@@ -22,7 +22,7 @@ from csp_lib.core import get_logger
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
 
-logger = get_logger("csp_lib.controller.system.cascading")
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)

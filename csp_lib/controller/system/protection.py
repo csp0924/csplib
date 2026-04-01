@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -83,6 +84,11 @@ class SOCProtection(ProtectionRule):
     """
 
     def __init__(self, config: SOCProtectionConfig | None = None) -> None:
+        warnings.warn(
+            "SOCProtection is deprecated, use DynamicSOCProtection with SOCProtectionConfig instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._config = config or SOCProtectionConfig()
         self._is_triggered = False
 
@@ -304,7 +310,7 @@ class ProtectionGuard:
                 if rule.is_triggered:
                     triggered.append(rule.name)
             except Exception:
-                logger.exception(f"Protection rule '{rule.name}' failed, applying fail-safe (P=0, Q=0)")
+                logger.opt(exception=True).warning(f"Protection rule '{rule.name}' failed, applying fail-safe (P=0, Q=0)")
                 current = Command(p_target=0.0, q_target=0.0)
                 triggered.append(f"{rule.name}(fail-safe)")
 

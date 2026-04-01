@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from .config import DistributedConfig
 
-logger = get_logger("csp_lib.integration.distributed.controller")
+logger = get_logger(__name__)
 
 
 class DistributedController(AsyncLifecycleMixin):

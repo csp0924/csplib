@@ -12,7 +12,7 @@ from csp_lib.core import get_logger
 from ..config import SimulatedDeviceConfig
 from ..register_block import RegisterBlock
 
-logger = get_logger("csp_lib.modbus_server.simulator")
+logger = get_logger(__name__)
 
 
 class BaseDeviceSimulator(ABC):

@@ -17,12 +17,12 @@ from typing import TYPE_CHECKING
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
 
-from .protection import ProtectionRule
+from .protection import ProtectionRule, SOCProtectionConfig
 
 if TYPE_CHECKING:
     from csp_lib.core.runtime_params import RuntimeParameters
 
-logger = get_logger("csp_lib.controller.system.dynamic_protection")
+logger = get_logger(__name__)
 
 
 # =============== Dynamic SOC Protection ===============
@@ -32,25 +32,29 @@ class DynamicSOCProtection(ProtectionRule):
     """
     動態 SOC 保護
 
-    每次 evaluate() 時從 RuntimeParameters 讀取 soc_max / soc_min，
-    支援即時更新（如來自 EMS/Modbus 的寫入）。
+    支援兩種參數來源：
+
+    1. **RuntimeParameters**（動態）：每次 evaluate() 從 RuntimeParameters 讀取
+       soc_max / soc_min，支援即時更新（如來自 EMS/Modbus 的寫入）。
+    2. **SOCProtectionConfig**（靜態）：從 frozen dataclass 讀取固定的
+       soc_high / soc_low / warning_band，取代已棄用的 SOCProtection。
 
     P > 0 = 放電；P < 0 = 充電
 
-    RuntimeParameters keys:
+    RuntimeParameters keys (僅 RuntimeParameters 模式):
         soc_max: SOC 上限（%），預設 95.0
         soc_min: SOC 下限（%），預設 5.0
 
     Args:
-        params: RuntimeParameters 實例
-        soc_max_key: soc_max 在 params 中的 key
-        soc_min_key: soc_min 在 params 中的 key
-        warning_band: 警戒區寬度（%），0 = 不啟用漸進限制
+        params: RuntimeParameters 或 SOCProtectionConfig 實例
+        soc_max_key: soc_max 在 RuntimeParameters 中的 key（SOCProtectionConfig 模式忽略）
+        soc_min_key: soc_min 在 RuntimeParameters 中的 key（SOCProtectionConfig 模式忽略）
+        warning_band: 警戒區寬度（%），0 = 不啟用漸進限制（SOCProtectionConfig 模式使用 config 值）
     """
 
     def __init__(
         self,
-        params: RuntimeParameters,
+        params: RuntimeParameters | SOCProtectionConfig,
         soc_max_key: str = "soc_max",
         soc_min_key: str = "soc_min",
         warning_band: float = 0.0,
@@ -69,14 +73,22 @@ class DynamicSOCProtection(ProtectionRule):
     def is_triggered(self) -> bool:
         return self._is_triggered
 
+    def _resolve_limits(self) -> tuple[float, float, float]:
+        """Resolve soc_max, soc_min, warning_band from the parameter source."""
+        if isinstance(self._params, SOCProtectionConfig):
+            return self._params.soc_high, self._params.soc_low, self._params.warning_band
+        # RuntimeParameters path
+        soc_max = float(self._params.get(self._soc_max_key, 95.0))
+        soc_min = float(self._params.get(self._soc_min_key, 5.0))
+        return soc_max, soc_min, self._warning_band
+
     def evaluate(self, command: Command, context: StrategyContext) -> Command:
         soc = context.soc
         if soc is None:
             self._is_triggered = False
             return command
 
-        soc_max = float(self._params.get(self._soc_max_key, 95.0))
-        soc_min = float(self._params.get(self._soc_min_key, 5.0))
+        soc_max, soc_min, wb = self._resolve_limits()
         p = command.p_target
 
         # SOC 過高：禁止充電
@@ -98,7 +110,6 @@ class DynamicSOCProtection(ProtectionRule):
             return command
 
         # 高側警戒區：漸進限制充電
-        wb = self._warning_band
         if wb > 0 and soc >= soc_max - wb and p < 0:
             ratio = (soc_max - soc) / wb
             limited = p * ratio

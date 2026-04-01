@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 
     from .registry import DeviceRegistry
 
-logger = get_logger("csp_lib.integration.heartbeat")
+logger = get_logger(__name__)
 
 
 class HeartbeatService:

@@ -29,7 +29,7 @@ from csp_lib.core import get_logger
 if TYPE_CHECKING:
     from .registry import DeviceRegistry
 
-logger = get_logger("csp_lib.integration.orchestrator")
+logger = get_logger(__name__)
 
 
 # ========== Schema ==========

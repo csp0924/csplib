@@ -13,7 +13,7 @@ from ..behaviors import AlarmBehavior, RampBehavior
 from ..config import AlarmPointConfig, AlarmResetMode, PCSSimConfig, SimulatedDeviceConfig, SimulatedPoint
 from .base import BaseDeviceSimulator
 
-logger = get_logger("csp_lib.modbus_server.simulator.pcs")
+logger = get_logger(__name__)
 
 
 def default_pcs_config(

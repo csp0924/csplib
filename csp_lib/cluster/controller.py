@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from csp_lib.manager import UnifiedDeviceManager
     from csp_lib.redis import RedisClient
 
-logger = get_logger("csp_lib.cluster.controller")
+logger = get_logger(__name__)
 
 
 class ClusterController(AsyncLifecycleMixin):

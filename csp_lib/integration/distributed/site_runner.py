@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
     from .config import RemoteSiteConfig
 
-logger = get_logger("csp_lib.integration.distributed.site_runner")
+logger = get_logger(__name__)
 
 
 class RemoteSiteRunner(AsyncLifecycleMixin):

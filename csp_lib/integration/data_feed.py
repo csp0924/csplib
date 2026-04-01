@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.services import PVDataService
     from csp_lib.equipment.device import ReadCompletePayload
 
-logger = get_logger("csp_lib.integration.data_feed")
+logger = get_logger(__name__)
 
 
 class DeviceDataFeed:

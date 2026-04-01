@@ -15,7 +15,7 @@ from ..behaviors import AlarmBehavior, RampBehavior
 from ..config import AlarmPointConfig, GeneratorSimConfig, SimulatedDeviceConfig, SimulatedPoint
 from .base import BaseDeviceSimulator
 
-logger = get_logger("csp_lib.modbus_server.simulator.generator")
+logger = get_logger(__name__)
 
 
 class GeneratorState(IntEnum):

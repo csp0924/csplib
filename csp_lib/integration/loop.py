@@ -30,7 +30,7 @@ from .schema import CommandMapping, ContextMapping, DataFeedMapping
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
 
-logger = get_logger("csp_lib.integration.loop")
+logger = get_logger(__name__)
 
 
 @dataclass

@@ -14,7 +14,7 @@ from csp_lib.core import get_logger
 from csp_lib.integration.context_builder import apply_builtin_aggregate
 from csp_lib.integration.schema import ContextMapping
 
-logger = get_logger("csp_lib.cluster.context")
+logger = get_logger(__name__)
 
 
 @runtime_checkable

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.core import Command
     from csp_lib.equipment.device import AsyncModbusDevice
 
-logger = get_logger("csp_lib.integration.command_router")
+logger = get_logger(__name__)
 
 
 class CommandRouter:
