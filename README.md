@@ -1970,7 +1970,7 @@ pip install -e .                   # Editable install
   author = {Cheng Sin Pang (鄭善淜)},
   year = {2024},
   url = {https://github.com/csp0924/csp_lib},
-  version = {0.5.0},
+  version = {0.5.1},
   license = {Apache-2.0}
 }
 ```
@@ -1989,6 +1989,6 @@ Copyright 2024-2026 Cheng Sin Pang(鄭善淜)
 
 ## 版本
 
-目前版本：`0.5.0`
+目前版本：`0.5.1`
 
 詳見 [CHANGELOG.md](CHANGELOG.md)。

@@ -6,6 +6,7 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-01
 ### Changed
 - **錯誤階層擴充**: 新增 `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 結構化例外，取代裸 `RuntimeError` / `ValueError`
 - **ModbusError 上下文**: `ModbusError` 子類別攜帶 `address`、`unit_id`、`function_code` 欄位，方便上層快速分類
