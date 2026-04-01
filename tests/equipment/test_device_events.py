@@ -192,14 +192,14 @@ class TestDeviceEventEmitterEmit:
     """DeviceEventEmitter emit 測試"""
 
     @pytest.mark.asyncio
-    async def test_emit_enqueues_event(self):
-        """emit() 應將事件放入佇列"""
+    async def test_emit_skips_when_not_running(self):
+        """emit() 未啟動時不入隊"""
         emitter = DeviceEventEmitter()
-        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
+        emitter.on(EVENT_CONNECTED, AsyncMock())
 
         emitter.emit(EVENT_CONNECTED, {"test": True})
 
-        assert emitter.queue_size == 1
+        assert emitter.queue_size == 0  # 未 start，不入隊
 
     @pytest.mark.asyncio
     async def test_emit_triggers_handler_via_worker(self):
@@ -246,13 +246,21 @@ class TestDeviceEventEmitterEmit:
     async def test_emit_queue_full_drops_event(self):
         """佇列滿時 emit() 應丟棄事件"""
         emitter = DeviceEventEmitter(max_queue_size=2)
-        emitter.on(EVENT_CONNECTED, AsyncMock())  # 要有 handler 才會入隊
 
-        emitter.emit(EVENT_CONNECTED, 1)
-        emitter.emit(EVENT_CONNECTED, 2)
-        emitter.emit(EVENT_CONNECTED, 3)  # 應被丟棄
+        async def slow_handler(payload):
+            await asyncio.sleep(10)  # 阻塞 worker 防止消費
 
-        assert emitter.queue_size == 2
+        emitter.on(EVENT_CONNECTED, slow_handler)
+        await emitter.start()
+        try:
+            emitter.emit(EVENT_CONNECTED, 1)
+            emitter.emit(EVENT_CONNECTED, 2)
+            emitter.emit(EVENT_CONNECTED, 3)  # 應被丟棄（佇列滿）
+            # worker 在處理第 1 個（slow），佇列剩 1-2 個
+            # 至少驗證第 3 個被丟棄（queue_size <= 2）
+            assert emitter.queue_size <= 2
+        finally:
+            await emitter.stop()
 
 
 class TestDeviceEventEmitterEmitAwait:

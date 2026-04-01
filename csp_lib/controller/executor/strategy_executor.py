@@ -241,6 +241,7 @@ class StrategyExecutor:
         if self._strategy is None:
             return Command()
 
+        context: StrategyContext | None = None
         try:
             # 取得基礎上下文並建立不可變副本
             base_context = self._context_provider()
@@ -263,6 +264,14 @@ class StrategyExecutor:
 
             return command
 
-        except Exception:
-            logger.exception(f"策略執行失敗: {self._strategy}")
+        except Exception as e:
+            strategy_name = type(self._strategy).__name__ if self._strategy else "None"
+            extra_keys = list(context.extra.keys()) if context is not None else []
+            logger.exception(
+                f"Strategy execution failed: {strategy_name}, "
+                f"soc={getattr(context, 'soc', None)}, "
+                f"extra_keys={extra_keys}, "
+                f"last_command={self._last_command}, "
+                f"error={e!r}"
+            )
             return self._last_command

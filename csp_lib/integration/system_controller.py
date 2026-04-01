@@ -62,7 +62,7 @@ if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
     from csp_lib.equipment.device import AsyncModbusDevice
 
-logger = get_logger("csp_lib.integration.system_controller")
+logger = get_logger(__name__)
 
 _AUTO_STOP_MODE = "__auto_stop__"
 _SCHEDULE_MODE = "__schedule__"

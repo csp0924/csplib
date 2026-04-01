@@ -175,6 +175,9 @@ class DeviceEventEmitter:
         await emitter.stop()
     """
 
+    _SENTINEL: tuple[str, Any] = ("__stop__", None)
+    _DRAIN_TIMEOUT: float = 5.0
+
     def __init__(self, max_queue_size: int = 10000) -> None:
         """
         初始化事件發射器
@@ -200,22 +203,29 @@ class DeviceEventEmitter:
             return
         self._running = False
 
-        # 先取消 worker，避免競爭
         if self._worker_task:
-            self._worker_task.cancel()
+            # 送 sentinel 通知 worker 排空後結束
             try:
-                await self._worker_task
+                self._queue.put_nowait(self._SENTINEL)
+            except asyncio.QueueFull:
+                pass
+
+            # 等待 worker 自行排空（有逾時保護）
+            try:
+                await asyncio.wait_for(self._worker_task, timeout=self._DRAIN_TIMEOUT)
+            except asyncio.TimeoutError:
+                remaining = self._queue.qsize()
+                if remaining:
+                    logger.warning("事件排空逾時，丟棄 {} 筆未處理事件", remaining)
+                self._worker_task.cancel()
+                try:
+                    await self._worker_task
+                except asyncio.CancelledError:
+                    pass
             except asyncio.CancelledError:
                 pass
-            self._worker_task = None
 
-        # 處理剩餘事件
-        while not self._queue.empty():
-            try:
-                event, payload = self._queue.get_nowait()
-                await self._process_event(event, payload)
-            except asyncio.QueueEmpty:
-                break
+            self._worker_task = None
 
     def on(self, event: str, handler: AsyncHandler) -> Callable[[], None]:
         """
@@ -250,8 +260,8 @@ class DeviceEventEmitter:
             event: 事件名稱
             payload: 事件資料
         """
-        # 沒有監聽器就不入隊
-        if not self._handlers.get(event):
+        # 未啟動或沒有監聽器就不入隊
+        if not self._running or not self._handlers.get(event):
             return
 
         try:
@@ -297,6 +307,8 @@ class DeviceEventEmitter:
         while self._running:
             try:
                 event, payload = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                if (event, payload) == self._SENTINEL:
+                    break
                 await self._process_event(event, payload)
                 self._queue.task_done()
             except asyncio.TimeoutError:
@@ -304,13 +316,25 @@ class DeviceEventEmitter:
             except asyncio.CancelledError:
                 break
 
+        # 排空佇列中的剩餘事件
+        while not self._queue.empty():
+            try:
+                event, payload = self._queue.get_nowait()
+                if (event, payload) == self._SENTINEL:
+                    continue
+                await self._process_event(event, payload)
+                self._queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
     async def _process_event(self, event: str, payload: Any) -> None:
         """
         處理單一事件
 
-        Note: 順序執行 handlers，避免並行造成資源競爭
+        Note: 順序執行 handlers，避免並行造成資源競爭。
+              複製 handler list 以防迭代中被修改。
         """
-        handlers = self._handlers.get(event, [])
+        handlers = list(self._handlers.get(event, []))
         if not handlers:
             return
 

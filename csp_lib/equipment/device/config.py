@@ -41,6 +41,8 @@ class DeviceConfig:
             raise ConfigurationError(f"read_interval 必須 > 0，收到: {self.read_interval}")
         if self.disconnect_threshold < 1:
             raise ConfigurationError(f"disconnect_threshold 必須 >= 1，收到: {self.disconnect_threshold}")
+        if self.reconnect_interval <= 0:
+            raise ConfigurationError(f"reconnect_interval 必須 > 0，收到: {self.reconnect_interval}")
         if self.max_concurrent_reads < 0:
             raise ConfigurationError(f"max_concurrent_reads 必須 >= 0，收到: {self.max_concurrent_reads}")
 

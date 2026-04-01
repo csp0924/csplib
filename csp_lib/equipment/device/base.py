@@ -11,6 +11,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
+from csp_lib.core import get_logger
 from csp_lib.core.errors import CommunicationError, ConfigurationError, DeviceConnectionError
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.equipment.alarm import AlarmEvaluator, AlarmStateManager
@@ -50,6 +51,8 @@ if TYPE_CHECKING:
     from csp_lib.equipment.core import PointMetadata, ReadPoint, WritePoint
     from csp_lib.modbus.clients.base import AsyncModbusClientBase
     from csp_lib.modbus.types import ModbusDataType
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -675,15 +678,16 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
                     # 重連失敗，等待後重試
                     await asyncio.sleep(reconnect_interval)
                     continue
-                except Exception:
+                except Exception as e:
                     # 重連失敗，等待後重試
+                    logger.warning(f"[{self._config.device_id}] Reconnect failed: {e}")
                     await asyncio.sleep(reconnect_interval)
                     continue
 
             try:
                 await self.read_once()
-            except Exception:
-                pass  # read_once 已處理錯誤事件
+            except Exception as e:
+                logger.warning(f"[{self._config.device_id}] Read loop error: {e}")
 
             elapsed = time.monotonic() - start_time
             sleep_time = max(0, interval - elapsed)
@@ -720,18 +724,21 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         for name, new_value in values.items():
             if name in self._disabled_points:
                 continue
-            old_value = self._latest_values.get(name)
-            if old_value != new_value:
-                self._emitter.emit(
-                    EVENT_VALUE_CHANGE,
-                    ValueChangePayload(
-                        device_id=self._config.device_id,
-                        point_name=name,
-                        old_value=old_value,
-                        new_value=new_value,
-                    ),
-                )
-            self._latest_values[name] = new_value
+            try:
+                old_value = self._latest_values.get(name)
+                if old_value != new_value:
+                    self._emitter.emit(
+                        EVENT_VALUE_CHANGE,
+                        ValueChangePayload(
+                            device_id=self._config.device_id,
+                            point_name=name,
+                            old_value=old_value,
+                            new_value=new_value,
+                        ),
+                    )
+                self._latest_values[name] = new_value
+            except Exception as e:
+                logger.warning(f"[{self._config.device_id}] Event processing failed for point '{name}': {e}")
 
     # =============== Magic Methods =========
 
