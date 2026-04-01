@@ -101,7 +101,7 @@ class ScheduleService(AsyncLifecycleMixin):
             try:
                 await self._poll_once()
             except Exception:
-                logger.exception("ScheduleService: 輪詢失敗")
+                logger.opt(exception=True).warning("ScheduleService: 輪詢失敗")
 
             # 等待下次輪詢或被停止
             try:

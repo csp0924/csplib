@@ -66,9 +66,23 @@ class WriteCommandManager:
 
     # ================ 設備註冊 ================
 
+    def subscribe(self, device: AsyncModbusDevice) -> None:
+        """
+        註冊可寫入的設備（統一訂閱 API）
+
+        這是所有子管理器的標準訂閱介面。內部委派至 ``register_device()``。
+
+        Args:
+            device: Modbus 設備實例
+        """
+        self.register_device(device)
+
     def register_device(self, device: AsyncModbusDevice) -> None:
         """
         註冊可寫入的設備
+
+        .. deprecated::
+            請改用 ``subscribe()``，此方法保留作為向後相容別名。
 
         Args:
             device: Modbus 設備實例

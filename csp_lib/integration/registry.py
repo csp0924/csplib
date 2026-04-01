@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import threading
+from typing import TYPE_CHECKING, Any, Sequence
 
 from csp_lib.core import get_logger
 
@@ -17,7 +18,7 @@ if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
     from csp_lib.equipment.device.capability import Capability
 
-logger = get_logger("csp_lib.integration.registry")
+logger = get_logger(__name__)
 
 
 class DeviceRegistry:
@@ -34,6 +35,7 @@ class DeviceRegistry:
     """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._devices: dict[str, AsyncModbusDevice] = {}  # device_id → 設備實例
         self._device_traits: dict[str, set[str]] = {}  # device_id → 該設備的 traits
         self._trait_devices: dict[str, set[str]] = {}  # trait → 擁有該 trait 的 device_ids
@@ -59,13 +61,38 @@ class DeviceRegistry:
             ValueError: device_id 已存在時拋出，防止靜默覆蓋
         """
         did = device.device_id
-        if did in self._devices:
-            raise ValueError(f"Device '{did}' is already registered.")
-        self._devices[did] = device
-        self._device_traits[did] = set()
-        self._metadata[did] = dict(metadata) if metadata else {}
-        for trait in traits or []:
-            self._add_trait_index(did, trait)
+        with self._lock:
+            if did in self._devices:
+                raise ValueError(f"Device '{did}' is already registered.")
+            self._devices[did] = device
+            self._device_traits[did] = set()
+            self._metadata[did] = dict(metadata) if metadata else {}
+            for trait in traits or []:
+                self._add_trait_index(did, trait)
+
+    def register_with_capabilities(
+        self,
+        device: AsyncModbusDevice,
+        extra_traits: Sequence[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Register device with auto-discovered traits from capabilities.
+
+        Auto-generates traits like "cap:active_power_control" from device capabilities,
+        then merges with extra_traits provided by user.
+
+        Args:
+            device: 要註冊的 Modbus 設備
+            extra_traits: 額外的 trait 標籤（可選），會排在自動發現的 traits 前面
+            metadata: 設備靜態資訊（可選）
+
+        Raises:
+            ValueError: device_id 已存在時拋出
+        """
+        auto_traits = [f"cap:{cap_name}" for cap_name in device.capabilities]
+        all_traits = list(extra_traits or []) + auto_traits
+        self.register(device, traits=all_traits, metadata=metadata or {})
 
     def unregister(self, device_id: str) -> None:
         """
@@ -74,13 +101,14 @@ class DeviceRegistry:
         Args:
             device_id: 要移除的設備 ID（不存在時靜默忽略）
         """
-        if device_id not in self._devices:
-            return
-        for trait in list(self._device_traits.get(device_id, [])):
-            self._remove_trait_index(device_id, trait)
-        del self._devices[device_id]
-        del self._device_traits[device_id]
-        self._metadata.pop(device_id, None)
+        with self._lock:
+            if device_id not in self._devices:
+                return
+            for trait in list(self._device_traits.get(device_id, [])):
+                self._remove_trait_index(device_id, trait)
+            del self._devices[device_id]
+            del self._device_traits[device_id]
+            self._metadata.pop(device_id, None)
 
     # ---- Trait 管理 ----
 
@@ -95,9 +123,10 @@ class DeviceRegistry:
         Raises:
             KeyError: device_id 未註冊時拋出
         """
-        if device_id not in self._devices:
-            raise KeyError(f"Device '{device_id}' is not registered.")
-        self._add_trait_index(device_id, trait)
+        with self._lock:
+            if device_id not in self._devices:
+                raise KeyError(f"Device '{device_id}' is not registered.")
+            self._add_trait_index(device_id, trait)
 
     def remove_trait(self, device_id: str, trait: str) -> None:
         """
@@ -110,20 +139,23 @@ class DeviceRegistry:
         Raises:
             KeyError: device_id 未註冊時拋出
         """
-        if device_id not in self._devices:
-            raise KeyError(f"Device '{device_id}' is not registered.")
-        self._remove_trait_index(device_id, trait)
+        with self._lock:
+            if device_id not in self._devices:
+                raise KeyError(f"Device '{device_id}' is not registered.")
+            self._remove_trait_index(device_id, trait)
 
     # ---- 查詢 ----
 
     def get_device(self, device_id: str) -> AsyncModbusDevice | None:
         """依 ID 查詢設備，不存在回傳 None"""
-        return self._devices.get(device_id)
+        with self._lock:
+            return self._devices.get(device_id)
 
     def get_devices_by_trait(self, trait: str) -> list[AsyncModbusDevice]:
         """依 trait 查詢所有設備（按 device_id 排序，確保確定性）"""
-        ids = self._trait_devices.get(trait, set())
-        return [self._devices[did] for did in sorted(ids)]
+        with self._lock:
+            ids = self._trait_devices.get(trait, set())
+            return [self._devices[did] for did in sorted(ids)]
 
     def get_responsive_devices_by_trait(self, trait: str) -> list[AsyncModbusDevice]:
         """依 trait 查詢所有 is_responsive=True 的設備（按 device_id 排序）"""
@@ -136,40 +168,47 @@ class DeviceRegistry:
 
     def get_traits(self, device_id: str) -> set[str]:
         """取得設備的所有 traits，未註冊時回傳空集合"""
-        return set(self._device_traits.get(device_id, set()))
+        with self._lock:
+            return set(self._device_traits.get(device_id, set()))
 
     def get_metadata(self, device_id: str) -> dict[str, Any]:
         """取得設備的靜態 metadata，未註冊時回傳空 dict"""
-        return dict(self._metadata.get(device_id, {}))
+        with self._lock:
+            return dict(self._metadata.get(device_id, {}))
 
     @property
     def all_devices(self) -> list[AsyncModbusDevice]:
         """所有已註冊設備（按 device_id 排序）"""
-        return [self._devices[did] for did in sorted(self._devices)]
+        with self._lock:
+            return [self._devices[did] for did in sorted(self._devices)]
 
     @property
     def all_traits(self) -> list[str]:
         """所有已知的 trait 標籤（排序）"""
-        return sorted(self._trait_devices.keys())
+        with self._lock:
+            return sorted(self._trait_devices.keys())
 
     # ---- Capability 查詢 ----
 
     def get_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
         """取得具備指定能力的所有設備（按 device_id 排序）"""
-        return sorted(
-            [d for d in self._devices.values() if d.has_capability(capability)],
-            key=lambda d: d.device_id,
-        )
+        with self._lock:
+            return sorted(
+                [d for d in self._devices.values() if d.has_capability(capability)],
+                key=lambda d: d.device_id,
+            )
 
     def get_responsive_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
         """取得具備指定能力且 responsive 的設備（按 device_id 排序）"""
         return [d for d in self.get_devices_with_capability(capability) if d.is_responsive]
 
     def __len__(self) -> int:
-        return len(self._devices)
+        with self._lock:
+            return len(self._devices)
 
     def __contains__(self, device_id: str) -> bool:
-        return device_id in self._devices
+        with self._lock:
+            return device_id in self._devices
 
     # ---- 內部輔助 ----
 
