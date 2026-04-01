@@ -80,6 +80,8 @@ class TestDeviceRegistryConcurrency:
         t2.start()
         t1.join(timeout=10)
         t2.join(timeout=10)
+        assert not t1.is_alive(), "register_worker thread did not finish in time"
+        assert not t2.is_alive(), "query_worker thread did not finish in time"
 
         assert not errors, f"Concurrent access raised: {errors}"
         assert len(registry) == num_devices
@@ -117,6 +119,8 @@ class TestDeviceRegistryConcurrency:
         t2.start()
         t1.join(timeout=10)
         t2.join(timeout=10)
+        assert not t1.is_alive(), "register_worker thread did not finish in time"
+        assert not t2.is_alive(), "unregister_worker thread did not finish in time"
 
         assert not errors, f"Concurrent access raised: {errors}"
         # All "unreg_" removed, all "new_" added
@@ -155,6 +159,8 @@ class TestDeviceRegistryConcurrency:
         t2.start()
         t1.join(timeout=10)
         t2.join(timeout=10)
+        assert not t1.is_alive(), "trait_worker thread did not finish in time"
+        assert not t2.is_alive(), "query_worker thread did not finish in time"
 
         assert not errors, f"Concurrent access raised: {errors}"
 

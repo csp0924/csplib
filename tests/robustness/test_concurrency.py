@@ -72,6 +72,7 @@ class TestDeviceRegistryConcurrency:
             t.start()
         for t in threads:
             t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads), "Some threads did not finish in time"
 
         assert errors == [], f"Concurrent access raised: {errors}"
 
@@ -112,6 +113,7 @@ class TestDeviceRegistryConcurrency:
             t.start()
         for t in threads:
             t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads), "Some threads did not finish in time"
 
         assert errors == [], f"Concurrent access raised: {errors}"
 
@@ -218,6 +220,7 @@ class TestRuntimeParametersConcurrency:
             t.start()
         for t in threads:
             t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads), "Some threads did not finish in time"
 
         assert errors == [], f"Concurrent access raised: {errors}"
 
@@ -254,6 +257,8 @@ class TestRuntimeParametersConcurrency:
         t_r.start()
         t_w.join(timeout=10)
         t_r.join(timeout=10)
+        assert not t_w.is_alive(), "writer thread did not finish in time"
+        assert not t_r.is_alive(), "reader thread did not finish in time"
 
         assert errors == [], f"Concurrent access raised: {errors}"
 
@@ -278,6 +283,7 @@ class TestRuntimeParametersConcurrency:
             t.start()
         for t in threads:
             t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads), "Some threads did not finish in time"
 
         # Each writer writes 50 times; first write always triggers (old=None != 0)
         # Subsequent writes trigger when value changes
