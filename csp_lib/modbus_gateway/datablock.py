@@ -16,6 +16,7 @@ import asyncio
 from typing import Any
 
 from csp_lib.core import get_logger
+from csp_lib.modbus._pymodbus import ensure_pymodbus_server, get_BaseModbusDataBlock
 
 logger = get_logger(__name__)
 
@@ -34,14 +35,9 @@ def create_hr_datablock(
     Returns:
         繼承 BaseModbusDataBlock 的實例
     """
-    from csp_lib.modbus_server.server import _ensure_pymodbus_imported
+    ensure_pymodbus_server()
 
-    _ensure_pymodbus_imported()
-
-    # 重新 import (lazy import 後才可用)
-    from pymodbus.datastore.store import BaseModbusDataBlock as _Base
-
-    class _HRDataBlock(_Base):  # type: ignore[misc]
+    class _HRDataBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
         def __init__(self) -> None:
             self.address = 0
             self.default_value = 0
@@ -93,13 +89,9 @@ def create_ir_datablock(
     Returns:
         繼承 BaseModbusDataBlock 的實例
     """
-    from csp_lib.modbus_server.server import _ensure_pymodbus_imported
+    ensure_pymodbus_server()
 
-    _ensure_pymodbus_imported()
-
-    from pymodbus.datastore.store import BaseModbusDataBlock as _Base
-
-    class _IRDataBlock(_Base):  # type: ignore[misc]
+    class _IRDataBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
         def __init__(self) -> None:
             self.address = 0
             self.default_value = 0
@@ -126,13 +118,9 @@ def create_ir_datablock(
 
 def create_empty_datablock() -> Any:
     """建立空的 DataBlock（用於 coils / discrete inputs）。"""
-    from csp_lib.modbus_server.server import _ensure_pymodbus_imported
+    ensure_pymodbus_server()
 
-    _ensure_pymodbus_imported()
-
-    from pymodbus.datastore.store import BaseModbusDataBlock as _Base
-
-    class _EmptyDataBlock(_Base):  # type: ignore[misc]
+    class _EmptyDataBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
         def __init__(self) -> None:
             self.address = 0
             self.default_value = 0
