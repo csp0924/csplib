@@ -366,6 +366,7 @@ class DeviceEventEmitter:
             try:
                 event, payload = await asyncio.wait_for(self._queue.get(), timeout=1.0)
                 if (event, payload) == self._SENTINEL:
+                    self._queue.task_done()
                     break
                 await self._process_event(event, payload)
                 self._queue.task_done()
@@ -379,6 +380,7 @@ class DeviceEventEmitter:
             try:
                 event, payload = self._queue.get_nowait()
                 if (event, payload) == self._SENTINEL:
+                    self._queue.task_done()
                     continue
                 await self._process_event(event, payload)
                 self._queue.task_done()
