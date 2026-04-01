@@ -157,7 +157,7 @@ class TestDeviceEventEmitterConcurrency:
 
     @pytest.mark.asyncio
     async def test_emit_without_start_does_not_crash(self) -> None:
-        """Emitting without starting the worker should not raise."""
+        """Emitting without starting the worker should not raise (and not enqueue)."""
         emitter = DeviceEventEmitter()
 
         async def handler(payload: object) -> None:
@@ -165,8 +165,8 @@ class TestDeviceEventEmitterConcurrency:
 
         emitter.on("test", handler)
         emitter.emit("test", "data")
-        # Queue has the event but no worker — should not crash
-        assert emitter.queue_size == 1
+        # emit() skips enqueue when not running — this is by design (graceful stop feature)
+        assert emitter.queue_size == 0
 
     @pytest.mark.asyncio
     async def test_emit_no_listeners_skips_enqueue(self) -> None:

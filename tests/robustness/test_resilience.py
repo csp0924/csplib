@@ -74,24 +74,26 @@ class TestCircuitBreakerStateTransitions:
         assert cb.allows_request() is False
 
     def test_open_to_half_open_after_cooldown(self) -> None:
-        """After cooldown expires, state transitions OPEN -> HALF_OPEN."""
+        """After cooldown expires (with backoff), state transitions OPEN -> HALF_OPEN."""
         clock = _FakeClock()
-        cb = CircuitBreaker(threshold=1, cooldown=10.0)
+        # backoff_factor=1.0 disables exponential growth for predictable testing
+        cb = CircuitBreaker(threshold=1, cooldown=10.0, backoff_factor=1.0, max_cooldown=15.0)
         with _patched_monotonic(clock):
             cb.record_failure()
             assert cb.state == CircuitState.OPEN
 
-            clock.advance(10.0)
+            # With jitter ±20%, effective cooldown is 8-12s. Advance past max.
+            clock.advance(15.0)
             assert cb.state == CircuitState.HALF_OPEN
             assert cb.allows_request() is True
 
     def test_half_open_to_closed_on_success(self) -> None:
         """Success in HALF_OPEN -> CLOSED."""
         clock = _FakeClock()
-        cb = CircuitBreaker(threshold=1, cooldown=1.0)
+        cb = CircuitBreaker(threshold=1, cooldown=1.0, backoff_factor=1.0, max_cooldown=2.0)
         with _patched_monotonic(clock):
             cb.record_failure()
-            clock.advance(1.0)
+            clock.advance(2.0)
             assert cb.state == CircuitState.HALF_OPEN
 
             cb.record_success()
@@ -101,10 +103,10 @@ class TestCircuitBreakerStateTransitions:
     def test_half_open_to_open_on_failure(self) -> None:
         """Failure in HALF_OPEN -> OPEN again."""
         clock = _FakeClock()
-        cb = CircuitBreaker(threshold=1, cooldown=1.0)
+        cb = CircuitBreaker(threshold=1, cooldown=1.0, backoff_factor=1.0, max_cooldown=2.0)
         with _patched_monotonic(clock):
             cb.record_failure()
-            clock.advance(1.0)
+            clock.advance(2.0)
             assert cb.state == CircuitState.HALF_OPEN
 
             cb.record_failure()
