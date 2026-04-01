@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -19,6 +21,48 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 AsyncHandler = Callable[[Any], Awaitable[None]]
+
+
+class _WeakHandler:
+    """WeakRef wrapper for event handlers.
+
+    Holds a weak reference to the handler and checks liveness before invocation.
+    Uses ``weakref.WeakMethod`` for bound methods and ``weakref.ref`` for plain
+    functions/static methods.
+
+    Limitations:
+        Lambdas and closures are technically weak-referenceable, but they
+        typically have no persistent referent outside of the calling scope.
+        If the caller does not keep a strong reference, the weak reference
+        dies immediately after creation and the handler is never invoked.
+    """
+
+    __slots__ = ("_ref",)
+
+    def __init__(self, handler: AsyncHandler) -> None:
+        if inspect.ismethod(handler):
+            self._ref: weakref.ref[Any] = weakref.WeakMethod(handler)
+        else:
+            self._ref = weakref.ref(handler)
+
+    @property
+    def alive(self) -> bool:
+        """Return ``True`` if the referent is still alive."""
+        return self._ref() is not None
+
+    async def __call__(self, payload: Any) -> None:
+        fn = self._ref()
+        if fn is not None:
+            await fn(payload)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _WeakHandler):
+            return self._ref == other._ref
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._ref)
+
 
 # 事件名稱常數
 EVENT_CONNECTED = "connected"
@@ -185,7 +229,7 @@ class DeviceEventEmitter:
         Args:
             max_queue_size: 最大佇列大小，超過時丟棄事件
         """
-        self._handlers: dict[str, list[AsyncHandler]] = {}
+        self._handlers: dict[str, list[AsyncHandler | _WeakHandler]] = {}
         self._queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue(maxsize=max_queue_size)
         self._worker_task: asyncio.Task[None] | None = None
         self._running = False
@@ -227,13 +271,19 @@ class DeviceEventEmitter:
 
             self._worker_task = None
 
-    def on(self, event: str, handler: AsyncHandler) -> Callable[[], None]:
+    def on(self, event: str, handler: AsyncHandler, *, weak: bool = False) -> Callable[[], None]:
         """
         註冊事件處理器
 
         Args:
             event: 事件名稱
             handler: 非同步處理函數
+            weak: 若為 ``True``，以 weak reference 儲存 handler。
+                  當 handler 的 referent 被 GC 回收後，自動從處理器列表移除。
+                  使用 ``weakref.WeakMethod`` 處理 bound method，
+                  ``weakref.ref`` 處理一般函式。
+                  **注意**：lambda 和 closure 雖可弱引用，但若呼叫端未保留
+                  強引用，弱引用會立即失效，handler 永遠不會被呼叫。
 
         Returns:
             取消訂閱的函數
@@ -241,11 +291,16 @@ class DeviceEventEmitter:
         if event not in self._handlers:
             self._handlers[event] = []
 
-        self._handlers[event].append(handler)
+        if weak:
+            entry: AsyncHandler | _WeakHandler = _WeakHandler(handler)
+        else:
+            entry = handler
+
+        self._handlers[event].append(entry)
 
         def cancel() -> None:
-            if event in self._handlers and handler in self._handlers[event]:
-                self._handlers[event].remove(handler)
+            if event in self._handlers and entry in self._handlers[event]:
+                self._handlers[event].remove(entry)
 
         return cancel
 
@@ -282,8 +337,11 @@ class DeviceEventEmitter:
         await self._process_event(event, payload)
 
     def has_listeners(self, event: str) -> bool:
-        """檢查是否有事件監聽器"""
-        return bool(self._handlers.get(event))
+        """檢查是否有（存活的）事件監聽器"""
+        handlers = self._handlers.get(event)
+        if not handlers:
+            return False
+        return any(not isinstance(h, _WeakHandler) or h.alive for h in handlers)
 
     def clear(self, event: str | None = None) -> None:
         """
@@ -332,13 +390,19 @@ class DeviceEventEmitter:
         處理單一事件
 
         Note: 順序執行 handlers，避免並行造成資源競爭。
-              複製 handler list 以防迭代中被修改。
+        複製 handler list 以防迭代中被修改。
+        Dead weak-ref handlers 在此懶清除。
         """
         handlers = list(self._handlers.get(event, []))
         if not handlers:
             return
 
-        for handler in handlers:
+        # Lazily purge dead weak handlers before iteration
+        alive_handlers = [h for h in handlers if not (isinstance(h, _WeakHandler) and not h.alive)]
+        if len(alive_handlers) != len(handlers):
+            self._handlers[event] = alive_handlers
+
+        for handler in alive_handlers:
             try:
                 await handler(payload)
             except Exception:
