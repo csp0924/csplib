@@ -133,6 +133,8 @@ class DataUploadManager(DeviceEventSubscriber):
         self._uploader.register_collection(collection_name)
         if save_interval and save_interval > 0:
             self._save_intervals[device_id] = save_interval
+        else:
+            self._save_intervals.pop(device_id, None)
         logger.debug(f"資料上傳管理器: 已配置設備 {device_id} -> {collection_name} (save_interval={save_interval})")
 
     def subscribe(self, device: AsyncModbusDevice) -> None:
