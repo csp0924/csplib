@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Sequence
 
@@ -148,6 +149,8 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             except ImportError:
                 logger.warning("Statistics module not available, skipping StatisticsManager initialization")
 
+        self._register_lock = threading.Lock()
+
         logger.info(
             f"UnifiedDeviceManager 初始化: "
             f"alarm={self._alarm_manager is not None}, "
@@ -178,9 +181,10 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             traits: 設備 trait 標籤列表（選填，用於 DeviceRegistry）
             metadata: 設備靜態資訊（選填，用於 DeviceRegistry）
         """
-        self._device_manager.register(device)
-        self._subscribe_all(device, collection_name)
-        self._register_to_registry(device, traits, metadata)
+        with self._register_lock:
+            self._device_manager.register(device)
+            self._subscribe_all(device, collection_name)
+            self._register_to_registry(device, traits, metadata)
         logger.info(f"UnifiedDeviceManager: 已註冊設備 {device.device_id}")
 
     def register_group(
@@ -205,10 +209,11 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             traits: 設備 trait 標籤列表（選填，套用到群組所有設備）
             metadata: 設備靜態資訊（選填，套用到群組所有設備）
         """
-        self._device_manager.register_group(devices, interval)
-        for device in devices:
-            self._subscribe_all(device, collection_name)
-            self._register_to_registry(device, traits, metadata)
+        with self._register_lock:
+            self._device_manager.register_group(devices, interval)
+            for device in devices:
+                self._subscribe_all(device, collection_name)
+                self._register_to_registry(device, traits, metadata)
         device_ids = [d.device_id for d in devices]
         logger.info(f"UnifiedDeviceManager: 已註冊設備群組 {device_ids}")
 
