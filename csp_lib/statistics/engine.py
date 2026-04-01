@@ -85,6 +85,7 @@ class StatisticsEngine:
         註冊功率加總的參與設備
 
         由 StatisticsManager 呼叫，將 trait 解析後的 device_ids 注入引擎。
+        重複呼叫時自動去重，避免同一設備被加總多次。
 
         Args:
             name: 功率加總名稱
@@ -99,6 +100,10 @@ class StatisticsEngine:
         for did in device_ids:
             if did not in self._device_power_sums:
                 self._device_power_sums[did] = []
+            # 去重：跳過已註冊的 (name, point_name) 組合
+            if (name, point_name) in self._device_power_sums[did]:
+                logger.debug(f"StatisticsEngine: device '{did}' already registered for power_sum '{name}', skipped.")
+                continue
             self._device_power_sums[did].append((name, point_name))
             self._power_device_values[name][did] = 0.0
 
