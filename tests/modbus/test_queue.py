@@ -350,6 +350,7 @@ class TestModbusRequestQueue:
         finally:
             await queue.stop()
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_circuit_breaker_recovery(self):
         """斷路器冷卻後恢復"""

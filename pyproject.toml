@@ -131,9 +131,15 @@ ignore_errors = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-n auto --dist loadfile"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests requiring external services",
+    "flaky: marks tests known to be flaky",
+    "requires_external: marks tests requiring external services (MongoDB, Redis)",
 ]
 filterwarnings = [
-    "ignore::DeprecationWarning",
+    "ignore::DeprecationWarning:pymodbus.*",
+    "ignore::DeprecationWarning:motor.*",
+    "ignore::DeprecationWarning:redis.*",
 ]

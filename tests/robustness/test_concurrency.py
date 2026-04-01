@@ -126,6 +126,7 @@ class TestDeviceRegistryConcurrency:
 class TestDeviceEventEmitterConcurrency:
     """Concurrent on() + emit() must not crash or lose events."""
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_concurrent_emit_and_on(self) -> None:
         """Concurrent emit + on registration should not crash."""

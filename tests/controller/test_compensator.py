@@ -496,3 +496,151 @@ class TestMongoFFTableRepository:
         repo = MongoFFTableRepository(collection=None, document_id="test")
         result = repo.load()
         assert result is None
+
+
+# ===========================================================================
+# Transient gate (hold_cycles > 0)
+# ===========================================================================
+
+
+class TestCompensatorTransientGate:
+    def test_hold_cycles_delays_integral_accumulation(self):
+        """After a setpoint change, integral should NOT accumulate during hold period."""
+        comp = _make_compensator(ki=0.3, deadband=0.0, hold_cycles=3, settle_ratio=0.15)
+        # Initial setpoint
+        comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
+        # Change setpoint -> triggers hold_cycles=3
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+
+        # During hold: error=20, settle_threshold = |200-100| * 0.15 = 15
+        # error 20 > 15, so hold does NOT count down
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp.diagnostics["hold_remaining"] == 3  # unchanged because error > settle_threshold
+
+    def test_hold_counts_down_when_error_within_settle(self):
+        """Hold should count down when |error| <= settle_threshold."""
+        comp = _make_compensator(ki=0.3, deadband=0.0, hold_cycles=3, settle_ratio=0.5)
+        comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
+        # Change setpoint: settle_threshold = |200-100| * 0.5 = 50
+        # The setpoint-change call itself also runs integral update, so hold counts down once there
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        # error=20 < settle=50 -> hold counted down on that same call: 3 -> 2
+        assert comp.diagnostics["hold_remaining"] == 2
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp.diagnostics["hold_remaining"] == 1
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp.diagnostics["hold_remaining"] == 0
+
+    def test_integral_resumes_after_hold_expires(self):
+        """After hold_cycles expire, integral accumulation should resume."""
+        comp = _make_compensator(ki=0.3, deadband=0.0, hold_cycles=1, settle_ratio=1.0)
+        comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
+        # Change setpoint: settle_threshold = |200-100| * 1.0 = 100
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        # hold=1, error=10 < 100 -> countdown: hold becomes 0
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        assert comp.diagnostics["hold_remaining"] == 0
+        # Next call: hold=0, error=10 > deadband=0 -> integral should accumulate
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        assert comp.diagnostics["integral"] > 0
+
+
+# ===========================================================================
+# EMA error filtering
+# ===========================================================================
+
+
+class TestCompensatorEMAFilter:
+    def test_ema_filter_smooths_error(self):
+        """With error_ema_alpha > 0, filtered error should lag behind raw error."""
+        comp = _make_compensator(ki=0.3, deadband=0.0, hold_cycles=0, error_ema_alpha=0.3)
+        # Step 1: error=10, filtered_error = 0.3*10 + 0.7*0 = 3.0
+        comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
+        # The integral should be based on filtered_error=3.0 (not raw 10)
+        assert comp.diagnostics["integral"] == pytest.approx(3.0, abs=0.1)
+
+    def test_ema_alpha_zero_no_filtering(self):
+        """With alpha=0, raw error is used directly."""
+        comp = _make_compensator(ki=0.3, deadband=0.0, hold_cycles=0, error_ema_alpha=0.0)
+        comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
+        # Raw error=10, integral = 10 * 1.0 = 10
+        assert comp.diagnostics["integral"] == pytest.approx(10.0, abs=0.1)
+
+
+# ===========================================================================
+# Saturation resets integral
+# ===========================================================================
+
+
+class TestCompensatorSaturation:
+    def test_saturation_resets_integral_at_max(self):
+        """When ff_output >= output_max, integral should be reset to 0."""
+        comp = _make_compensator(
+            output_max=500.0,
+            ki=0.3,
+            deadband=0.0,
+            hold_cycles=0,
+        )
+        # First: build some integral at moderate setpoint
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp.diagnostics["integral"] > 0
+
+        # Now saturate: setpoint=1000, ff=1.0 -> ff_output=1000 > output_max=500
+        comp.compensate(setpoint=1000.0, measurement=500.0, dt=1.0)
+        assert comp.diagnostics["integral"] == pytest.approx(0.0)
+
+    def test_saturation_resets_integral_at_min(self):
+        """When ff_output <= output_min, integral should be reset to 0."""
+        comp = _make_compensator(
+            output_min=-500.0,
+            ki=0.3,
+            deadband=0.0,
+            hold_cycles=0,
+        )
+        comp.compensate(setpoint=-200.0, measurement=-180.0, dt=1.0)
+        comp.compensate(setpoint=-200.0, measurement=-180.0, dt=1.0)
+        assert comp.diagnostics["integral"] != pytest.approx(0.0)
+
+        # Saturate negative: setpoint=-1000, ff=1.0 -> ff_output=-1000 < output_min=-500
+        comp.compensate(setpoint=-1000.0, measurement=-500.0, dt=1.0)
+        assert comp.diagnostics["integral"] == pytest.approx(0.0)
+
+
+# ===========================================================================
+# FF inheritance
+# ===========================================================================
+
+
+class TestCompensatorFFInheritance:
+    def test_ff_inherited_from_old_bin_to_new_bin(self):
+        """When setpoint changes to a new bin that has ff=1.0, old bin's ff should be inherited."""
+        comp = _make_compensator(ki=0.0, hold_cycles=0, rated_power=1000.0, power_bin_step_pct=10)
+        # Manually set bin 5 (50%) to a non-default ff
+        comp._ff_table[5] = 1.08
+        # Execute at setpoint=500 (bin 5) first
+        comp.compensate(setpoint=500.0, measurement=500.0, dt=1.0)
+        # Change to setpoint=300 (bin 3, which is still 1.0)
+        comp.compensate(setpoint=300.0, measurement=300.0, dt=1.0)
+        # Bin 3 should have inherited ff=1.08 from bin 5
+        assert comp.ff_table[3] == pytest.approx(1.08)
+
+    def test_no_inheritance_when_new_bin_already_learned(self):
+        """If the new bin already has a non-1.0 ff, inheritance should NOT overwrite."""
+        comp = _make_compensator(ki=0.0, hold_cycles=0, rated_power=1000.0, power_bin_step_pct=10)
+        comp._ff_table[5] = 1.08
+        comp._ff_table[3] = 1.03  # already learned
+        comp.compensate(setpoint=500.0, measurement=500.0, dt=1.0)
+        comp.compensate(setpoint=300.0, measurement=300.0, dt=1.0)
+        # Bin 3 should keep its own value
+        assert comp.ff_table[3] == pytest.approx(1.03)
+
+    def test_no_inheritance_when_same_bin(self):
+        """If setpoint change stays in the same bin, no inheritance needed."""
+        comp = _make_compensator(ki=0.0, hold_cycles=0, rated_power=1000.0, power_bin_step_pct=10)
+        comp._ff_table[5] = 1.08
+        comp.compensate(setpoint=500.0, measurement=500.0, dt=1.0)
+        # Small change within same bin
+        comp.compensate(setpoint=510.0, measurement=510.0, dt=1.0)
+        # Should not crash; bin 5 stays 1.08
+        assert comp.ff_table[5] == pytest.approx(1.08)

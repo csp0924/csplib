@@ -6,7 +6,25 @@
 
 ## [Unreleased]
 
-## [0.5.2] - 2026-04-01
+## [0.5.2] - 2026-04-02
+
+### Added
+- **DroopStrategy 測試** (`tests/controller/test_droop_strategy.py`): 38 test cases 涵蓋正常執行、死區、邊界、無頻率資料 fail-safe、config 驗證
+- **RampStopStrategy 測試** (`tests/controller/test_ramp_stop_strategy.py`): 11 test cases 涵蓋斜坡降功率、到零停止、中途恢復、lifecycle
+- **CommandProcessor pipeline 測試**: 3 test cases 驗證 pipeline 串接、多 processor 順序、空 pipeline
+- **SystemControllerConfigBuilder 測試** (`tests/integration/test_config_builder.py`): 11 test cases 涵蓋 fluent chain、互斥驗證、完整 build
+- **WriteRule (Gateway) 測試** (`tests/modbus_gateway/test_write_rule.py`): 15 test cases 涵蓋 clamp/reject 模式、部分邊界、驗證
+- **FFTableRepository 測試** (`tests/controller/test_ff_table_repository.py`): 17 test cases 涵蓋 JSON 讀寫、MongoDB async、空表處理、Protocol 一致性
+- **PowerCompensator 補充測試**: 10 test cases 新增 transient gate (hold_cycles)、EMA 濾波、飽和重設、FF 繼承
+- **Root conftest.py 共用 fixture**: `make_mock_device`、`mock_strategy`、`mock_registry` 跨模組共用
+- **pytest markers 補齊**: `integration`、`flaky`、`requires_external` 標記定義
+- **Slow test 標記**: 6 個慢速測試標記 `@pytest.mark.slow`，支援 `pytest -m "not slow"` 快速開發
+- **pytest-xdist 平行測試**: 啟用 `addopts = "-n auto"`，測試執行時間從 120s 降至 ~48s
+
+### Changed
+- **DeviceStateSubscriber log 等級修正** (`csp_lib.integration.distributed.subscriber`): Redis 讀取失敗 log 從 `debug` 升至 `warning`（3 處：state / online / alarms）
+- **DeprecationWarning 過濾收窄** (`pyproject.toml`): 從全局忽略改為只過濾已知第三方（pymodbus、motor、redis），自身 deprecation 警告正常顯示
+
 ## [0.5.1] - 2026-04-01
 ### Changed
 - **錯誤階層擴充**: 新增 `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 結構化例外，取代裸 `RuntimeError` / `ValueError`
