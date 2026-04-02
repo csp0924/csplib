@@ -8,7 +8,9 @@ MongoBatchUploader 模組
 """
 
 import asyncio
+import time
 from typing import Any, Optional
+from math import ceil
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -62,6 +64,7 @@ class MongoBatchUploader:
         self._queues: dict[str, BatchQueue] = {}
         self._retry_counts: dict[str, int] = {}  # collection_name -> retry count
         self._stop_event = asyncio.Event()
+        self._flush_event = asyncio.Event()
         self._flush_task: Optional[asyncio.Task[None]] = None
 
     def register_collection(self, collection_name: str) -> None:
@@ -91,6 +94,9 @@ class MongoBatchUploader:
             self.register_collection(collection_name)
 
         await self._queues[collection_name].enqueue(document)
+
+        if self._queues[collection_name].size_sync() >= self._config.batch_size_threshold:
+            self._flush_event.set()
 
     def start(self) -> "MongoBatchUploader":
         """
@@ -160,31 +166,49 @@ class MongoBatchUploader:
             self._retry_counts[collection_name] = 0
 
     async def _flush_loop(self) -> None:
-        """定期檢查並上傳所有 collection 的資料"""
+        """定期檢查並上傳所有 collection 的資料，支援閾值即時觸發"""
+        next_time = time.monotonic()
         while not self._stop_event.is_set():
             try:
-                # 檢查達到閾值的 collection 並立即上傳
-                for name, queue in list(self._queues.items()):
-                    if queue.size_sync() >= self._config.batch_size_threshold:
-                        await self._flush_collection(name)
+                stop_task = asyncio.ensure_future(self._stop_event.wait())
+                flush_task = asyncio.ensure_future(self._flush_event.wait())
 
-                # 等待下一次檢查或收到停止信號
-                try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(),
-                        timeout=self._config.flush_interval,
-                    )
+                current_time = time.monotonic()
+                d_time = current_time - next_time
+                n_intervals = ceil(d_time / self._config.flush_interval)
+                next_time += n_intervals * self._config.flush_interval
+                timeout = next_time - current_time
+
+                done, pending = await asyncio.wait(
+                    [stop_task, flush_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=timeout,
+                )
+                for t in pending:
+                    t.cancel()
+
+                if not done:
+                    # timeout：定期 flush 所有 queue
+                    await self.flush_all()
+                elif stop_task in done:
                     # stop_event 被設定，結束迴圈前 flush 所有資料
                     await self.flush_all()
                     break
-                except asyncio.TimeoutError:
-                    # 定期 flush 所有 queue（無論是否達閾值）
-                    await self.flush_all()
+                elif flush_task in done:
+                    # flush_event 被設定，flush 達閾值的 collection
+                    for name, queue in list(self._queues.items()):
+                        if queue.size_sync() >= self._config.batch_size_threshold:
+                            await self._flush_collection(name)
 
             except asyncio.CancelledError:
-                # 結束前 flush 所有資料
                 await self.flush_all()
-                break
+                raise
+
             except Exception as e:
                 logger.error(f"MongoBatchUploader: flush loop 錯誤: {e}")
                 await asyncio.sleep(1)
+
+            finally:
+                self._flush_event.clear()
+                stop_task.cancel()
+                flush_task.cancel()

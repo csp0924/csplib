@@ -10,6 +10,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence
+from math import ceil
 
 from csp_lib.core import get_logger
 from csp_lib.core.errors import CommunicationError, ConfigurationError, DeviceConnectionError
@@ -673,9 +674,9 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         """讀取循環（含自動重連）"""
         interval = self._config.read_interval
         reconnect_interval = self._config.reconnect_interval
+        next_time = time.monotonic()
 
         while not self._stop_event.is_set():
-            start_time = time.monotonic()
 
             # 未連線時嘗試重連
             if not self._client_connected:
@@ -701,10 +702,12 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
             except Exception as e:
                 logger.warning(f"[{self._config.device_id}] Read loop error: {e}")
 
-            elapsed = time.monotonic() - start_time
-            sleep_time = max(0, interval - elapsed)
-            await asyncio.sleep(sleep_time)
-
+            current_time = time.monotonic()
+            elapsed = current_time - next_time
+            n_intervals = ceil(elapsed/interval)
+            next_time += interval * n_intervals
+            await asyncio.sleep(next_time - current_time)
+            
     async def _handle_read_failure(self, error_msg: str) -> None:
         """處理讀取失敗：累加計數 + 記錄失敗時間 + 發送錯誤事件"""
         async with self._status_lock:

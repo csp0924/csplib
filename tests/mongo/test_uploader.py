@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -56,6 +57,43 @@ class TestMongoBatchUploader:
         uploader = self._make_uploader(WriteResult(success=True, inserted_count=1))
         await uploader.enqueue("new_col", {"x": 1})
         assert "new_col" in uploader._queues
+
+    @pytest.mark.asyncio
+    async def test_enqueue_sets_flush_event_on_threshold(self):
+        config = UploaderConfig(batch_size_threshold=2)
+        mock_db = MagicMock()
+        uploader = MongoBatchUploader(mock_db, config)
+        await uploader.enqueue("col1", {"a": 1})
+        assert not uploader._flush_event.is_set()
+        await uploader.enqueue("col1", {"a": 2})
+        assert uploader._flush_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_enqueue_no_flush_event_below_threshold(self):
+        config = UploaderConfig(batch_size_threshold=5)
+        mock_db = MagicMock()
+        uploader = MongoBatchUploader(mock_db, config)
+        for i in range(4):
+            await uploader.enqueue("col1", {"a": i})
+        assert not uploader._flush_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_flush_loop_immediate_on_threshold(self):
+        """達閾值時 flush_loop 應立即 flush，不需等完整 interval"""
+        config = UploaderConfig(flush_interval=60, batch_size_threshold=2)
+        mock_db = MagicMock()
+        uploader = MongoBatchUploader(mock_db, config)
+        uploader._writer = MagicMock()
+        uploader._writer.write_batch = AsyncMock(
+            return_value=WriteResult(success=True, inserted_count=2)
+        )
+        uploader.start()
+        await uploader.enqueue("col1", {"a": 1})
+        await uploader.enqueue("col1", {"a": 2})
+        # flush_event 已 set，給 flush_loop 一點時間處理
+        await asyncio.sleep(0.1)
+        uploader._writer.write_batch.assert_awaited()
+        await uploader.stop()
 
     @pytest.mark.asyncio
     async def test_start_creates_task(self):
