@@ -21,6 +21,9 @@
 - **Slow test 標記**: 6 個慢速測試標記 `@pytest.mark.slow`，支援 `pytest -m "not slow"` 快速開發
 - **pytest-xdist 平行測試**: 啟用 `addopts = "-n auto"`，測試執行時間從 120s 降至 ~48s
 
+### Fixed
+- **AlarmRecord.alarm_code 未寫入 MongoDB** (`csp_lib.manager.alarm.persistence`): `_on_alarm_triggered` 和 `_on_disconnected` 建立 AlarmRecord 時漏設 `alarm_code`，導致 MongoDB 中 alarm_code 欄位為空字串
+
 ### Changed
 - **DeviceStateSubscriber log 等級修正** (`csp_lib.integration.distributed.subscriber`): Redis 讀取失敗 log 從 `debug` 升至 `warning`（3 處：state / online / alarms）
 - **DeprecationWarning 過濾收窄** (`pyproject.toml`): 從全局忽略改為只過濾已知第三方（pymodbus、motor、redis），自身 deprecation 警告正常顯示
