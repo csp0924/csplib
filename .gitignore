@@ -32,6 +32,7 @@ uv.lock
 
 # Generated files
 .idea/**/contentModel.xml
+.obsidian/
 
 # Sensitive or high-churn files
 .idea/**/dataSources/
