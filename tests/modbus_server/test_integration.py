@@ -174,6 +174,7 @@ class TestServerClientIntegration:
 class TestMicrogridIntegration:
     """MicrogridSimulator + SimulationServer 整合測試"""
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_microgrid_power_balance_via_modbus(self, codec):
         """透過 Modbus 驗證功率平衡"""
@@ -212,6 +213,7 @@ class TestMicrogridIntegration:
             finally:
                 client.close()
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_pcs_setpoint_affects_meter(self, codec):
         """寫入 PCS setpoint → 確認 meter 讀值變化"""

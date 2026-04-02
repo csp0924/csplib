@@ -117,6 +117,7 @@ class TestLeaderElectorResign:
 
 
 class TestLeaderElectorDemotion:
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_keepalive_failure_triggers_demotion(self):
         """Keepalive 連續失敗應觸發降級"""

@@ -213,6 +213,7 @@ class TestSystemControllerAutoStop:
         # auto_stop override should be active
         assert "__auto_stop__" in sc.mode_manager.active_override_names
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_auto_stop_recovery(self):
         """告警解除 → 自動移除 stop override"""

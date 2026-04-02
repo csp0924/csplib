@@ -114,14 +114,14 @@ class DeviceStateSubscriber(AsyncLifecycleMixin):
                 else:
                     self._device_states.pop(device_id, None)
             except Exception:
-                logger.debug(f"Failed to read state for device {device_id}")
+                logger.warning(f"Failed to read state for device {device_id}")
 
             # Online (GET)
             try:
                 online_raw = await self._redis.get(f"device:{device_id}:online")
                 self._device_online[device_id] = online_raw == "1"
             except Exception:
-                logger.debug(f"Failed to read online status for device {device_id}")
+                logger.warning(f"Failed to read online status for device {device_id}")
                 self._device_online[device_id] = False
 
             # Alarms (SMEMBERS)
@@ -129,7 +129,7 @@ class DeviceStateSubscriber(AsyncLifecycleMixin):
                 alarms = await self._redis.smembers(f"device:{device_id}:alarms")
                 self._device_alarms[device_id] = alarms
             except Exception:
-                logger.debug(f"Failed to read alarms for device {device_id}")
+                logger.warning(f"Failed to read alarms for device {device_id}")
                 self._device_alarms[device_id] = set()
 
 

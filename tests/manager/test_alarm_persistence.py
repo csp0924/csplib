@@ -164,6 +164,7 @@ class TestAlarmPersistenceManagerDisconnect:
         assert record.alarm_key == "device_001:disconnect:DISCONNECT"
         assert record.device_id == "device_001"
         assert record.alarm_type == AlarmType.DISCONNECT
+        assert record.alarm_code == "DISCONNECT"
         assert record.name == "設備斷線"
         assert record.level == AlarmLevel.WARNING
         assert record.description == "Connection timeout"
@@ -222,6 +223,7 @@ class TestAlarmPersistenceManagerDeviceAlarm:
         assert record.alarm_key == "device_001:device_alarm:OVER_TEMP"
         assert record.device_id == "device_001"
         assert record.alarm_type == AlarmType.DEVICE_ALARM
+        assert record.alarm_code == "OVER_TEMP"
         assert record.name == "溫度過高"
         assert record.level == AlarmLevel.ALARM.value
         assert record.description == "設備溫度超過閾值"
