@@ -18,9 +18,9 @@ Architecture:
   [Meter] ─read─→ ContextBuilder ──→ StrategyContext
   [BMS]   ─read─→                        │
                                   StrategyExecutor (PQ)
-                                          │
+                                         │
                                        Command
-                                          │
+                                         │
   [PCS×2] ←write─ CommandRouter ←────────┘
 """
 
