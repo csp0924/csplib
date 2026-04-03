@@ -125,13 +125,20 @@ class TestDOActionConfig:
         assert cfg.on_value == 100
         assert cfg.off_value == 50
 
-    def test_pulse_duration_zero_raises(self):
+    def test_pulse_duration_zero_raises_for_pulse_mode(self):
         with pytest.raises(ValueError, match="pulse_duration must be positive"):
-            DOActionConfig(point_name="p", label="l", pulse_duration=0)
+            DOActionConfig(point_name="p", label="l", mode=DOMode.PULSE, pulse_duration=0)
 
-    def test_pulse_duration_negative_raises(self):
+    def test_pulse_duration_negative_raises_for_pulse_mode(self):
         with pytest.raises(ValueError, match="pulse_duration must be positive"):
-            DOActionConfig(point_name="p", label="l", pulse_duration=-1.0)
+            DOActionConfig(point_name="p", label="l", mode=DOMode.PULSE, pulse_duration=-1.0)
+
+    def test_pulse_duration_zero_ok_for_non_pulse_modes(self):
+        """非 PULSE 模式不驗證 pulse_duration"""
+        cfg = DOActionConfig(point_name="p", label="l", mode=DOMode.SUSTAINED, pulse_duration=0)
+        assert cfg.pulse_duration == 0
+        cfg2 = DOActionConfig(point_name="p", label="l", mode=DOMode.TOGGLE, pulse_duration=-1.0)
+        assert cfg2.pulse_duration == -1.0
 
     def test_frozen(self):
         cfg = DOActionConfig(point_name="p", label="l")

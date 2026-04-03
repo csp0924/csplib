@@ -51,8 +51,8 @@ class DOActionConfig:
     off_value: int = 0
 
     def __post_init__(self) -> None:
-        if self.pulse_duration <= 0:
-            raise ValueError("pulse_duration must be positive")
+        if self.mode == DOMode.PULSE and self.pulse_duration <= 0:
+            raise ValueError("pulse_duration must be positive for PULSE mode")
 
 
 @runtime_checkable

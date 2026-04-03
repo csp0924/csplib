@@ -286,10 +286,15 @@ class WriteMixin:
         if config.mode == DOMode.TOGGLE:
             current = self._latest_values.get(config.point_name, config.off_value)
             new_value = config.off_value if current == config.on_value else config.on_value
-            return await self.write(config.point_name, new_value)
+            result = await self.write(config.point_name, new_value)
+            if result.status == WriteStatus.SUCCESS:
+                self._latest_values[config.point_name] = new_value
+            return result
 
         # DOMode.PULSE
         result = await self.write(config.point_name, config.on_value)
+        if result.status != WriteStatus.SUCCESS:
+            return result
         task = asyncio.create_task(self._pulse_off(config))
         self._pulse_tasks.append(task)
         task.add_done_callback(lambda t: self._pulse_tasks.remove(t) if t in self._pulse_tasks else None)
