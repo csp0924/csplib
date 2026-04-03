@@ -1,3 +1,4 @@
+from .action import Actionable, DOActionConfig, DOMode
 from .base import AsyncModbusDevice, PointInfo, ReconfigureSpec
 from .can_device import AsyncCANDevice, CANRxFrameDefinition
 from .capability import (
@@ -46,6 +47,10 @@ from .mixins import AlarmMixin, WriteMixin
 from .protocol import DeviceProtocol
 
 __all__ = [
+    # Action
+    "DOMode",
+    "DOActionConfig",
+    "Actionable",
     # Config
     "DeviceConfig",
     # Capability
