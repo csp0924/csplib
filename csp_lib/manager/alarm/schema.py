@@ -59,8 +59,8 @@ class AlarmRecord:
         name: 告警名稱（用於顯示）
         level: 告警等級（INFO, WARNING, ERROR, CRITICAL）
         description: 告警描述（詳細說明）
-        occurred_at: 發生時間
-        resolved_at: 解除時間（None 表示進行中）
+        timestamp: 發生時間
+        resolved_timestamp: 解除時間（None 表示進行中）
         status: 告警狀態（ACTIVE | RESOLVED）
     """
 
@@ -78,8 +78,8 @@ class AlarmRecord:
     description: str = ""
 
     # === 時間戳記 ===
-    occurred_at: datetime | None = None
-    resolved_at: datetime | None = None
+    timestamp: datetime | None = None
+    resolved_timestamp: datetime | None = None
 
     # === 狀態 ===
     status: AlarmStatus = AlarmStatus.ACTIVE

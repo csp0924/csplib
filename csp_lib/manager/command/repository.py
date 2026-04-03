@@ -150,7 +150,7 @@ class MongoCommandRepository:
                 IndexModel([("command_id", 1)], unique=True),
                 IndexModel([("device_id", 1)]),
                 IndexModel([("status", 1)]),
-                IndexModel([("created_at", -1)]),
+                IndexModel([("timestamp", -1)]),
             ]
         )
 
@@ -205,7 +205,7 @@ class MongoCommandRepository:
 
     async def list_by_device(self, device_id: str, limit: int = 100) -> list[CommandRecord]:
         """取得設備的指令記錄"""
-        cursor = self._collection.find({"device_id": device_id}).sort("created_at", -1).limit(limit)
+        cursor = self._collection.find({"device_id": device_id}).sort("timestamp", -1).limit(limit)
         records = []
         async for doc in cursor:
             records.append(CommandRecord.from_dict(doc))

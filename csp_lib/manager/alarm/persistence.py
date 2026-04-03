@@ -7,7 +7,7 @@
 #
 # 設計模式：
 #   - 觀察者模式：訂閱 AsyncModbusDevice 的連線/告警事件
-#   - 事件驅動：斷線/告警觸發 → 寫入 DB，恢復/解除 → 更新 resolved_at
+#   - 事件驅動：斷線/告警觸發 → 寫入 DB，恢復/解除 → 更新 resolved_timestamp
 from __future__ import annotations
 
 from datetime import datetime
@@ -55,7 +55,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
     職責：
         1. 訂閱多個 AsyncModbusDevice 的事件
         2. 斷線/告警觸發 → 寫入 DB（新增告警記錄）
-        3. 恢復/告警解除 → 更新 resolved_at（解除告警）
+        3. 恢復/告警解除 → 更新 resolved_timestamp（解除告警）
 
     Attributes:
         DISCONNECT_CODE: 斷線告警的固定代碼
@@ -115,7 +115,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             name=self._config.disconnect_name,
             level=AlarmLevel.WARNING,
             description=payload.reason,
-            occurred_at=payload.timestamp,
+            timestamp=payload.timestamp,
         )
         await self._create_alarm(record)
 
@@ -149,7 +149,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             name=alarm.name,
             level=alarm.level,
             description=alarm.description,
-            occurred_at=payload.timestamp,
+            timestamp=payload.timestamp,
         )
         await self._create_alarm(record)
 

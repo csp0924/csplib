@@ -52,8 +52,8 @@ class TestAlarmRecord:
         assert record.name == ""  # 預設值
         assert record.level == AlarmLevel.INFO  # 預設值
         assert record.description == ""  # 預設值
-        assert record.occurred_at is None  # 預設值
-        assert record.resolved_at is None  # 預設值
+        assert record.timestamp is None  # 預設值
+        assert record.resolved_timestamp is None  # 預設值
         assert record.status == AlarmStatus.ACTIVE  # 預設值
 
     def test_create_full(self):
@@ -67,8 +67,8 @@ class TestAlarmRecord:
             name="溫度過高",
             level=AlarmLevel.WARNING,
             description="設備溫度超過閾值",
-            occurred_at=now,
-            resolved_at=None,
+            timestamp=now,
+            resolved_timestamp=None,
             status=AlarmStatus.ACTIVE,
         )
 
@@ -77,7 +77,7 @@ class TestAlarmRecord:
         assert record.name == "溫度過高"
         assert record.level == AlarmLevel.WARNING
         assert record.description == "設備溫度超過閾值"
-        assert record.occurred_at == now
+        assert record.timestamp == now
 
     def test_make_key(self):
         """make_key 應生成正確格式"""
@@ -98,8 +98,8 @@ class TestAlarmRecord:
             name="設備斷線",
             level=AlarmLevel.WARNING,
             description="連線逾時",
-            occurred_at=now,
-            resolved_at=None,
+            timestamp=now,
+            resolved_timestamp=None,
             status=AlarmStatus.ACTIVE,
         )
 
@@ -112,8 +112,8 @@ class TestAlarmRecord:
         assert doc["name"] == "設備斷線"
         assert doc["level"] == 2  # AlarmLevel.WARNING.value
         assert doc["description"] == "連線逾時"
-        assert doc["occurred_at"] == now
-        assert doc["resolved_at"] is None
+        assert doc["timestamp"] == now
+        assert doc["resolved_timestamp"] is None
         assert doc["status"] == "active"  # Enum.value
 
     def test_from_document(self):
@@ -128,8 +128,8 @@ class TestAlarmRecord:
             "name": "設備斷線",
             "level": 2,
             "description": "連線逾時",
-            "occurred_at": now,
-            "resolved_at": None,
+            "timestamp": now,
+            "resolved_timestamp": None,
             "status": "active",
         }
 
@@ -142,8 +142,8 @@ class TestAlarmRecord:
         assert record.name == "設備斷線"
         assert record.level == AlarmLevel.WARNING
         assert record.description == "連線逾時"
-        assert record.occurred_at == now
-        assert record.resolved_at is None
+        assert record.timestamp == now
+        assert record.resolved_timestamp is None
         assert record.status == AlarmStatus.ACTIVE
 
     def test_from_document_removes_id(self):
@@ -157,8 +157,8 @@ class TestAlarmRecord:
             "name": "",
             "level": 1,
             "description": "",
-            "occurred_at": None,
-            "resolved_at": None,
+            "timestamp": None,
+            "resolved_timestamp": None,
             "status": "active",
         }
 
@@ -177,8 +177,8 @@ class TestAlarmRecord:
             name="溫度過高",
             level=AlarmLevel.ALARM,
             description="測試告警",
-            occurred_at=now,
-            resolved_at=None,
+            timestamp=now,
+            resolved_timestamp=None,
             status=AlarmStatus.ACTIVE,
         )
 
@@ -192,6 +192,6 @@ class TestAlarmRecord:
         assert restored.name == original.name
         assert restored.level == original.level
         assert restored.description == original.description
-        assert restored.occurred_at == original.occurred_at
-        assert restored.resolved_at == original.resolved_at
+        assert restored.timestamp == original.timestamp
+        assert restored.resolved_timestamp == original.resolved_timestamp
         assert restored.status == original.status

@@ -39,7 +39,7 @@ class TestWriteCommand:
         assert cmd.source == CommandSource.INTERNAL
         assert cmd.verify is False
         assert cmd.command_id  # 應自動生成
-        assert cmd.created_at  # 應自動生成
+        assert cmd.timestamp  # 應自動生成
 
     def test_create_with_all_fields(self):
         """建立 WriteCommand 使用全部欄位"""

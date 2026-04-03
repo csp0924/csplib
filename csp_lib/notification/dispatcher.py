@@ -92,7 +92,7 @@ class NotificationDispatcher:
             event_label=event_label,
         )
         body = record.description or record.name
-        occurred_at = record.occurred_at or datetime.now()
+        occurred_at = record.timestamp or datetime.now()
 
         return Notification(
             title=title,

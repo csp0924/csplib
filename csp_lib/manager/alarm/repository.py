@@ -10,13 +10,15 @@
 #   - 依賴倒置：業務層依賴 Protocol，不依賴具體實作
 #   - 單一職責：僅負責資料存取，不包含業務邏輯
 
-from datetime import datetime
-from typing import Protocol, runtime_checkable
+from __future__ import annotations
 
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import IndexModel
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from .schema import AlarmRecord, AlarmStatus
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
 @runtime_checkable
@@ -37,7 +39,7 @@ class AlarmRepository(Protocol):
         ...
 
     async def resolve(self, alarm_key: str, resolved_at: datetime) -> bool:
-        """解除告警（更新 resolved_at 與 status）"""
+        """解除告警（更新 resolved_timestamp 與 status）"""
         ...
 
     async def get_active_alarms(self) -> list[AlarmRecord]:
@@ -95,15 +97,17 @@ class MongoAlarmRepository:
         - device_id: 設備篩選
         - status: 狀態篩選
         - (device_id, status): 複合查詢
-        - occurred_at: 時間排序
+        - timestamp: 時間排序
         """
+        from pymongo import IndexModel
+
         await self._collection.create_indexes(
             [
                 IndexModel([("alarm_key", 1)]),
                 IndexModel([("device_id", 1)]),
                 IndexModel([("status", 1)]),
                 IndexModel([("device_id", 1), ("status", 1)]),
-                IndexModel([("occurred_at", -1)]),
+                IndexModel([("timestamp", -1)]),
             ]
         )
 
@@ -156,7 +160,7 @@ class MongoAlarmRepository:
             {
                 "$set": {
                     "status": AlarmStatus.RESOLVED.value,
-                    "resolved_at": resolved_at,
+                    "resolved_timestamp": resolved_at,
                 }
             },
         )

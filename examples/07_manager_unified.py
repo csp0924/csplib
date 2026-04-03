@@ -85,8 +85,8 @@ class InMemoryAlarmRepository:
                 name=record.name,
                 level=record.level,
                 description=record.description,
-                occurred_at=record.occurred_at,
-                resolved_at=resolved_at,
+                timestamp=record.timestamp,
+                resolved_timestamp=resolved_at,
                 status=AlarmStatus.RESOLVED,
             )
             print(f"    [AlarmRepo] RESOLVED alarm: {alarm_key}")
@@ -145,7 +145,7 @@ class InMemoryCommandRepository:
     async def list_by_device(self, device_id: str, limit: int = 100) -> list[CommandRecord]:
         """取得設備的指令記錄"""
         records = [r for r in self._records.values() if r.device_id == device_id]
-        return sorted(records, key=lambda r: r.created_at, reverse=True)[:limit]
+        return sorted(records, key=lambda r: r.timestamp, reverse=True)[:limit]
 
 
 # ============================================================

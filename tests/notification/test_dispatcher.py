@@ -137,7 +137,7 @@ class TestNotificationDispatcherFromAlarmRecord:
             name="溫度過高",
             level=AlarmLevel.ALARM,
             description="設備溫度超過閾值",
-            occurred_at=datetime(2025, 1, 1, 12, 0, 0),
+            timestamp=datetime(2025, 1, 1, 12, 0, 0),
         )
         notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent.TRIGGERED)
 
@@ -158,7 +158,7 @@ class TestNotificationDispatcherFromAlarmRecord:
             name="設備斷線",
             level=AlarmLevel.WARNING,
             description="Connection timeout",
-            occurred_at=datetime(2025, 1, 1, 12, 0, 0),
+            timestamp=datetime(2025, 1, 1, 12, 0, 0),
         )
         notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent.RESOLVED)
 
@@ -176,7 +176,7 @@ class TestNotificationDispatcherFromAlarmRecord:
             name="某告警",
             level=AlarmLevel.INFO,
             description="",
-            occurred_at=datetime(2025, 1, 1),
+            timestamp=datetime(2025, 1, 1),
         )
         notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent.TRIGGERED)
         assert notification.body == "某告警"
