@@ -7,6 +7,10 @@
 #   - ContextMapping: 設備點位 → StrategyContext 欄位
 #   - CommandMapping: Command 欄位 → 設備寫入
 #   - DataFeedMapping: 設備點位 → PV 資料餵入
+#   - CapabilityContextMapping: Capability-driven context 映射（含 min_device_ratio 品質門檻）
+#   - CapabilityCommandMapping: Capability-driven command 映射
+#   - CapabilityRequirement: 能力需求定義（preflight validation）
+#   - AggregationResult: 聚合結果（附帶品質資訊）
 
 from __future__ import annotations
 
@@ -16,6 +20,11 @@ from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.capability import Capability
+
+
+def capability_display_name(capability: Any) -> str:
+    """取得 capability 的顯示名稱（name 屬性優先，否則 str）"""
+    return capability.name if hasattr(capability, "name") else str(capability)
 
 
 class HeartbeatMode(Enum):
@@ -197,6 +206,7 @@ class CapabilityContextMapping:
         custom_aggregate: 自訂聯合函式，優先於 aggregate
         default: 無法取得有效值時的預設值
         transform: 值轉換函式，套用於聚合結果之後
+        min_device_ratio: 最低設備響應比例（0.0~1.0），低於此比例時回傳 default 並發出警告
     """
 
     capability: Capability
@@ -208,6 +218,7 @@ class CapabilityContextMapping:
     custom_aggregate: Callable[[list[Any]], Any] | None = None
     default: Any = None
     transform: Callable[[Any], Any] | None = None
+    min_device_ratio: float = 0.0
 
     def __post_init__(self) -> None:
         if self.device_id is not None and self.trait is not None:
@@ -256,3 +267,40 @@ class CapabilityCommandMapping:
                 f"Slot '{self.slot}' not in capability '{self.capability.name}' "
                 f"write_slots: {self.capability.write_slots}"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityRequirement:
+    """能力需求定義 — 供 preflight validation 使用
+
+    Attributes:
+        capability: 必要的設備能力
+        min_count: 最少設備數量（預設 1）
+        trait_filter: 限定特定 trait 的設備（None = 搜尋所有設備）
+    """
+
+    capability: Capability
+    min_count: int = 1
+    trait_filter: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AggregationResult:
+    """聚合結果 — 附帶品質資訊
+
+    Attributes:
+        value: 聚合計算結果
+        device_count: 實際參與聚合的設備數
+        expected_count: 預期設備數（Registry 中該 capability 的總設備數）
+    """
+
+    value: Any
+    device_count: int
+    expected_count: int
+
+    @property
+    def quality_ratio(self) -> float:
+        """device_count / expected_count，expected_count <= 0 時回傳 1.0"""
+        if self.expected_count <= 0:
+            return 1.0
+        return self.device_count / self.expected_count

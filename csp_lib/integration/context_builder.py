@@ -5,6 +5,8 @@
 # 透過 ContextMapping 將設備的 latest_values 映射到 StrategyContext：
 #   - device_id 模式：直接讀取單一設備
 #   - trait 模式：收集所有匹配設備的值並聚合
+#   - capability 模式：透過 Capability read slot 自動發現設備與點位
+#   - min_device_ratio 品質門檻：響應設備比例不足時回傳 default
 #   - 簽名 Callable[[], StrategyContext] 完全符合 StrategyExecutor 的 context_provider
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from csp_lib.controller.core import Command, StrategyContext, SystemBase
 from csp_lib.core import get_logger
 
 from .registry import DeviceRegistry
-from .schema import AggregateFunc, CapabilityContextMapping, ContextMapping
+from .schema import AggregateFunc, CapabilityContextMapping, ContextMapping, capability_display_name
 
 if TYPE_CHECKING:
     from csp_lib.core.runtime_params import RuntimeParameters
@@ -230,19 +232,39 @@ class ContextBuilder:
         return device.latest_values.get(point_name)
 
     def _read_capability_trait(self, mapping: CapabilityContextMapping) -> Any:
-        """trait 模式：過濾 responsive + has_capability"""
-        devices = self._registry.get_responsive_devices_by_trait(mapping.trait)  # type: ignore[arg-type]
-        if not devices:
-            return None
-        capable = [d for d in devices if d.has_capability(mapping.capability)]
-        return self._aggregate_capability_values(capable, mapping)
+        """trait 模式：過濾 responsive + has_capability，含品質檢查"""
+        all_trait = self._registry.get_devices_by_trait(mapping.trait)  # type: ignore[arg-type]
+        capable = [d for d in all_trait if d.has_capability(mapping.capability)]
+        return self._filter_and_aggregate(capable, mapping)
 
     def _read_capability_auto(self, mapping: CapabilityContextMapping) -> Any:
-        """自動發現：所有具備該 capability 的 responsive 設備"""
-        devices = self._registry.get_responsive_devices_with_capability(mapping.capability)
-        if not devices:
-            return None
-        return self._aggregate_capability_values(devices, mapping)
+        """自動發現：所有具備該 capability 的 responsive 設備，含品質檢查"""
+        capable = self._registry.get_devices_with_capability(mapping.capability)
+        return self._filter_and_aggregate(capable, mapping)
+
+    def _filter_and_aggregate(self, capable: list, mapping: CapabilityContextMapping) -> Any:
+        """從 capable 設備中篩選 responsive、檢查品質門檻、聚合"""
+        if mapping.min_device_ratio > 0:
+            # 需要品質檢查：分別計算 total 與 responsive
+            responsive = [d for d in capable if d.is_responsive]
+            if not responsive:
+                return None
+            total = len(capable)
+            ratio = len(responsive) / total if total > 0 else 1.0
+            if ratio < mapping.min_device_ratio:
+                cap_name = capability_display_name(mapping.capability)
+                logger.warning(
+                    f"Capability aggregation quality low: {len(responsive)}/{total} devices responsive "
+                    f"for {cap_name}, ratio={ratio:.0%} < min_device_ratio={mapping.min_device_ratio:.0%}, "
+                    f"falling back to default"
+                )
+                return None
+        else:
+            # 快速路徑：直接取 responsive，省略品質計算
+            responsive = [d for d in capable if d.is_responsive]
+            if not responsive:
+                return None
+        return self._aggregate_capability_values(responsive, mapping)
 
     def _aggregate_capability_values(self, devices: list, mapping: CapabilityContextMapping) -> Any:
         """聚合多設備的 capability 值"""
