@@ -23,7 +23,7 @@ from csp_lib.statistics.engine import StatisticsEngine
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
     from csp_lib.integration.registry import DeviceRegistry
-    from csp_lib.mongo import MongoBatchUploader
+    from csp_lib.manager.base import BatchUploader
 
 logger = get_logger(__name__)
 
@@ -56,7 +56,7 @@ class StatisticsManager(DeviceEventSubscriber):
     def __init__(
         self,
         config: StatisticsConfig,
-        uploader: MongoBatchUploader,
+        uploader: BatchUploader,
         registry: DeviceRegistry | None = None,
     ) -> None:
         """
@@ -64,7 +64,7 @@ class StatisticsManager(DeviceEventSubscriber):
 
         Args:
             config: 統計配置
-            uploader: MongoDB 批次上傳器
+            uploader: 批次上傳器（實作 BatchUploader Protocol）
             registry: 設備 Registry（功率加總用，可選）
         """
         super().__init__()

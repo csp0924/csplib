@@ -26,7 +26,7 @@ from csp_lib.manager.base import DeviceEventSubscriber
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
-    from csp_lib.mongo import MongoBatchUploader
+    from csp_lib.manager.base import BatchUploader
 
 logger = get_logger(__name__)
 
@@ -95,12 +95,12 @@ class DataUploadManager(DeviceEventSubscriber):
         ```
     """
 
-    def __init__(self, uploader: MongoBatchUploader) -> None:
+    def __init__(self, uploader: BatchUploader) -> None:
         """
         初始化資料上傳管理器
 
         Args:
-            uploader: MongoDB 批次上傳器實例
+            uploader: 批次上傳器實例（實作 BatchUploader Protocol）
         """
         super().__init__()
         self._uploader = uploader
