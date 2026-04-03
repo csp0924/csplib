@@ -7,7 +7,6 @@
 ## [Unreleased]
 
 ## [0.6.0] - 2026-04-03
-## [0.6.0] - 2026-04-03
 
 ### Added
 - **`BatchUploader` Protocol** (`csp_lib.manager.base`): `@runtime_checkable` Protocol，提供 `register_collection()` + `enqueue()` 介面，解耦 `DataUploadManager` 與 `StatisticsManager` 對具體 `MongoBatchUploader` 的直接依賴
