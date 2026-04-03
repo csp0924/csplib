@@ -52,6 +52,8 @@ if TYPE_CHECKING:
     from csp_lib.modbus.clients.base import AsyncModbusClientBase
     from csp_lib.modbus.types import ModbusDataType
 
+    from .action import DOActionConfig
+
 logger = get_logger(__name__)
 
 
@@ -168,6 +170,10 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         self._status_lock = asyncio.Lock()  # 保護狀態欄位的非同步鎖
         self._stop_event = asyncio.Event()
         self._read_task: asyncio.Task[None] | None = None
+
+        # DO 動作（WriteMixin）
+        self._do_actions: dict[str, DOActionConfig] = {}
+        self._pulse_tasks: list[asyncio.Task[None]] = []
 
     # =============== Properties ===============
 
@@ -535,6 +541,7 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         """
         停止定期讀取循環
         """
+        await self.cancel_pending_pulses()
         self._stop_event.set()
         if self._read_task is not None and not self._read_task.done():
             self._read_task.cancel()

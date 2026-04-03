@@ -23,7 +23,7 @@ from .state import StateSyncManager
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
     from csp_lib.integration.registry import DeviceRegistry
-    from csp_lib.mongo import MongoBatchUploader
+    from csp_lib.manager.base import BatchUploader
     from csp_lib.notification import NotificationDispatcher
     from csp_lib.redis import RedisClient
     from csp_lib.statistics import StatisticsConfig, StatisticsManager
@@ -61,7 +61,7 @@ class UnifiedConfig:
 
     alarm_repository: AlarmRepository | None = None
     command_repository: CommandRepository | None = None
-    mongo_uploader: MongoBatchUploader | None = None
+    mongo_uploader: BatchUploader | None = None
     redis_client: RedisClient | None = None
     notification_dispatcher: NotificationDispatcher | None = None
     statistics_config: StatisticsConfig | None = None

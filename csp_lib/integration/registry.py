@@ -5,6 +5,8 @@
 # 維護 device_id ↔ trait 的雙向索引：
 #   - 依 device_id 查詢設備
 #   - 依 trait 查詢所有匹配設備（支援 responsive 過濾）
+#   - 依 capability 查詢具備指定能力的設備
+#   - validate_capabilities: 驗證能力需求是否滿足（preflight check）
 #   - 不管理設備生命週期，僅做查詢索引
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ import threading
 from typing import TYPE_CHECKING, Any, Sequence
 
 from csp_lib.core import get_logger
+
+from .schema import CapabilityRequirement, capability_display_name
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
@@ -201,6 +205,30 @@ class DeviceRegistry:
     def get_responsive_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
         """取得具備指定能力且 responsive 的設備（按 device_id 排序）"""
         return [d for d in self.get_devices_with_capability(capability) if d.is_responsive]
+
+    def validate_capabilities(self, requirements: list[CapabilityRequirement]) -> list[str]:
+        """驗證設備能力是否滿足需求
+
+        Args:
+            requirements: 能力需求列表
+
+        Returns:
+            不滿足的需求描述列表（空 = 全部通過）
+        """
+        failures: list[str] = []
+        for req in requirements:
+            if req.trait_filter:
+                devices = [d for d in self.get_devices_by_trait(req.trait_filter) if d.has_capability(req.capability)]
+            else:
+                devices = self.get_devices_with_capability(req.capability)
+
+            if len(devices) < req.min_count:
+                cap_name = capability_display_name(req.capability)
+                trait_suffix = f" with trait {req.trait_filter!r}" if req.trait_filter else ""
+                failures.append(
+                    f"Capability '{cap_name}' requires {req.min_count} device(s){trait_suffix}, found {len(devices)}"
+                )
+        return failures
 
     def __len__(self) -> int:
         with self._lock:

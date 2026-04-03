@@ -87,7 +87,7 @@ class InMemoryAlarmRepository:
         if existing and existing.status == AlarmStatus.ACTIVE:
             # 直接修改（AlarmRecord 為非 frozen dataclass）
             existing.status = AlarmStatus.RESOLVED
-            existing.resolved_at = resolved_at
+            existing.resolved_timestamp = resolved_at
             print(f"  [REPOSITORY] Resolved alarm: {alarm_key}")
             return True
         return False
@@ -332,8 +332,10 @@ async def main() -> None:
             print("-" * 70)
             all_records = repository.dump_all()
             for record in all_records:
-                occurred = record.occurred_at.strftime("%H:%M:%S") if record.occurred_at else "N/A"
-                resolved = record.resolved_at.strftime("%H:%M:%S") if record.resolved_at else "still active"
+                occurred = record.timestamp.strftime("%H:%M:%S") if record.timestamp else "N/A"
+                resolved = (
+                    record.resolved_timestamp.strftime("%H:%M:%S") if record.resolved_timestamp else "still active"
+                )
                 print(
                     f"  {record.alarm_key:<40} "
                     f"[{record.level.name:<7}] "

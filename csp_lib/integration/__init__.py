@@ -41,8 +41,10 @@ from .orchestrator import (
 from .registry import DeviceRegistry
 from .schema import (
     AggregateFunc,
+    AggregationResult,
     CapabilityCommandMapping,
     CapabilityContextMapping,
+    CapabilityRequirement,
     CommandMapping,
     ContextMapping,
     DataFeedMapping,
@@ -54,10 +56,12 @@ from .system_controller import SystemController, SystemControllerConfig
 __all__ = [
     "DeviceRegistry",
     "AggregateFunc",
+    "AggregationResult",
     "ContextMapping",
     "CommandMapping",
     "CapabilityContextMapping",
     "CapabilityCommandMapping",
+    "CapabilityRequirement",
     "DataFeedMapping",
     "HeartbeatMapping",
     "HeartbeatMode",

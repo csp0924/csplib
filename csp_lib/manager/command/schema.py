@@ -5,7 +5,8 @@
 # 提供指令相關的資料類別：
 #   - CommandSource: 指令來源類型
 #   - CommandStatus: 指令執行狀態
-#   - WriteCommand: 寫入指令
+#   - WriteCommand: 寫入指令（點位寫入）
+#   - ActionCommand: 動作指令（高階動作執行）
 #   - CommandRecord: 指令記錄（DB 儲存用）
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ class WriteCommand:
         source: 來源類型
         source_info: 來源詳細資訊（如 user_id, ip, channel）
         verify: 是否寫後讀回驗證
-        created_at: 建立時間
+        timestamp: 建立時間
     """
 
     device_id: str
@@ -59,7 +60,7 @@ class WriteCommand:
     source_info: dict[str, Any] = field(default_factory=dict)
     verify: bool = False
     command_id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
         """轉為字典（用於 DB 儲存）"""
@@ -71,7 +72,7 @@ class WriteCommand:
             "source": self.source.value,
             "source_info": self.source_info,
             "verify": self.verify,
-            "created_at": self.created_at,
+            "timestamp": self.timestamp,
         }
 
     @classmethod
@@ -94,7 +95,7 @@ class WriteCommand:
             source=source,
             source_info=data.get("source_info", {}),
             verify=data.get("verify", False),
-            created_at=data.get("created_at", datetime.now(timezone.utc)),
+            timestamp=data.get("timestamp", datetime.now(timezone.utc)),
         )
 
 
@@ -112,7 +113,7 @@ class ActionCommand:
         value: 動作參數（傳遞給方法的關鍵字參數），與 WriteCommand 統一欄位名
         source: 來源類型
         source_info: 來源詳細資訊
-        created_at: 建立時間
+        timestamp: 建立時間
 
     Example:
         ```python
@@ -135,7 +136,7 @@ class ActionCommand:
     source: CommandSource = CommandSource.INTERNAL
     source_info: dict[str, Any] = field(default_factory=dict)
     command_id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def params(self) -> dict[str, Any]:
@@ -155,7 +156,7 @@ class ActionCommand:
             "value": self.value,
             "source": self.source.value,
             "source_info": self.source_info,
-            "created_at": self.created_at,
+            "timestamp": self.timestamp,
         }
 
     @classmethod
@@ -180,7 +181,7 @@ class ActionCommand:
             value=data.get("value"),
             source=source,
             source_info=data.get("source_info", {}),
-            created_at=data.get("created_at", datetime.now(timezone.utc)),
+            timestamp=data.get("timestamp", datetime.now(timezone.utc)),
         )
 
     @classmethod
@@ -211,7 +212,7 @@ class CommandRecord:
         source_info: 來源詳細資訊
         status: 執行狀態
         result: 執行結果
-        created_at: 建立時間
+        timestamp: 建立時間
         executed_at: 開始執行時間
         completed_at: 完成時間
         error_message: 錯誤訊息
@@ -225,7 +226,7 @@ class CommandRecord:
     source_info: dict[str, Any]
     status: CommandStatus = CommandStatus.PENDING
     result: dict[str, Any] | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     executed_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
@@ -241,7 +242,7 @@ class CommandRecord:
             source=command.source.value,
             source_info=command.source_info,
             status=CommandStatus.PENDING,
-            created_at=command.created_at,
+            timestamp=command.timestamp,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -255,7 +256,7 @@ class CommandRecord:
             "source_info": self.source_info,
             "status": self.status.value,
             "result": self.result,
-            "created_at": self.created_at,
+            "timestamp": self.timestamp,
             "executed_at": self.executed_at,
             "completed_at": self.completed_at,
             "error_message": self.error_message,
@@ -273,7 +274,7 @@ class CommandRecord:
             source_info=data.get("source_info", {}),
             status=CommandStatus(data["status"]),
             result=data.get("result"),
-            created_at=data.get("created_at", datetime.now(timezone.utc)),
+            timestamp=data.get("timestamp", datetime.now(timezone.utc)),
             executed_at=data.get("executed_at"),
             completed_at=data.get("completed_at"),
             error_message=data.get("error_message"),

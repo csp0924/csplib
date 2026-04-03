@@ -10,6 +10,7 @@
 #   - template: 設備範本與工廠
 
 from . import alarm, core, device, processing, simulation, template, transport
+from .device.action import Actionable, DOActionConfig, DOMode
 
 __all__ = [
     "alarm",
@@ -19,4 +20,8 @@ __all__ = [
     "transport",
     "simulation",
     "template",
+    # Action
+    "DOMode",
+    "DOActionConfig",
+    "Actionable",
 ]

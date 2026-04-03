@@ -6,6 +6,43 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-03
+
+### Added
+- **`BatchUploader` Protocol** (`csp_lib.manager.base`): `@runtime_checkable` Protocol，提供 `register_collection()` + `enqueue()` 介面，解耦 `DataUploadManager` 與 `StatisticsManager` 對具體 `MongoBatchUploader` 的直接依賴
+- **`DOMode` 列舉** (`csp_lib.equipment.device.action`): `PULSE`、`SUSTAINED`、`TOGGLE` — 三種離散輸出動作模式
+- **`DOActionConfig` frozen dataclass** (`csp_lib.equipment.device.action`): 宣告式 DO 動作配置，含 `point_name`、`label`、`mode`、`pulse_duration`、`on_value`、`off_value`
+- **`Actionable` Protocol** (`csp_lib.equipment.device.action`): `@runtime_checkable` Protocol，公開 `available_do_actions` + `execute_do_action(label)` — 統一 ET7050/ET7051 與 PCS/BMS 設備的 DO 控制介面
+- **`AsyncModbusDevice.configure_do_actions()`**: 載入 `list[DOActionConfig]` 以啟用宣告式 PULSE/SUSTAINED/TOGGLE 執行
+- **`AsyncModbusDevice.execute_do_action(label)`**: 執行指定 DO 動作；PULSE 模式在 `pulse_duration` 後自動取消
+- **`AsyncModbusDevice.available_do_actions`**: 屬性，回傳目前已配置的 `list[DOActionConfig]`
+- **`AsyncModbusDevice.cancel_pending_pulses()`**: 取消所有排程中的 pulse-off 任務（設備關機時自動呼叫）
+- **`CapabilityRequirement` dataclass** (`csp_lib.integration.schema`): `capability`、`min_count`、`trait_filter` — 供 preflight validation 使用
+- **`AggregationResult` dataclass** (`csp_lib.integration.schema`): `value`、`device_count`、`expected_count`、`quality_ratio` — 聚合品質元資料，供策略層判斷資料可信度
+- **`CapabilityContextMapping.min_device_ratio`**: 可選比例門檻；當響應設備少於此比例時，聚合回傳 `default` 並發出警告
+- **`DeviceRegistry.validate_capabilities(requirements)`**: 回傳未滿足 `CapabilityRequirement` 的可讀訊息列表
+- **`SystemControllerConfig.capability_requirements`**: `CapabilityRequirement` 列表，在 `preflight_check()` 時驗證
+- **`SystemControllerConfig.strict_capability_check`**: 設為 `True` 時，`SystemController.preflight_check()` 在需求未滿足時 raise `ConfigurationError`
+- **`SystemController.preflight_check()`**: 執行 `validate_capabilities` 驗證已註冊的能力需求；可在 `async with` 前呼叫，提前發現部署不匹配
+- **`SystemControllerConfigBuilder.require_capability(requirement)`**: fluent 方法，新增 `CapabilityRequirement`
+- **`SystemControllerConfigBuilder.strict_capability(enabled?)`**: fluent 方法，設定 `strict_capability_check`
+- **Repository Protocol 拆分**: `AlarmRepository`、`CommandRepository`、`ScheduleRepository` Protocol 現在無需安裝 `motor` 即可匯入 — 具體 `MongoXxxRepository` 實作透過 `TYPE_CHECKING` 延遲匯入 motor
+
+### Changed
+- **`AlarmRecord.occurred_at` → `timestamp`**: 統一時間戳欄位命名，與 `DataUploadManager`、`StateSyncManager` 的 document 一致
+- **`AlarmRecord.resolved_at` → `resolved_timestamp`**: 對稱重新命名
+- **`WriteCommand.created_at` → `timestamp`**: 統一所有指令類型的時間戳欄位命名
+- **`ActionCommand.created_at` → `timestamp`**: 與 WriteCommand 一致
+- **`CommandRecord.created_at` → `timestamp`**: 與告警 schema 統一
+- **`MongoAlarmRepository` 索引**: `ensure_indexes()` 改為索引 `timestamp` 和 `resolved_timestamp`（取代 `occurred_at`/`resolved_at`）
+- **`MongoCommandRepository` 索引與排序**: `list_by_device()` 改依 `timestamp` 排序；`ensure_indexes()` 改索引 `timestamp`
+- **`DataUploadManager` 建構子型別**: 接受 `BatchUploader`（Protocol）取代 `MongoBatchUploader` — 既有使用 `MongoBatchUploader` 的程式碼透過結構子型別繼續運作
+- **`StatisticsManager` 建構子型別**: 同 `DataUploadManager` 變更
+- **`UnifiedConfig.mongo_uploader`**: 型別從 `MongoBatchUploader` 放寬為 `BatchUploader` — 接受任何實作 BatchUploader Protocol 的上傳器
+
+### Fixed
+- **靜默低容量聚合**: 設定 `min_device_ratio` 的 `CapabilityContextMapping` 現在會在響應設備不足時發出警告並回傳 `default`，而非靜默計算不完整的聚合結果
+
 ## [0.5.2] - 2026-04-02
 
 ### Added

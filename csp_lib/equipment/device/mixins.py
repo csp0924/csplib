@@ -4,15 +4,19 @@
 #
 # AlarmMixin: 告警管理（is_protected, active_alarms, clear_alarm, _evaluate_alarm）
 # WriteMixin: 寫入管理（write, execute_action, available_actions）
+#           + DO 動作控制（configure_do_actions, execute_do_action, cancel_pending_pulses）
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
 from csp_lib.equipment.alarm import AlarmEventType, AlarmState
 from csp_lib.equipment.transport import WriteResult, WriteStatus
 
+from .action import DOActionConfig, DOMode
 from .events import (
     EVENT_ALARM_CLEARED,
     EVENT_ALARM_TRIGGERED,
@@ -107,7 +111,10 @@ class WriteMixin:
         _write_points: dict[str, WritePoint]
         _writer: ValidatedWriter
         _disabled_points: set[str]
+        _latest_values: dict[str, Any]
         ACTIONS: dict[str, str]
+        _do_actions: dict[str, DOActionConfig]
+        _pulse_tasks: list[asyncio.Task[None]]
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""
@@ -227,6 +234,89 @@ class WriteMixin:
     def available_actions(self) -> list[str]:
         """取得支援的動作列表"""
         return list(self.ACTIONS.keys())
+
+    # =============== DO Action ===============
+
+    def configure_do_actions(self, configs: Sequence[DOActionConfig]) -> None:
+        """配置 DO 動作
+
+        Args:
+            configs: DO 動作配置列表
+
+        Raises:
+            ValueError: 有重複的 label
+        """
+        labels = [c.label for c in configs]
+        if len(labels) != len(set(labels)):
+            raise ValueError(f"Duplicate DO action labels: {labels}")
+        for task in self._pulse_tasks:
+            task.cancel()
+        self._do_actions = {c.label: c for c in configs}
+        self._pulse_tasks = []
+
+    @property
+    def available_do_actions(self) -> list[DOActionConfig]:
+        """可用的 DO 動作列表"""
+        return list(self._do_actions.values())
+
+    async def execute_do_action(self, label: str, *, turn_off: bool = False) -> WriteResult:
+        """執行指定 DO 動作
+
+        Args:
+            label: 動作標籤
+            turn_off: 是否執行關閉動作（寫入 off_value）。
+                SUSTAINED: turn_off=False 寫 on_value，turn_off=True 寫 off_value。
+                TOGGLE: 忽略此參數，自動反轉。
+                PULSE: 忽略此參數，固定 on → 延遲 → off。
+
+        Returns:
+            WriteResult
+
+        Raises:
+            ValueError: label 不存在
+        """
+        config = self._do_actions.get(label)
+        if config is None:
+            raise ValueError(f"Unknown DO action: {label!r}. Available: {list(self._do_actions.keys())}")
+
+        if config.mode == DOMode.SUSTAINED:
+            value = config.off_value if turn_off else config.on_value
+            return await self.write(config.point_name, value)
+
+        if config.mode == DOMode.TOGGLE:
+            current = self._latest_values.get(config.point_name, config.off_value)
+            new_value = config.off_value if current == config.on_value else config.on_value
+            result = await self.write(config.point_name, new_value)
+            if result.status == WriteStatus.SUCCESS:
+                self._latest_values[config.point_name] = new_value
+            return result
+
+        # DOMode.PULSE
+        result = await self.write(config.point_name, config.on_value)
+        if result.status != WriteStatus.SUCCESS:
+            return result
+        task = asyncio.create_task(self._pulse_off(config))
+        self._pulse_tasks.append(task)
+        task.add_done_callback(lambda t: self._pulse_tasks.remove(t) if t in self._pulse_tasks else None)
+        return result
+
+    async def _pulse_off(self, config: DOActionConfig) -> None:
+        """PULSE 模式：等待 pulse_duration 後寫回 off_value"""
+        try:
+            await asyncio.sleep(config.pulse_duration)
+            await self.write(config.point_name, config.off_value)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.opt(exception=True).warning(f"Pulse off failed for {config.label}")
+
+    async def cancel_pending_pulses(self) -> None:
+        """取消所有進行中的 PULSE 任務（shutdown 時呼叫）"""
+        for task in list(self._pulse_tasks):
+            task.cancel()
+        if self._pulse_tasks:
+            await asyncio.gather(*self._pulse_tasks, return_exceptions=True)
+        self._pulse_tasks = []
 
 
 __all__ = [

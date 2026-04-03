@@ -1,13 +1,15 @@
 # =============== Manager - Base ===============
 #
-# 設備事件訂閱基底類別
+# Manager 層共用基底與 Protocol
 #
-# 提供通用的 subscribe/unsubscribe 框架：
-#   - DeviceEventSubscriber: 管理設備事件訂閱的基底類別
+# 提供：
+#   - AsyncRepository: Repository 標記 Protocol（健康檢查）
+#   - BatchUploader: 批次上傳器 Protocol（解耦 MongoBatchUploader）
+#   - DeviceEventSubscriber: 設備事件訂閱基底類別
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 
 from csp_lib.core import get_logger
 
@@ -27,6 +29,39 @@ class AsyncRepository(Protocol):
 
     async def health_check(self) -> bool:
         """檢查 Repository 連線是否正常"""
+        ...
+
+
+@runtime_checkable
+class BatchUploader(Protocol):
+    """
+    批次上傳器 Protocol
+
+    解耦 DataUploadManager / StatisticsManager 對 MongoBatchUploader 的直接依賴，
+    讓上層模組可以注入任何實作此 Protocol 的上傳器。
+
+    Methods:
+        register_collection: 註冊 collection 名稱
+        enqueue: 將文件加入上傳佇列
+    """
+
+    def register_collection(self, collection_name: str) -> None:
+        """
+        註冊 collection 名稱
+
+        Args:
+            collection_name: MongoDB collection 名稱
+        """
+        ...
+
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+        """
+        將文件加入上傳佇列
+
+        Args:
+            collection_name: 目標 collection 名稱
+            document: 要上傳的文件
+        """
         ...
 
 
@@ -107,5 +142,6 @@ class DeviceEventSubscriber:
 
 __all__ = [
     "AsyncRepository",
+    "BatchUploader",
     "DeviceEventSubscriber",
 ]

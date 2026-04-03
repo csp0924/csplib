@@ -39,6 +39,7 @@ from csp_lib.controller.system.cascading import CapacityConfig, CascadingStrateg
 from csp_lib.controller.system.event_override import AlarmStopOverride, EventDrivenOverride
 from csp_lib.controller.system.mode import SwitchSource
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.core.health import HealthReport, HealthStatus
 
 from .command_router import CommandRouter
@@ -51,6 +52,7 @@ from .registry import DeviceRegistry
 from .schema import (
     CapabilityCommandMapping,
     CapabilityContextMapping,
+    CapabilityRequirement,
     CommandMapping,
     ContextMapping,
     DataFeedMapping,
@@ -95,6 +97,8 @@ class SystemControllerConfig:
         heartbeat_capability_constant_value: CONSTANT 模式的固定寫入值
         heartbeat_capability_increment_max: INCREMENT 模式的最大計數值
         power_distributor: 功率分配器（可選），設定後 capability command mappings 使用 per-device 分配
+        capability_requirements: 能力需求列表，供 preflight_check 驗證
+        strict_capability_check: 啟用嚴格能力檢查（preflight 失敗時 raise ConfigurationError）
     """
 
     context_mappings: list[ContextMapping] = field(default_factory=list)
@@ -120,6 +124,8 @@ class SystemControllerConfig:
     power_distributor: PowerDistributor | None = None
     post_protection_processors: list[CommandProcessor] = field(default_factory=list)
     runtime_params: Any = None  # RuntimeParameters | None, 自動注入到 StrategyContext.params
+    capability_requirements: list[CapabilityRequirement] = field(default_factory=list)
+    strict_capability_check: bool = False
 
     @classmethod
     def builder(cls) -> "SystemControllerConfigBuilder":
@@ -172,6 +178,8 @@ class SystemControllerConfigBuilder:
         self._power_distributor: PowerDistributor | None = None
         self._processors: list[CommandProcessor] = []
         self._runtime_params: Any = None
+        self._capability_requirements: list[CapabilityRequirement] = []
+        self._strict_capability_check: bool = False
 
     # ─────────────── 系統基準 ───────────────
 
@@ -339,6 +347,18 @@ class SystemControllerConfigBuilder:
         self._capacity_kva = capacity_kva
         return self
 
+    # ─────────────── Capability Requirements ───────────────
+
+    def require_capability(self, requirement: CapabilityRequirement) -> "SystemControllerConfigBuilder":
+        """新增能力需求"""
+        self._capability_requirements.append(requirement)
+        return self
+
+    def strict_capability(self, enabled: bool = True) -> "SystemControllerConfigBuilder":
+        """啟用嚴格能力檢查（preflight 失敗時 raise ConfigurationError）"""
+        self._strict_capability_check = enabled
+        return self
+
     # ─────────────── Build ───────────────
 
     def build(self) -> "SystemControllerConfig":
@@ -367,6 +387,8 @@ class SystemControllerConfigBuilder:
             power_distributor=self._power_distributor,
             post_protection_processors=self._processors,
             runtime_params=self._runtime_params,
+            capability_requirements=self._capability_requirements,
+            strict_capability_check=self._strict_capability_check,
         )
 
 
@@ -525,6 +547,28 @@ class SystemController(AsyncLifecycleMixin):
         self._event_override_states[override.name] = _OverrideState()
         logger.debug(f"Event override registered: {override.name}")
 
+    # ---- Preflight Check ----
+
+    def preflight_check(self) -> list[str]:
+        """驗證能力需求是否滿足
+
+        Returns:
+            不滿足的需求描述列表
+
+        Raises:
+            ConfigurationError: 當 strict_capability_check=True 且有不滿足的需求
+        """
+        if not self._config.capability_requirements:
+            return []
+
+        failures = self._registry.validate_capabilities(self._config.capability_requirements)
+        if failures:
+            for failure in failures:
+                logger.warning(f"Preflight check: {failure}")
+            if self._config.strict_capability_check:
+                raise ConfigurationError(f"Preflight capability check failed: {'; '.join(failures)}")
+        return failures
+
     # ---- 排程模式控制（ScheduleModeController 實作）----
 
     async def activate_schedule_mode(self, strategy: Strategy, *, description: str = "") -> None:
@@ -566,6 +610,9 @@ class SystemController(AsyncLifecycleMixin):
 
     async def _on_start(self) -> None:
         """啟動系統控制器"""
+        # Preflight: 驗證能力需求
+        self.preflight_check()
+
         # 初始化 post-protection processors（async_init for MongoDB etc.）
         for proc in self._config.post_protection_processors:
             if hasattr(proc, "async_init"):

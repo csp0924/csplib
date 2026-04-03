@@ -13,12 +13,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Protocol, runtime_checkable
-
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import IndexModel
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from .schema import ScheduleRule, ScheduleType
+
+if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
 @runtime_checkable
@@ -89,6 +89,8 @@ class MongoScheduleRepository:
 
         應於應用程式啟動時呼叫一次。
         """
+        from pymongo import IndexModel
+
         await self._collection.create_indexes(
             [
                 IndexModel([("site_id", 1), ("enabled", 1)]),
