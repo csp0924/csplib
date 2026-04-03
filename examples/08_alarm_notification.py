@@ -333,7 +333,9 @@ async def main() -> None:
             all_records = repository.dump_all()
             for record in all_records:
                 occurred = record.timestamp.strftime("%H:%M:%S") if record.timestamp else "N/A"
-                resolved = record.resolved_timestamp.strftime("%H:%M:%S") if record.resolved_timestamp else "still active"
+                resolved = (
+                    record.resolved_timestamp.strftime("%H:%M:%S") if record.resolved_timestamp else "still active"
+                )
                 print(
                     f"  {record.alarm_key:<40} "
                     f"[{record.level.name:<7}] "
