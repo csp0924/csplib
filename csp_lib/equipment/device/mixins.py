@@ -113,6 +113,8 @@ class WriteMixin:
         _disabled_points: set[str]
         _latest_values: dict[str, Any]
         ACTIONS: dict[str, str]
+        _do_actions: dict[str, DOActionConfig]
+        _pulse_tasks: list[asyncio.Task[None]]
 
     async def write(self, name: str, value: Any, verify: bool = False) -> WriteResult:
         """寫入點位值"""
