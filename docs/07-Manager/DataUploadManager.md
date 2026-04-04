@@ -5,16 +5,18 @@ tags:
   - status/complete
 source: csp_lib/manager/data/upload.py
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # DataUploadManager
 
 資料上傳管理器，隸屬於 [[_MOC Manager|Manager 模組]]。
 
+> [!warning] v0.6.0 Changed
+> 建構子參數 `uploader` 的型別從 `MongoBatchUploader` 放寬為 [[BatchUploader]] Protocol。既有程式碼傳入 `MongoBatchUploader` 仍然相容，無需修改。
+
 ## 概述
 
-`DataUploadManager` 繼承自 [[DeviceEventSubscriber]]，自動將設備讀取資料上傳至 MongoDB。採用觀察者模式訂閱 `AsyncModbusDevice` 的 `read_complete` 與 `disconnected` 事件。
+`DataUploadManager` 繼承自 [[DeviceEventSubscriber]]，自動將設備讀取資料上傳至 MongoDB（或任何實作 [[BatchUploader]] Protocol 的上傳器）。採用觀察者模式訂閱 `AsyncModbusDevice` 的 `read_complete` 與 `disconnected` 事件。
 
 ### 職責
 
@@ -26,19 +28,29 @@ version: ">=0.4.2"
 
 | 參數 | 型別 | 說明 |
 |------|------|------|
-| `uploader` | [[MongoBatchUploader]] | MongoDB 批次上傳器實例 |
+| `uploader` | [[BatchUploader]] | 批次上傳器實例（實作 `BatchUploader` Protocol） |
 
 ## API
 
 | 方法 | 說明 |
 |------|------|
-| `subscribe(device, collection_name)` | 訂閱設備事件並指定 MongoDB collection 名稱 |
+| `configure(device_id, collection_name, save_interval=None)` | 預先配置設備的上傳參數（必須在 `subscribe()` 之前呼叫） |
+| `subscribe(device)` | 訂閱設備事件；若未呼叫 `configure()` 則使用預設 collection `"device_data"` |
+| `unsubscribe(device)` | 取消訂閱設備事件（繼承自 [[DeviceEventSubscriber]]） |
+
+### configure 參數
+
+| 參數 | 型別 | 預設 | 說明 |
+|------|------|------|------|
+| `device_id` | `str` | 必填 | 設備 ID |
+| `collection_name` | `str` | 必填 | 資料上傳的 MongoDB collection 名稱 |
+| `save_interval` | `float \| None` | `None` | 最小儲存間隔（秒）。`None` 或 `0` 表示每次讀取都儲存 |
 
 ## 訂閱的事件
 
 | 事件 | 處理 |
 |------|------|
-| `read_complete` | 將讀取資料加入上傳佇列，並快取值結構 |
+| `read_complete` | 將讀取資料加入上傳佇列，並快取值結構。若設有 `save_interval`，僅在超過間隔時上傳 |
 | `disconnected` | 從快取結構產生空值記錄並上傳 |
 
 ### 斷線空值記錄
@@ -49,16 +61,33 @@ version: ">=0.4.2"
 - 所有葉節點值替換為 `None`
 - 用途：讓前端圖表能正確顯示斷線區間（有資料點但值為 null）
 
-## 使用範例
+### 降頻儲存
+
+透過 `configure()` 的 `save_interval` 參數控制每台設備的最小儲存間隔。使用 `time.monotonic()` 計時，確保即使系統時間調整也能正確運作。
+
+## Quick Example
 
 ```python
-from csp_lib.manager import DataUploadManager
+from csp_lib.mongo import MongoBatchUploader
+from csp_lib.manager.data import DataUploadManager
 
-manager = DataUploadManager(device=device, uploader=batch_uploader)
+# 建立上傳器（MongoBatchUploader 實作 BatchUploader Protocol）
+uploader = MongoBatchUploader(db=mongo_db)
+
+async with uploader:
+    data_manager = DataUploadManager(uploader)
+
+    # 配置設備的上傳參數
+    data_manager.configure("meter_001", collection_name="meter_data", save_interval=5.0)
+    data_manager.subscribe(meter_device)
+
+    # 設備讀取時資料自動上傳（每 5 秒最多一次）
+    # 設備斷線時自動上傳空值記錄
 ```
 
 ## 相關頁面
 
 - [[DeviceEventSubscriber]] — 基底類別
-- [[MongoBatchUploader]] — 批次上傳器
+- [[BatchUploader]] — 上傳器 Protocol 定義
+- [[MongoBatchUploader]] — MongoDB 批次上傳器實作
 - [[UnifiedDeviceManager]] — 自動串接資料上傳管理器

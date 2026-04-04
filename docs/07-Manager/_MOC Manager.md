@@ -4,7 +4,6 @@ tags:
   - layer/manager
   - status/complete
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # Manager 模組總覽
@@ -15,11 +14,12 @@ Manager 模組建構在 [[_MOC Equipment|Equipment]] 與 [[_MOC Integration|Inte
 
 ## 頁面索引
 
-### 基底類別
+### 基底類別與 Protocol
 
 | 頁面 | 類型 | 說明 |
 |------|------|------|
 | [[DeviceEventSubscriber]] | class | 所有 Manager 的基底類別，事件訂閱框架 |
+| [[BatchUploader]] | Protocol | 批次上傳器介面（v0.6.0 新增，解耦 MongoBatchUploader 依賴） |
 
 ### 設備管理
 
