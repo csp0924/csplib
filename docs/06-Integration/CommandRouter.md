@@ -73,6 +73,32 @@ Command → 設備寫入路由器，隸屬於 [[_MOC Integration|Integration 模
 > [!note] Per-device 分配
 > `per_device_commands` dict 中未包含的設備不會被 capability 映射寫入，但不影響明確映射路徑。詳見 [[PowerDistributor]]。
 
+## Quick Example
+
+```python
+from csp_lib.integration import CommandRouter, DeviceRegistry
+from csp_lib.integration.schema import CommandMapping, CapabilityCommandMapping
+from csp_lib.equipment.device.capability import ACTIVE_POWER_CONTROL
+
+router = CommandRouter(
+    registry=registry,
+    mappings=[
+        CommandMapping(command_field="p_target", point_name="set_p", trait="pcs"),
+    ],
+    capability_mappings=[
+        CapabilityCommandMapping(
+            command_field="p_target",
+            capability=ACTIVE_POWER_CONTROL,
+            slot="p_setpoint",
+        ),
+    ],
+)
+
+await router.route(command)  # 同值廣播
+# 或搭配 PowerDistributor
+await router.route_per_device(command, per_device_commands)
+```
+
 ## 相關頁面
 
 - [[CommandMapping]] — 明確映射定義

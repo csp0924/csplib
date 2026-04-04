@@ -31,6 +31,7 @@ version: ">=0.4.2"
 | `mappings` | `list[ContextMapping]` | 設備點位 → context 欄位的映射列表 |
 | `system_base` | `SystemBase \| None` | 系統基準值（可選） |
 | `capability_mappings` | `list[CapabilityContextMapping] \| None` | Capability-driven context 映射列表（可選） |
+| `runtime_params` | `RuntimeParameters \| None` | 系統參數（可選），直接掛到 `context.params` |
 
 ## API
 
@@ -51,6 +52,31 @@ version: ">=0.4.2"
 4. 聚合結果為 `None` 時使用 `default`
 5. 套用 `transform`（若有），例外時回傳 `default` 並 log warning
 6. 透過 `context_field` 寫入 context 對應欄位
+
+## Quick Example
+
+```python
+from csp_lib.integration import ContextBuilder, DeviceRegistry
+from csp_lib.integration.schema import ContextMapping, CapabilityContextMapping, AggregateFunc
+from csp_lib.equipment.device.capability import SOC_READABLE
+
+builder = ContextBuilder(
+    registry=registry,
+    mappings=[
+        ContextMapping(point_name="soc", context_field="soc", device_id="bms_01"),
+    ],
+    capability_mappings=[
+        CapabilityContextMapping(
+            capability=SOC_READABLE, slot="soc", context_field="extra.avg_soc",
+            aggregate=AggregateFunc.AVERAGE,
+        ),
+    ],
+    runtime_params=runtime_params,
+)
+
+context = builder.build()
+# context.soc, context.extra["avg_soc"], context.params 皆已填入
+```
 
 ## 相關頁面
 

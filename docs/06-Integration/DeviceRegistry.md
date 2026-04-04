@@ -29,6 +29,7 @@ Trait-based 設備查詢索引，隸屬於 [[_MOC Integration|Integration 模組
 | 方法 | 說明 |
 |------|------|
 | `register(device, traits=None, metadata=None)` | 註冊設備與可選的 traits 及靜態 metadata；`device_id` 已存在時拋出 `ValueError` |
+| `register_with_capabilities(device, extra_traits=None, metadata=None)` | 自動從設備 capabilities 產生 `cap:xxx` traits 後註冊（見下方說明） |
 | `unregister(device_id)` | 移除設備及其所有 trait 關聯；不存在時靜默忽略 |
 
 ### Trait 管理
@@ -62,6 +63,42 @@ registry.register(
 
 # 查詢 metadata
 meta = registry.get_metadata("bess_a")  # {"rated_p": 500.0, ...}
+```
+
+### Capability 查詢
+
+> [!info] v0.6.0 新增
+
+| 方法 | 說明 |
+|------|------|
+| `get_devices_with_capability(capability)` | 取得具備指定能力的所有設備（按 `device_id` 排序） |
+| `get_responsive_devices_with_capability(capability)` | 取得具備指定能力且 responsive 的設備 |
+| `validate_capabilities(requirements)` | 驗證能力需求列表，回傳不滿足的描述列表（空 = 全部通過） |
+
+`validate_capabilities()` 搭配 [[CapabilityRequirement]] 使用，為 [[SystemController]] 的 `preflight_check()` 提供底層驗證邏輯。
+
+```python
+from csp_lib.integration.schema import CapabilityRequirement
+from csp_lib.equipment.device.capability import ACTIVE_POWER_CONTROL
+
+failures = registry.validate_capabilities([
+    CapabilityRequirement(capability=ACTIVE_POWER_CONTROL, min_count=2),
+])
+# failures: ["Capability 'active_power_control' requires 2 device(s), found 1"]
+```
+
+### register_with_capabilities()
+
+> [!info] v0.6.0 新增
+
+自動從設備的 `capabilities` 屬性產生 `cap:xxx` 格式的 traits，再合併 `extra_traits`。
+
+```python
+# 自動發現：設備具備 active_power_control 和 soc_readable
+# → traits: ["bess", "cap:active_power_control", "cap:soc_readable"]
+registry.register_with_capabilities(
+    bess_device, extra_traits=["bess"], metadata={"rated_p": 500.0},
+)
 ```
 
 ### 屬性
@@ -102,3 +139,4 @@ meta = registry.get_metadata("bess_a")  # {"rated_p": 500.0}
 - [[DeviceDataFeed]] — 使用 registry 解析 PV 資料來源設備
 - [[PowerDistributor]] — 使用 metadata 進行比例或 SOC 平衡分配
 - [[GroupControllerManager]] — 從 master registry 建立子 registry 進行多群組控制
+- [[CapabilityRequirement]] — 能力需求定義，搭配 `validate_capabilities()` 使用
