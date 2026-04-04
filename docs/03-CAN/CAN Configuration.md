@@ -15,6 +15,21 @@ version: ">=0.4.2"
 
 ---
 
+## Quick Example
+
+```python
+from csp_lib.can import CANBusConfig, CANFrame
+
+# 建立 SocketCAN 配置
+config = CANBusConfig(interface="socketcan", channel="can0")
+
+# 建立 CAN 訊框
+frame = CANFrame(can_id=0x100, data=b"\x01\x02\x03")
+print(f"CAN ID: 0x{frame.can_id:03X}, Data: {frame.data.hex()}")
+```
+
+---
+
 ## CANBusConfig
 
 ```python

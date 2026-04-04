@@ -26,7 +26,7 @@ CANError                    CAN Bus 基礎例外
 
 ---
 
-## 使用範例
+## Quick Example
 
 ```python
 from csp_lib.can import CANError, CANConnectionError, CANTimeoutError, CANSendError
