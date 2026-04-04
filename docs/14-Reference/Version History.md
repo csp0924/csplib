@@ -20,7 +20,7 @@ version: 0.6.1
 - **`BatchUploader` Protocol** (`csp_lib.manager.base`): `@runtime_checkable` Protocol，提供 `register_collection()` + `enqueue()` 介面，解耦 [[DataUploadManager]] 與 `StatisticsManager` 對具體 [[MongoBatchUploader]] 的直接依賴
 - **`DOMode` 列舉** (`csp_lib.equipment.device.action`): `PULSE`、`SUSTAINED`、`TOGGLE` — 三種離散輸出動作模式
 - **`DOActionConfig` frozen dataclass**: 宣告式 DO 動作配置
-- **`Actionable` Protocol**: `@runtime_checkable`，統一 ET7050/ET7051 �� PCS/BMS 設備的 DO 控制��面
+- **`Actionable` Protocol**: `@runtime_checkable`，統一 ET7050/ET7051 與 PCS/BMS 設備的 DO 控制介面
 - **[[AsyncModbusDevice]] DO action 方法**: `configure_do_actions()`、`execute_do_action()`、`available_do_actions`、`cancel_pending_pulses()`
 - **`CapabilityRequirement` dataclass** (`csp_lib.integration.schema`): `capability`、`min_count`、`trait_filter` — 供 preflight validation 使用
 - **`AggregationResult` dataclass**: `value`、`device_count`、`expected_count`、`quality_ratio` — 聚合品質元資料
@@ -34,17 +34,17 @@ version: 0.6.1
 
 - **`AlarmRecord.occurred_at` → `timestamp`**: 統一時間戳欄位命名
 - **`AlarmRecord.resolved_at` → `resolved_timestamp`**: 對稱重新命名
-- **`WriteCommand.created_at` → `timestamp`**: 統一指令類型���間戳
+- **`WriteCommand.created_at` → `timestamp`**: 統一指令類型時間戳
 - **`ActionCommand.created_at` → `timestamp`**: 與 WriteCommand 一致
 - **`CommandRecord.created_at` → `timestamp`**: 與告警 schema 統一
 - **[[DataUploadManager]] 建構子型別**: 接受 `BatchUploader`（Protocol）取代 `MongoBatchUploader`
-- **`UnifiedConfig.mongo_uploader`**: 型別�� `MongoBatchUploader` 放寬為 `BatchUploader`
+- **`UnifiedConfig.mongo_uploader`**: 型別從 `MongoBatchUploader` 放寬為 `BatchUploader`
 
 ### Fixed
 
-- **靜默低容量聚合**: 設定 `min_device_ratio` 的 [[CapabilityContextMapping]] ���在會在響��設備不足時發出警告並回傳 `default`
+- **靜默低容量聚合**: 設定 `min_device_ratio` 的 [[CapabilityContextMapping]] 現在會在響應設備不足時發出警告並回傳 `default`
 
-> [!info] 遷移���南
+> [!info] 遷移指南
 > 時間戳欄位更名需要 MongoDB 遷移，詳見 [[v0.6.0_timestamp_rename|v0.6.0 遷移指南]]
 
 ---
@@ -86,7 +86,7 @@ version: 0.6.1
 - **[[DeviceRegistry]] 並發安全**: 加 `threading.Lock` 保護讀寫操作
 - **[[DeviceEventEmitter]] 優雅關閉**: stop() drain queue + handler 完成等待
 - **Device 重複註冊檢查**: register() 和 register_group() 檢查 duplicate device_id
-- **[[CircuitBreaker]] 指數退避**: 加 `max_cooldown`、`backoff_factor` 參��
+- **[[CircuitBreaker]] 指數退避**: 加 `max_cooldown`、`backoff_factor` 參數
 
 ### Added
 
@@ -113,7 +113,7 @@ version: 0.6.1
   - FF table 查表 + 積分修正（deadband、anti-windup、rate limiting）
   - 穩態自動學習：I 項貢獻吸收進 FF 表
   - FF 表持久化支援 `FFTableRepository` Protocol（JSON / MongoDB）
-- **FFCalibrationStrategy** (`csp_lib.controller.calibration`): FF Table ��階校準策略
+- **FFCalibrationStrategy** (`csp_lib.controller.calibration`): FF Table 步階校準策略
   - 狀態機：IDLE → STEPPING → DONE
   - 支援 `on_complete` callback
 - **動態保護規則** (`csp_lib.controller.system`):
