@@ -14,6 +14,7 @@
 #   4. 告警將自動持久化至資料庫
 
 from .config import AlarmPersistenceConfig
+from .in_memory import InMemoryAlarmRepository
 from .persistence import AlarmPersistenceManager
 from .repository import AlarmRepository, MongoAlarmRepository
 from .schema import AlarmRecord, AlarmStatus, AlarmType
@@ -25,6 +26,7 @@ __all__ = [
     "AlarmPersistenceManager",
     # Repository
     "AlarmRepository",
+    "InMemoryAlarmRepository",
     "MongoAlarmRepository",
     # Schema
     "AlarmRecord",

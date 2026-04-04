@@ -15,7 +15,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from .schema import ScheduleRule, ScheduleType
+from . import matcher
+from .schema import ScheduleRule
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -169,11 +170,7 @@ class MongoScheduleRepository:
 
     @staticmethod
     def _matches_time(rule: ScheduleRule, now_time: str) -> bool:
-        """
-        檢查時間是否匹配
-
-        支援跨午夜：若 start_time > end_time，
-        匹配 now >= start_time OR now < end_time。
+        """檢查時間是否匹配（委派至 matcher 模組）
 
         Args:
             rule: 排程規則
@@ -182,20 +179,11 @@ class MongoScheduleRepository:
         Returns:
             bool: 是否匹配
         """
-        start = rule.start_time
-        end = rule.end_time
-
-        if start <= end:
-            # 正常時段：start <= now < end（或 now <= end 包含邊界）
-            return start <= now_time <= end
-        else:
-            # 跨午夜：22:00-06:00 → now >= 22:00 OR now <= 06:00
-            return now_time >= start or now_time <= end
+        return matcher.matches_time(rule, now_time)
 
     @staticmethod
     def _matches_schedule(rule: ScheduleRule, now_weekday: int, now_date: date) -> bool:
-        """
-        檢查排程類型條件是否匹配
+        """檢查排程類型條件是否匹配（委派至 matcher 模組）
 
         Args:
             rule: 排程規則
@@ -205,17 +193,7 @@ class MongoScheduleRepository:
         Returns:
             bool: 是否匹配
         """
-        if rule.schedule_type == ScheduleType.DAILY:
-            return True
-        elif rule.schedule_type == ScheduleType.WEEKLY:
-            return now_weekday in rule.days_of_week
-        elif rule.schedule_type == ScheduleType.ONCE:
-            if rule.start_date and now_date < rule.start_date:
-                return False
-            if rule.end_date and now_date > rule.end_date:
-                return False
-            return True
-        return False
+        return matcher.matches_schedule(rule, now_weekday, now_date)
 
 
 __all__ = [

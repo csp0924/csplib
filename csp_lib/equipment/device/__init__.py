@@ -19,6 +19,8 @@ from .event_bridge import AggregateCondition, EventBridge
 from .events import (
     EVENT_ALARM_CLEARED,
     EVENT_ALARM_TRIGGERED,
+    EVENT_CAPABILITY_ADDED,
+    EVENT_CAPABILITY_REMOVED,
     EVENT_CONNECTED,
     EVENT_DISCONNECTED,
     EVENT_POINT_TOGGLED,
@@ -30,6 +32,7 @@ from .events import (
     EVENT_WRITE_COMPLETE,
     EVENT_WRITE_ERROR,
     AsyncHandler,
+    CapabilityChangedPayload,
     ConnectedPayload,
     DeviceAlarmPayload,
     DeviceEventEmitter,
@@ -82,6 +85,7 @@ __all__ = [
     # Events
     "DeviceEventEmitter",
     "AsyncHandler",
+    "CapabilityChangedPayload",
     "ConnectedPayload",
     "ValueChangePayload",
     "DisconnectPayload",
@@ -106,4 +110,6 @@ __all__ = [
     "EVENT_RECONFIGURED",
     "EVENT_RESTARTED",
     "EVENT_POINT_TOGGLED",
+    "EVENT_CAPABILITY_ADDED",
+    "EVENT_CAPABILITY_REMOVED",
 ]

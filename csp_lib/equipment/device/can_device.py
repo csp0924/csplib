@@ -29,6 +29,8 @@ from csp_lib.equipment.transport.writer import WriteResult, WriteStatus
 from .capability import Capability, CapabilityBinding
 from .config import DeviceConfig
 from .events import (
+    EVENT_CAPABILITY_ADDED,
+    EVENT_CAPABILITY_REMOVED,
     EVENT_CONNECTED,
     EVENT_DISCONNECTED,
     EVENT_READ_COMPLETE,
@@ -36,6 +38,7 @@ from .events import (
     EVENT_WRITE_COMPLETE,
     EVENT_WRITE_ERROR,
     AsyncHandler,
+    CapabilityChangedPayload,
     ConnectedPayload,
     DeviceEventEmitter,
     DisconnectPayload,
@@ -210,10 +213,19 @@ class AsyncCANDevice(AlarmMixin):
 
     def add_capability(self, binding: CapabilityBinding) -> None:
         self._capability_bindings[binding.capability.name] = binding
+        self._emitter.emit(
+            EVENT_CAPABILITY_ADDED,
+            CapabilityChangedPayload(device_id=self._config.device_id, capability_name=binding.capability.name),
+        )
 
     def remove_capability(self, capability: Capability | str) -> None:
         name = capability.name if isinstance(capability, Capability) else capability
-        self._capability_bindings.pop(name, None)
+        if name in self._capability_bindings:
+            self._capability_bindings.pop(name, None)
+            self._emitter.emit(
+                EVENT_CAPABILITY_REMOVED,
+                CapabilityChangedPayload(device_id=self._config.device_id, capability_name=name),
+            )
 
     # =============== Health ===============
 

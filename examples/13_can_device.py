@@ -289,7 +289,7 @@ async def demo_can_device_with_registry():
         capability_bindings=[
             CapabilityBinding(
                 capability=POWER_WRITE,
-                slot_map={"p_target": "power_target", "q_target": "reactive_target"},
+                point_map={"p_target": "power_target", "q_target": "reactive_target"},
             ),
         ],
     )

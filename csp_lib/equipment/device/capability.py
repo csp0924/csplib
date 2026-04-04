@@ -16,7 +16,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from csp_lib.core.errors import ConfigurationError
 
@@ -69,10 +70,12 @@ class CapabilityBinding:
     Attributes:
         capability: 綁定的能力定義
         point_map: slot 名稱 → 實際點位名稱的映射
+        metadata: 自訂附加資訊（不驗證）
     """
 
     capability: Capability
     point_map: dict[str, str]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         required = self.capability.all_slots
