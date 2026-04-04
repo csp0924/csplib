@@ -1,5 +1,7 @@
 ---
 tags: [type/moc, status/complete]
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 # _MOC Guide
 

@@ -4,6 +4,8 @@ tags:
   - layer/modbus-server
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # Modbus Server 模組總覽

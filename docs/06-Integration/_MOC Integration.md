@@ -3,6 +3,8 @@ tags:
   - type/moc
   - layer/integration
   - status/complete
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # Integration 模組總覽

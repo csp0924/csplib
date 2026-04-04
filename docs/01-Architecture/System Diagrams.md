@@ -4,6 +4,8 @@ tags:
   - layer/architecture
   - status/complete
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # System Diagrams

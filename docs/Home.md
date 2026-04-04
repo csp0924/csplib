@@ -1,5 +1,7 @@
 ---
 tags: [type/reference, status/complete]
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 # CSP Library 知識庫
 

@@ -4,6 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/schema.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CommandMapping

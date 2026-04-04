@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/config.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceConfig

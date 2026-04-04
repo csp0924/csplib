@@ -4,6 +4,8 @@ tags:
   - layer/storage
   - status/complete
 source: csp_lib/redis/client.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # RedisClient

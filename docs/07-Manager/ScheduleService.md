@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/manager/schedule/service.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # ScheduleService

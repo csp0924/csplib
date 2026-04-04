@@ -6,6 +6,8 @@ tags:
   - status/complete
 source: csp_lib/integration/distributor.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # PowerDistributor

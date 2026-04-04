@@ -4,6 +4,8 @@ tags:
   - layer/manager
   - status/complete
 source: csp_lib/manager/device/group.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceGroup
