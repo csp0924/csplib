@@ -1,7 +1,7 @@
 ---
 tags: [type/reference, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # CSP Library 知識庫
 
@@ -22,19 +22,21 @@ version: ">=0.4.2"
 │  WriteCommand · ScheduleService         │   Protection   │
 ├─────────────────────────────────────────┤   ModeManager  │
 │              Equipment Layer            │   Cascading    │
-│  AsyncModbusDevice · AsyncCANDevice     │   LoadShedding │
+│  AsyncModbusDevice · AsyncCANDevice     │   CommandProc  │
 │  Points · Alarms · DeviceProtocol       │   EventOverride│
-│  Transport · Transforms · Pipeline      │                │
+│  Transport · Transforms · Pipeline      │   Compensator  │
 ├─────────────────────────────────────────┴────────────────┤
 │             Modbus Layer     │        CAN Layer           │
 │  DataTypes · Codec           │  CANBusConfig · CANFrame   │
 │  Clients (TCP/RTU/Shared)    │  PythonCANClient           │
 ├──────────────────────────────┴──────────────────────────┤
 │                       Core Layer                         │
-│  Logging · Lifecycle · Errors · Health · CircuitBreaker  │
+│  Logging · Lifecycle · Errors · Health · CircuitBreaker   │
+│  RuntimeParameters                                       │
 └─────────────────────────────────────────────────────────┘
 
-附加模組: Mongo · Redis · Cluster · Monitor · Notification · Modbus Server · GUI
+附加模組: Mongo · Redis · Cluster · Monitor · Notification
+         Modbus Server · Modbus Gateway · GUI · Statistics · gRPC
 ```
 
 ## 模組導覽
@@ -60,6 +62,8 @@ version: ">=0.4.2"
 | 📊 | [[_MOC Monitor]] | 系統監控 (CPU/RAM/Disk) |
 | 🔔 | [[_MOC Notification]] | 通知分發系統 |
 | 🧪 | [[_MOC Modbus Server]] | 模擬測試伺服器 |
+| 🔌 | [[_MOC Modbus Gateway]] | Modbus TCP Gateway（EMS/SCADA 整合） |
+| 📈 | [[_MOC Statistics]] | 統計引擎與追蹤器 |
 
 ### 使用資源
 
@@ -85,5 +89,5 @@ version: ">=0.4.2"
 - **作者**: Cheng Sin Pang (鄭善淜)
 - **聯絡**: donaldpang123@gmail.com
 - **Python**: 3.13+
-- **目前版本**: 0.6.0
+- **目前版本**: 0.6.1
 - **授權**: Apache-2.0

@@ -5,18 +5,18 @@ tags:
   - status/complete
 created: 2026-03-06
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # System Diagrams
 
-csp_lib v0.4.2 系統圖表集，以 Mermaid 語法呈現系統總覽、核心流程、狀態機與設備生命週期。
+csp_lib v0.6 系統圖表集，以 Mermaid 語法呈現系統總覽、核心流程、狀態機與設備生命週期。
 
 ---
 
 ## 1. 系統總覽架構圖
 
-v0.4.2 完整 8 層架構。依賴方向由下往上；CAN（Layer 2b）與 Modbus（Layer 2a）並列於 Layer 2。
+v0.6 完整 8 層架構。依賴方向由下往上；CAN（Layer 2b）與 Modbus（Layer 2a）並列於 Layer 2。
 
 ```mermaid
 graph TB
@@ -26,6 +26,8 @@ graph TB
         L8C[notification]
         L8D[modbus_server]
         L8E[gui]
+        L8F[modbus_gateway]
+        L8G[statistics]
     end
 
     subgraph L7["Layer 7 ── Storage"]
@@ -58,6 +60,8 @@ Bypass / LoadShedding"]
         L4D[ProtectionGuard]
         L4E[EventDrivenOverride]
         L4F[LoadSheddingStrategy]
+        L4G[CommandProcessor]
+        L4H[PowerCompensator]
     end
 
     subgraph L3["Layer 3 ── Equipment"]
@@ -88,6 +92,7 @@ Bypass / LoadShedding"]
         L1B[CircuitBreaker]
         L1C[RetryPolicy]
         L1D[HealthCheckable]
+        L1E[RuntimeParameters]
     end
 
     L8 --> L6
@@ -137,7 +142,8 @@ flowchart TD
 
     subgraph CMD["_on_command(command)"]
         E --> F[ProtectionGuard.apply] --> G[Protected Command]
-        G --> H{有 EventDrivenOverride?}
+        G --> G2[CommandProcessor Pipeline\npost_protection_processors]
+        G2 --> H{有 EventDrivenOverride?}
         H -->|是| I[_evaluate_event_overrides]
         H -->|否| J
         I --> J
@@ -162,6 +168,7 @@ flowchart TD
 | `ContextBuilder` | 讀取設備點位、組裝 `StrategyContext` | [[ContextBuilder]] |
 | `StrategyExecutor` | 以固定週期或事件驅動呼叫策略 | [[SystemController]] |
 | `ProtectionGuard` | 套用 SOC 限制、逆送保護等保護規則 | [[SystemController]] |
+| `CommandProcessor` | Post-Protection 命令處理管線 | [[CommandProcessor]] |
 | `EventDrivenOverride` | 條件驅動的自動 push/pop override | [[EventDrivenOverride]] |
 | `PowerDistributor` | 將系統 Command 分配到各設備 | [[PowerDistributor]] |
 | `CommandRouter` | 將 Command 欄位寫入對應設備點位 | [[CommandRouter]] |

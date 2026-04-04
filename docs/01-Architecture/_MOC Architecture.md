@@ -1,7 +1,7 @@
 ---
 tags: [type/moc, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # _MOC Architecture
 
@@ -14,8 +14,8 @@ csp_lib 採用嚴格的分層架構，依賴方向由上往下，每層只依賴
 ## 頁面索引
 
 ### 架構設計
-- [[Layered Architecture]] — 六層分層架構詳解
-- [[System Diagrams]] — v0.4.2 系統總覽、流程、狀態機與生命週期圖表（6 張）
+- [[Layered Architecture]] — 八層分層架構詳解
+- [[System Diagrams]] — v0.6 系統總覽、流程、狀態機與生命週期圖表（6 張）
 - [[Data Flow]] — 核心資料流（讀取循環、控制循環、模式切換）
 - [[Design Patterns]] — 設計模式總覽
 

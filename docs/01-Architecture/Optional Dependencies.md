@@ -1,7 +1,7 @@
 ---
 tags: [type/concept, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # Optional Dependencies
 

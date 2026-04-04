@@ -1,7 +1,7 @@
 ---
 tags: [type/concept, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # Layered Architecture
 
@@ -112,9 +112,11 @@ csp_lib 採用嚴格的由下往上分層架構，每層只依賴下一層的公
 │  │ PVSmoothStrategy    │ 太陽能平滑化 (ramp rate 限制)     │                      │
 │  │ QVStrategy          │ 電壓-無效功率下垂控制              │                      │
 │  │ FPStrategy          │ 頻率-有效功率響應 (AFC 6 點曲線)   │                      │
+│  │ DroopStrategy       │ 通用下垂控制                      │                      │
 │  │ IslandModeStrategy  │ 孤島模式 (斷路器開/合)             │                      │
 │  │ ScheduleStrategy    │ 排程切換 (動態換策略)              │                      │
 │  │ StopStrategy        │ 停機 (P=0, Q=0)                  │                      │
+│  │ RampStopStrategy    │ 斜率停機 (漸進式降載)              │                      │
 │  │ BypassStrategy      │ 旁路 (保持上一次命令)              │                      │
 │  │ CascadingStrategy   │ 多策略功率級聯分配                 │                      │
 │  │ LoadSheddingStrategy│ 階段性負載卸載 (離網場景)           │                      │
@@ -139,7 +141,13 @@ csp_lib 採用嚴格的由下往上分層架構，每層只依賴下一層的公
 │  │  SystemAlarmProtection │ 系統告警保護 (強制停機)         │                       │
 │  └──────────────────────────────────────────────────────┘                       │
 │                                                                                 │
-│  職責：控制演算法、功率計算、保護規則                                                 │
+│  ┌──────────────────────────────────────────────────────┐                       │
+│  │ CommandProcessor (Protocol) — Post-Protection 管線    │                       │
+│  │  PowerCompensator      │ FF + I 閉環功率補償           │                       │
+│  │  FFCalibrationStrategy │ FF 表步進校準（維護模式）       │                       │
+│  └──────────────────────────────────────────────────────┘                       │
+│                                                                                 │
+│  職責：控制演算法、功率計算、保護規則、命令後處理                                        │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -228,14 +236,14 @@ csp_lib 採用嚴格的由下往上分層架構，每層只依賴下一層的公
 - [[CommandRouter]] — 將 [[Command]] 路由到目標設備（支援 [[CapabilityCommandMapping]]）
 - [[SystemController]] — 完整系統控制器，整合 [[ModeManager]]、[[ProtectionGuard]]、[[CascadingStrategy]]（v0.4.2 支援 [[EventDrivenOverride]]、實作 [[ScheduleModeController]] Protocol）
 - [[GroupControllerManager]] — 多群組控制器管理，為每組設備建立獨立 [[SystemController]]
-- [[PowerDistributor]] — 功率分配器抽象（v0.4.2），含 EqualDistributor、ProportionalDistributor、SOCBalancingDistributor
-- [[HeartbeatService]] — 心跳寫入服務（v0.4.2），支援 TOGGLE / INCREMENT / CONSTANT 模式
+- [[PowerDistributor]] — 功率分配器抽象，含 EqualDistributor、ProportionalDistributor、SOCBalancingDistributor
+- [[HeartbeatService]] — 心跳寫入服務，支援 TOGGLE / INCREMENT / CONSTANT 模式
 
 ### Layer 4: Controller 控制策略層
 
 **對應模組**：[[_MOC Controller]]
 
-純邏輯層，實作 8 種控制策略與保護規則：
+純邏輯層，實作 12 種控制策略與保護規則：
 
 | 策略 | 說明 |
 |------|------|
@@ -243,22 +251,29 @@ csp_lib 採用嚴格的由下往上分層架構，每層只依賴下一層的公
 | [[PVSmoothStrategy]] | 太陽能平滑化 |
 | [[QVStrategy]] | 電壓-無效功率下垂控制 |
 | [[FPStrategy]] | 頻率-有效功率響應 |
+| [[DroopStrategy]] | 通用下垂控制 |
 | [[IslandModeStrategy]] | 孤島模式 |
 | [[ScheduleStrategy]] | 排程切換 |
 | [[StopStrategy]] | 停機 |
+| [[RampStopStrategy]] | 斜率停機（漸進式降載） |
 | [[BypassStrategy]] | 旁路 |
 | [[CascadingStrategy]] | 多策略功率級聯分配 |
-| [[LoadSheddingStrategy]] | 階段性負載卸載（v0.4.2） |
+| [[LoadSheddingStrategy]] | 階段性負載卸載 |
 
 保護規則鏈：[[SOCProtection]] -> [[ReversePowerProtection]] -> [[SystemAlarmProtection]]
 
-v0.4.2 新增事件驅動覆蓋機制：
+事件驅動覆蓋機制：
 - [[EventDrivenOverride]] — `@runtime_checkable Protocol`，條件驅動的自動 override
 - [[AlarmStopOverride]] — 告警自動停機（內建實現）
 - [[ContextKeyOverride]] — 通用 context key 觸發（內建實現）
 
-v0.4.2 新增排程模式橋接協定：
+排程模式橋接協定：
 - [[ScheduleModeController]] — `@runtime_checkable Protocol`，供 ScheduleService (L5) 驅動 SystemController (L6) 的排程模式切換，避免 Manager 層直接依賴 Integration 層
+
+Post-Protection 命令處理管線：
+- [[CommandProcessor]] — `@runtime_checkable Protocol`，在 ProtectionGuard 和 CommandRouter 之間對命令做額外處理
+- [[PowerCompensator]] — 前饋 + 積分閉環功率補償（實作 CommandProcessor）
+- [[FFCalibrationStrategy]] — 維護模式 FF 表步進校準（實作 Strategy）
 
 ### Layer 5: Manager 管理層
 
@@ -272,7 +287,7 @@ v0.4.2 新增排程模式橋接協定：
 - [[DataUploadManager]] — 讀取數據批次上傳
 - [[WriteCommandManager]] — 外部命令執行與審計
 - [[StateSyncManager]] — Redis 即時狀態同步
-- [[ScheduleService]] — 排程服務（v0.4.2），透過 [[ScheduleModeController]] Protocol 驅動策略切換
+- [[ScheduleService]] — 排程服務，透過 [[ScheduleModeController]] Protocol 驅動策略切換
 
 ### Layer 0: Core 基礎層
 
@@ -283,8 +298,9 @@ v0.4.2 新增排程模式橋接協定：
 - `get_logger` / `configure_logging` — centralized loguru 日誌
 - [[AsyncLifecycleMixin]] — 統一 async 生命週期管理（start/stop/async with）
 - [[HealthCheckable]] / [[HealthReport]] — 健康檢查協定
+- [[RuntimeParameters]] — 執行緒安全的可變參數容器，供 EMS/Modbus/Redis 注入執行期參數
 - 錯誤階層：`DeviceError` → `DeviceConnectionError`、`CommunicationError`、`AlarmError`、`ConfigurationError`
-- [[CircuitBreaker]] / [[CircuitState]] / [[RetryPolicy]] — 通用韌性模式（v0.4.2 從 Modbus 層提升至 Core）
+- [[CircuitBreaker]] / [[CircuitState]] / [[RetryPolicy]] — 通用韌性模式
 
 ### 儲存層
 

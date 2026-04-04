@@ -5,7 +5,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # 完整系統整合指南
@@ -203,6 +203,40 @@ async with controller:
     await asyncio.sleep(3600)
 ```
 
+### SystemControllerConfigBuilder（Fluent API）
+
+使用 `SystemControllerConfig.builder()` 以鏈式呼叫逐步建構配置：
+
+```python
+from csp_lib.integration import SystemControllerConfig
+from csp_lib.controller import SOCProtection, SOCProtectionConfig
+
+config = (
+    SystemControllerConfig.builder()
+    .system_base(p_base=1000, q_base=500)
+    .map_context(point_name="soc", target="soc", device_id="bms_001")
+    .map_context(point_name="power", target="extra.meter_power", trait="meter")
+    .map_command(field="p_target", trait="pcs", point_name="p_setpoint")
+    .protect(SOCProtection(SOCProtectionConfig(soc_high=95, soc_low=5, warning_band=5)))
+    .processor(compensator)  # CommandProcessor 管線
+    .build()
+)
+```
+
+### preflight_check（啟動前驗證）
+
+`SystemController` 在 `_on_start()` 時自動呼叫 `preflight_check()`，驗證 capability_requirements 是否滿足。也可手動呼叫：
+
+```python
+controller = SystemController(registry, config)
+warnings = controller.preflight_check()
+# warnings 為空表示所有能力需求皆滿足
+for w in warnings:
+    print(f"Warning: {w}")
+```
+
+設定 `strict_capability_check=True` 時，preflight 失敗會拋出 `ConfigurationError`。
+
 ### SystemController 內部流程
 
 ```
@@ -213,6 +247,9 @@ StrategyExecutor (strategy decided by ModeManager)
        |
        v
 Command (raw) -> ProtectionGuard.apply() -> Command (protected)
+       |
+       v
+[CommandProcessor 1] -> [CommandProcessor 2] -> ... (post_protection_processors)
        |
        v
 CommandRouter.route() -> Device writes
@@ -291,7 +328,7 @@ async with manager:
 
 ---
 
-## PowerDistributor：多機功率分配（v0.4.2 新增）
+## PowerDistributor：多機功率分配
 
 當系統有多台 PCS 或 BESS 需要分配功率時，使用 [[PowerDistributor]] 搭配 `capability_command_mappings` 進行 per-device 智能分配：
 

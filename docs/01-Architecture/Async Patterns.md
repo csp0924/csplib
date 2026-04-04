@@ -1,7 +1,7 @@
 ---
 tags: [type/concept, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # Async Patterns
 
@@ -78,6 +78,8 @@ async with MyService() as svc:
 | [[DeviceManager]] | Manager | 設備生命週期管理 |
 | [[GridControlLoop]] | Integration | 基本控制迴圈 |
 | [[SystemController]] | Integration | 完整系統控制器 |
+| [[ModbusGatewayServer]] | Additional | Modbus TCP Gateway（EMS/SCADA） |
+| [[HeartbeatService]] | Integration | 心跳寫入服務 |
 
 ## Async 設計模式
 
@@ -129,10 +131,9 @@ async with self._lock:
 
 ## 測試非同步程式碼
 
-使用 `@pytest.mark.asyncio` 裝飾器標記非同步測試：
+專案已啟用 `asyncio_mode = "auto"`，非同步測試函式會被自動識別，**不需要** `@pytest.mark.asyncio` 裝飾器：
 
 ```python
-@pytest.mark.asyncio
 async def test_device_lifecycle():
     async with AsyncModbusDevice(config) as device:
         assert device.is_connected

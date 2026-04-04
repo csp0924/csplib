@@ -1,17 +1,17 @@
 ---
 tags: [type/concept, status/complete]
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 # Event System
 
-> 事件驅動架構 — DeviceEventEmitter 與 9 種事件類型（Modbus + CAN 共用）
+> 事件驅動架構 — DeviceEventEmitter 與 12 種事件類型（Modbus + CAN 共用）
 
 ## 概述
 
 csp_lib 採用事件驅動架構，設備狀態變化透過 [[DeviceEventEmitter]] 通知所有訂閱者。事件系統基於 `asyncio.Queue`，實現非阻塞的發布/訂閱模式。
 
-v0.4.2 重要：[[AsyncCANDevice]] 與 [[AsyncModbusDevice]] 共用同一套事件系統，所有 9 種事件皆適用於兩種設備類型。
+[[AsyncCANDevice]] 與 [[AsyncModbusDevice]] 共用同一套事件系統，所有 12 種事件皆適用於兩種設備類型。
 
 ## DeviceEventEmitter
 
@@ -60,7 +60,7 @@ await emitter.stop()
 | `clear(event)` | 清除處理器（None = 全部清除） |
 | `queue_size` | 目前佇列中的事件數量 |
 
-## 9 種事件類型
+## 12 種事件類型
 
 | 事件常數 | 事件名稱 | Payload 類別 | 觸發時機 |
 |---------|---------|-------------|---------|
@@ -73,6 +73,9 @@ await emitter.stop()
 | `EVENT_ALARM_CLEARED` | `alarm_cleared` | `DeviceAlarmPayload` | 告警解除 |
 | `EVENT_WRITE_COMPLETE` | `write_complete` | `WriteCompletePayload` | 寫入成功 |
 | `EVENT_WRITE_ERROR` | `write_error` | `WriteErrorPayload` | 寫入失敗 |
+| `EVENT_RECONFIGURED` | `reconfigured` | `ReconfiguredPayload` | 設備重新配置 |
+| `EVENT_RESTARTED` | `restarted` | `RestartedPayload` | 設備重啟 |
+| `EVENT_POINT_TOGGLED` | `point_toggled` | `PointToggledPayload` | 點位啟用/停用切換 |
 
 ### Payload 類別
 
@@ -88,6 +91,9 @@ await emitter.stop()
 | `DeviceAlarmPayload` | `device_id`, `alarm_event`, `timestamp` |
 | `WriteCompletePayload` | `device_id`, `point_name`, `value`, `timestamp` |
 | `WriteErrorPayload` | `device_id`, `point_name`, `value`, `error`, `timestamp` |
+| `ReconfiguredPayload` | `device_id`, `changed_sections`, `timestamp` |
+| `RestartedPayload` | `device_id`, `timestamp` |
+| `PointToggledPayload` | `device_id`, `point_name`, `enabled`, `timestamp` |
 
 ## 事件流向
 
@@ -105,12 +111,15 @@ AsyncModbusDevice
     ├── emit(ALARM_CLEARED)     ──→  AlarmPersistenceManager (→ MongoDB)
     │                           ──→  StateSyncManager (→ Redis)
     ├── emit(WRITE_COMPLETE)    ──→  WriteCommandManager (審計記錄)
-    └── emit(WRITE_ERROR)       ──→  WriteCommandManager (錯誤記錄)
+    ├── emit(WRITE_ERROR)       ──→  WriteCommandManager (錯誤記錄)
+    ├── emit(RECONFIGURED)      ──→  自訂訂閱者 (配置變更通知)
+    ├── emit(RESTARTED)         ──→  自訂訂閱者 (重啟通知)
+    └── emit(POINT_TOGGLED)     ──→  自訂訂閱者 (點位開關狀態)
 ```
 
 ## CAN 設備的事件特性
 
-[[AsyncCANDevice]]（v0.4.2）的事件行為與 [[AsyncModbusDevice]] 相同，但有以下差異：
+[[AsyncCANDevice]] 的事件行為與 [[AsyncModbusDevice]] 相同，但有以下差異：
 
 | 特性 | AsyncModbusDevice | AsyncCANDevice |
 |------|------------------|---------------|
