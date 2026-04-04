@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/schedule_strategy.py
 created: 2026-02-17
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # ScheduleStrategy

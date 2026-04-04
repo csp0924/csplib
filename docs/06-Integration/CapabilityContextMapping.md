@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/integration/schema.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CapabilityContextMapping
@@ -40,6 +42,26 @@ Capability-driven 設備值 → StrategyContext 映射定義，隸屬於 [[_MOC 
 | `custom_aggregate` | `Callable` | `None` | 自訂聚合函式，優先於 `aggregate` |
 | `default` | `Any` | `None` | 無法取得有效值時的預設值 |
 | `transform` | `Callable` | `None` | 值轉換函式，套用於聚合結果之後 |
+| `min_device_ratio` | `float` | `0.0` | 最低設備響應比例（0.0~1.0），低於此比例時回傳 `default` 並發出警告 |
+
+### min_device_ratio 品質檢查
+
+> [!info] v0.6.0 新增
+
+當 `min_device_ratio > 0` 時，[[ContextBuilder]] 會在聚合前檢查 responsive 設備占 capable 設備的比例。若比例不足，放棄聚合並回傳 `default`。
+
+```python
+# 至少 80% 的 SOC capable 設備需要 responsive
+CapabilityContextMapping(
+    capability=SOC_READABLE,
+    slot="soc",
+    context_field="soc",
+    min_device_ratio=0.8,
+    default=50.0,  # 品質不足時使用安全預設值
+)
+```
+
+詳見 [[CapabilityRequirement]] 的 AggregationResult 說明。
 
 ## 驗證規則
 
@@ -99,4 +121,5 @@ device.latest_values.get("battery_soc_pct") -> 85.3
 - [[AggregateFunc]] -- 聚合函式定義
 - [[ContextBuilder]] -- 使用 CapabilityContextMapping 建構 StrategyContext
 - [[SystemController]] -- 透過 `capability_context_mappings` 配置
+- [[CapabilityRequirement]] -- 能力需求定義與 AggregationResult
 - [[CapabilityBinding Integration]] -- 完整架構與流程圖

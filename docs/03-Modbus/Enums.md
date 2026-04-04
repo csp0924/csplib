@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/modbus/enums.py
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # Enums
@@ -12,6 +14,25 @@ created: 2026-02-17
 ## Modbus 列舉定義 (`csp_lib.modbus.enums`)
 
 定義 Modbus 通訊所需的常數與列舉，包含位元組順序、暫存器順序、串口校驗位元及功能碼。
+
+---
+
+## Quick Example
+
+```python
+from csp_lib.modbus import ByteOrder, RegisterOrder, FunctionCode, Parity
+
+# 組合位元組順序與暫存器順序
+byte_order = ByteOrder.BIG_ENDIAN        # ">"
+reg_order = RegisterOrder.HIGH_FIRST     # "high"
+
+# 功能碼比較（IntEnum）
+fc = FunctionCode.READ_HOLDING_REGISTERS  # 0x03
+assert fc == 3
+
+# 串口校驗
+parity = Parity.EVEN  # "E"
+```
 
 ---
 

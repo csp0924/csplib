@@ -5,6 +5,7 @@ tags:
   - status/complete
 source: csp_lib/controller/core/context.py
 created: 2026-02-17
+updated: 2026-04-04
 ---
 
 # StrategyContext
@@ -25,17 +26,34 @@ created: 2026-02-17
 | `soc` | `Optional[float]` | `None` | 儲能系統 SOC (%) |
 | `system_base` | `Optional[`[[SystemBase]]`]` | `None` | 系統基準值 |
 | `current_time` | `Optional[datetime]` | `None` | 當前時間 (由 Executor 自動注入) |
-| `extra` | `dict[str, Any]` | `{}` | 額外資料 (供擴充使用) |
+| `extra` | `dict[str, Any]` | `{}` | 額外資料 — 設備讀值（由 ContextMapping 注入） |
+| `params` | `RuntimeParameters \| None` | `None` | 系統參數 — RuntimeParameters 引用（由 SystemController 注入） |
+
+> [!info] v0.5.0 新增
+> `params` 屬性在 v0.5.0 加入，提供對 `RuntimeParameters` 的引用。
+
+### params 與 extra 的區別
+
+| 面向 | `extra` | `params` |
+|------|---------|----------|
+| **用途** | 設備讀值、感測器資料（frequency, voltage, meter_power 等） | 系統參數、EMS 指令（soc_max, grid_limit_pct, ramp_rate 等） |
+| **注入方式** | 由 `ContextMapping` 從設備 `latest_values` 映射 | 由 `SystemController` 從 `RuntimeParameters` 直接引用 |
+| **資料來源** | Modbus 設備輪詢 | EMS/Modbus 寫入、Redis channel、外部 API |
+| **更新頻率** | 每個控制週期重新映射 | 外部觸發時更新（thread-safe） |
+| **存取方式** | `context.extra["key"]` | `context.params.get("key")` |
+| **典型使用者** | [[FPStrategy]]、[[QVStrategy]]、[[ReversePowerProtection]] | [[DynamicSOCProtection]]、[[GridLimitProtection]]、[[PowerCompensator]] |
 
 ### extra 常見鍵值
 
 | 鍵 | 用途 | 使用者 |
 |----|------|--------|
 | `"voltage"` | 系統電壓 (V) | [[QVStrategy]] |
-| `"frequency"` | 系統頻率 (Hz) | [[FPStrategy]] |
-| `"meter_power"` | 電表功率 (kW) | [[ReversePowerProtection]] |
+| `"frequency"` | 系統頻率 (Hz) | [[FPStrategy]]、[[DroopStrategy]] |
+| `"meter_power"` | 電表功率 (kW) | [[ReversePowerProtection]]、[[PowerCompensator]] |
 | `"system_alarm"` | 系統告警旗標 | [[SystemAlarmProtection]] |
 | `"remaining_s_kva"` | 剩餘視在功率容量 | [[CascadingStrategy]] |
+| `"schedule_p"` | 排程功率設定點 (kW) | [[DroopStrategy]] |
+| `"dt"` | 距上次呼叫的時間間隔 (秒) | [[PowerCompensator]] |
 
 ## 輔助方法
 
@@ -46,20 +64,30 @@ created: 2026-02-17
 
 > [!warning] 呼叫 `percent_to_kw` / `percent_to_kvar` 前需確保 `system_base` 已設定，否則拋出 `ValueError`。
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.controller import StrategyContext, Command, SystemBase
+from csp_lib.core import RuntimeParameters
+
+# 建立帶有 params 的 context
+params = RuntimeParameters(soc_max=95.0, soc_min=5.0)
 
 context = StrategyContext(
     last_command=Command(),
     soc=75.0,
     system_base=SystemBase(p_base=1000, q_base=500),
-    current_time=None,  # Auto-injected by executor
     extra={"voltage": 380.0, "frequency": 60.0},
+    params=params,
 )
 
-# Percent to kW/kVar conversion
+# extra: 讀取設備資料
+freq = context.extra["frequency"]  # 60.0
+
+# params: 讀取系統參數
+soc_max = context.params.get("soc_max")  # 95.0
+
+# 百分比轉換
 p_kw = context.percent_to_kw(50)    # -> 500.0
 q_kvar = context.percent_to_kvar(20) # -> 100.0
 ```
@@ -70,3 +98,6 @@ q_kvar = context.percent_to_kvar(20) # -> 100.0
 - [[SystemBase]] — `system_base` 的型別
 - [[Strategy]] — `execute(context)` 接收 StrategyContext
 - [[StrategyExecutor]] — 負責建構與注入 StrategyContext
+- [[DynamicSOCProtection]] — 透過 `params` 讀取動態 SOC 上下限
+- [[GridLimitProtection]] — 透過 `params` 讀取功率限制
+- [[PowerCompensator]] — 透過 `extra` 讀取量測值

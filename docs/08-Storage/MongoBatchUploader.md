@@ -4,6 +4,8 @@ tags:
   - layer/storage
   - status/complete
 source: csp_lib/mongo/uploader.py
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # MongoBatchUploader
@@ -12,7 +14,24 @@ MongoDB 批次上傳器，隸屬於 [[_MOC Storage|Storage 模組]]。
 
 ## 概述
 
-`MongoBatchUploader` 組合 `BatchQueue` + `MongoWriter`，提供集合式批次上傳功能：
+`MongoBatchUploader` 實作 [[BatchUploader]] Protocol（v0.6.0），組合 `BatchQueue` + `MongoWriter`，提供集合式批次上傳功能：
+
+### Protocol 關係
+
+```
+BatchUploader (Protocol)        ← csp_lib/manager/base.py
+    ├── register_collection()
+    └── enqueue()
+          ▲
+          │ 實作
+MongoBatchUploader              ← csp_lib/mongo/uploader.py
+    ├── register_collection()
+    ├── enqueue()
+    ├── start() / stop()
+    └── flush_all()
+```
+
+`MongoBatchUploader` 除了滿足 `BatchUploader` Protocol 的兩個方法外，還提供生命週期管理（`start`/`stop`）與強制 flush 等擴充功能。
 
 - 所有資料按 collection 進入對應的 queue
 - 定期或資料量達閾值時批次上傳（`insert_many`）
@@ -56,25 +75,40 @@ MongoDB 批次上傳器，隸屬於 [[_MOC Storage|Storage 模組]]。
 - 超過 `max_retry_count` 次後丟棄該批資料並 log error
 - 重試計數以 collection 為單位
 
+## Quick Example
+
+```python
+from csp_lib.mongo import MongoBatchUploader
+
+uploader = MongoBatchUploader(db).start()
+await uploader.enqueue("measurements", {"voltage": 220.5})
+await uploader.stop()
+```
+
 ## 使用範例
 
 ```python
 from csp_lib.mongo import MongoBatchUploader, UploaderConfig
 
 config = UploaderConfig(
-    flush_interval=5,           # Flush every 5 seconds
-    batch_size_threshold=100,   # Or when 100 docs accumulated
-    max_queue_size=10000,       # Queue limit
-    max_retry_count=3,          # Max retries per batch
+    flush_interval=5,           # 每 5 秒 flush
+    batch_size_threshold=100,   # 累積 100 筆後觸發上傳
+    max_queue_size=10000,       # Queue 上限
+    max_retry_count=3,          # 單批最大重試次數
 )
 
-uploader = MongoBatchUploader(db=db, config=config)
-async with uploader:
-    await uploader.enqueue("collection_name", {"key": "value"})
+uploader = MongoBatchUploader(mongo_db=db, config=config)
+uploader.start()
+
+await uploader.enqueue("collection_name", {"key": "value"})
+
+# 關閉時確保所有資料都已上傳
+await uploader.stop()
 ```
 
 ## 相關頁面
 
+- [[BatchUploader]] — 此類別實作的 Protocol 介面
 - [[MongoConfig]] — MongoDB 連線配置
 - [[DataUploadManager]] — 使用 MongoBatchUploader 進行設備資料上傳
 - [[_MOC Storage]] — Storage 模組總覽

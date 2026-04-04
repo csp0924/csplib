@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/can/clients/
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CAN Clients
@@ -23,16 +25,16 @@ from csp_lib.can.clients.base import AsyncCANClientBase
 
 ### 介面方法
 
-| 分類 | 方法 | 說明 |
-|------|------|------|
-| **連線管理** | `connect()` | 建立連線 |
-| | `disconnect()` | 斷開連線 |
-| | `is_connected()` | 檢查是否已連線 |
-| **被動監聽** | `start_listener()` | 啟動背景接收 |
-| | `stop_listener()` | 停止背景接收 |
-| | `subscribe(can_id, handler)` | 訂閱指定 CAN ID，回傳取消函數 |
-| **主動發送** | `send(can_id, data)` | 發送 CAN 訊框 |
-| **請求-回應** | `request(can_id, data, response_id, timeout)` | 發送並等回應 |
+| 分類 | 方法 | 回傳 | 說明 |
+|------|------|------|------|
+| **連線管理** | `async connect()` | `None` | 建立連線 |
+| | `async disconnect()` | `None` | 斷開連線 |
+| | `async is_connected()` | `bool` | 檢查是否已連線 |
+| **被動監聽** | `async start_listener()` | `None` | 啟動背景接收 |
+| | `async stop_listener()` | `None` | 停止背景接收 |
+| | `subscribe(can_id: int, handler: Callable[[CANFrame], Any])` | `Callable[[], None]` | 訂閱指定 CAN ID，回傳取消函數 |
+| **主動發送** | `async send(can_id: int, data: bytes)` | `None` | 發送 CAN 訊框 |
+| **請求-回應** | `async request(can_id: int, data: bytes, response_id: int, timeout: float = 1.0)` | `CANFrame` | 發送並等回應，逾時拋出 [[CAN Exceptions\|CANTimeoutError]] |
 
 ---
 
@@ -49,7 +51,13 @@ client = PythonCANClient(CANBusConfig(
 ))
 ```
 
-### 完整使用範例
+### 建構參數
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `config` | [[CAN Configuration\|CANBusConfig]] | CAN Bus 連線設定 |
+
+### Quick Example
 
 ```python
 # 1. 連線

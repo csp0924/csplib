@@ -1,6 +1,8 @@
 ---
 tags: [type/concept, layer/core, status/complete]
 source: csp_lib/core/errors.py
+updated: 2026-04-04
+version: v0.6.1
 ---
 # Error Hierarchy
 
@@ -21,6 +23,12 @@ source: csp_lib/core/errors.py
 | `CommunicationError` | `DeviceError` | `device_id`, `message` | 讀寫逾時/解碼錯誤 |
 | `AlarmError` | `DeviceError` | `device_id`, `alarm_code`, `message` | 告警觸發 |
 | `ConfigurationError` | `Exception` | `message` | 配置無效（非設備層級） |
+| `StrategyExecutionError` | `Exception` | `strategy_name`, `message` | 策略執行失敗（非設備層級） |
+| `ProtectionError` | `Exception` | `rule_name`, `message` | 保護鏈失敗（非設備層級） |
+| `DeviceRegistryError` | `DeviceError` | `device_id`, `message` | 設備註冊/查詢失敗 |
+
+> [!info] v0.5.1 新增
+> `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 於 v0.5.1 加入。
 
 ## 繼承結構
 
@@ -29,11 +37,14 @@ Exception
 ├── DeviceError(device_id, message)
 │   ├── DeviceConnectionError
 │   ├── CommunicationError
-│   └── AlarmError(device_id, alarm_code, message)
-└── ConfigurationError(message)
+│   ├── AlarmError(device_id, alarm_code, message)
+│   └── DeviceRegistryError
+├── ConfigurationError(message)
+├── StrategyExecutionError(strategy_name, message)
+└── ProtectionError(rule_name, message)
 ```
 
-## 使用範例
+## Quick Example
 
 ### 捕捉設備相關錯誤
 
@@ -73,9 +84,51 @@ if not config.is_valid():
     raise ConfigurationError("無效的系統配置：缺少必要欄位")
 ```
 
+### 策略執行錯誤
+
+> [!info] v0.5.1 新增
+
+```python
+from csp_lib.core import StrategyExecutionError
+
+try:
+    await executor.execute(strategy, context)
+except StrategyExecutionError as e:
+    logger.error(f"策略 {e.strategy_name} 執行失敗: {e}")
+```
+
+### 保護鏈錯誤
+
+> [!info] v0.5.1 新增
+
+```python
+from csp_lib.core import ProtectionError
+
+try:
+    await guard.check(command)
+except ProtectionError as e:
+    logger.error(f"保護規則 {e.rule_name} 觸發: {e}")
+```
+
+### 設備註冊錯誤
+
+> [!info] v0.5.1 新增
+
+```python
+from csp_lib.core import DeviceRegistryError
+
+try:
+    device = registry.get("pcs_01")
+except DeviceRegistryError as e:
+    logger.error(f"設備 {e.device_id} 註冊查詢失敗: {e}")
+```
+
 ## 設計備註
 
 - `DeviceError` 及其子類別皆攜帶 `device_id` 屬性，方便日誌與監控系統識別問題設備
 - `AlarmError` 額外攜帶 `alarm_code`，對應告警定義中的代碼
 - `ConfigurationError` 直接繼承 `Exception` 而非 `DeviceError`，因為配置錯誤不一定與特定設備相關
+- `StrategyExecutionError` 攜帶 `strategy_name` 屬性，訊息格式：`Strategy '{strategy_name}': {message}`
+- `ProtectionError` 攜帶 `rule_name` 屬性，訊息格式：`Protection rule '{rule_name}': {message}`
+- `DeviceRegistryError` 繼承 `DeviceError`，因為設備註冊/查詢與特定設備相關
 - 錯誤訊息格式：`[{device_id}] {message}`

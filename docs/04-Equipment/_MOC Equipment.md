@@ -3,6 +3,8 @@ tags:
   - type/moc
   - layer/equipment
   - status/complete
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # _MOC Equipment
@@ -47,6 +49,7 @@ Equipment 模組是 csp_lib 的核心抽象層，建構於 [[_MOC Modbus]] 與 [
 | [[DeviceProtocol]] | 設備通用協定（Modbus / CAN 共用） |
 | [[DeviceConfig]] | 設備設定參數 |
 | [[DeviceEventEmitter]] | 事件發射器與 12 種事件類型 |
+| [[DOActions]] | DO 動作抽象（PULSE / SUSTAINED / TOGGLE）（v0.6.0） |
 
 ### 傳輸層
 

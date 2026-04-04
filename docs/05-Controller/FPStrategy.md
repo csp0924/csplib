@@ -5,6 +5,7 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/fp_strategy.py
 created: 2026-02-17
+updated: 2026-04-04
 ---
 
 # FPStrategy
@@ -95,3 +96,4 @@ strategy = FPStrategy(FPConfig(
 - [[StrategyContext]] — 從 `extra["frequency"]` 讀取頻率
 - [[SystemBase]] — 將百分比轉換為 kW
 - [[Command]] — execute 回傳值
+- [[DroopStrategy]] — 標準下垂控制策略（更簡潔的頻率-功率響應）

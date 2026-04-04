@@ -4,6 +4,7 @@ tags:
   - layer/manager
   - status/complete
 source: csp_lib/manager/device/group.py
+updated: 2026-04-04
 ---
 
 # DeviceGroup
@@ -54,6 +55,26 @@ source: csp_lib/manager/device/group.py
 2. 每台設備讀取後等待 `step_interval`
 3. 一輪完成後計算剩餘等待時間，補齊至 `interval`
 4. 單一設備的讀取錯誤不影響其他設備
+
+## Quick Example
+
+```python
+from csp_lib.manager.device import DeviceGroup
+
+group = DeviceGroup(
+    devices=[rtu_device_1, rtu_device_2, rtu_device_3],
+    interval=1.0,        # 每輪間隔 1 秒
+    step_interval=0.05,  # 設備間間隔 50ms
+)
+
+group.start()
+# ... 運行中 ...
+await group.stop()
+
+# 屬性查詢
+print(group.device_ids)   # ["rtu_001", "rtu_002", "rtu_003"]
+print(group.is_running)   # False (已停止)
+```
 
 ## 相關頁面
 

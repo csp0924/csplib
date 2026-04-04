@@ -3,6 +3,8 @@ tags:
   - type/moc
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # Reference
@@ -18,6 +20,7 @@ created: 2026-02-17
 | [[All Config Classes]] | 所有配置類別索引（Dataview 動態查詢） |
 | [[All Events]] | 所有設備事件與 Payload 型別 |
 | [[Import Paths]] | 各模組的 import 路徑總覽 |
+| [[UML Diagrams]] | UML 類別關係圖（Mermaid 格式） |
 | [[Version History]] | 版本歷史紀錄 |
 
 ## 相關資源

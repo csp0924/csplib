@@ -1,5 +1,7 @@
 ---
 tags: [type/moc, layer/<LAYER>, status/draft]
+updated: <YYYY-MM-DD>
+version: ">=X.Y.Z"
 ---
 # _MOC ModuleName
 

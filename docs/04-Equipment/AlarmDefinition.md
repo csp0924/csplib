@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/alarm/definition.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # AlarmDefinition
@@ -49,7 +51,7 @@ source: csp_lib/equipment/alarm/definition.py
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.alarm import AlarmDefinition, AlarmLevel, HysteresisConfig

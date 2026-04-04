@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/modbus/
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # _MOC Modbus
@@ -45,6 +47,7 @@ csp_lib.modbus
 │   ├── client.py   # TCP/RTU/Shared 實作
 │   ├── queue.py    # 請求佇列 + 背景 Worker（優先權排程 + 斷路器）
 │   └── compat.py   # pymodbus 版本相容層
+├── _pymodbus.py    # pymodbus server 元件 lazy import 工具
 ├── codec.py        # ModbusCodec 編解碼器
 ├── config.py       # 連線設定 (TCP/RTU)
 ├── enums.py        # 列舉定義

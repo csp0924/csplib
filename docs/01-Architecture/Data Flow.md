@@ -1,5 +1,7 @@
 ---
 tags: [type/concept, status/complete]
+updated: 2026-04-04
+version: 0.6.1
 ---
 # Data Flow
 
@@ -7,7 +9,7 @@ tags: [type/concept, status/complete]
 
 ## 4.1 讀取循環（每 1~60 秒）
 
-設備週期性讀取的完整資料流，從排程到事件發射。v0.4.2 起新增 CAN 設備讀取路徑，與 Modbus 路徑並列運行。
+設備週期性讀取的完整資料流，從排程到事件發射。CAN 設備讀取路徑與 Modbus 路徑並列運行。
 
 ```mermaid
 flowchart TD
@@ -21,7 +23,7 @@ flowchart TD
         AGG --> LV_M["AsyncModbusDevice._latest_values\n更新快取"]
     end
 
-    subgraph CAN路徑["CAN 讀取路徑（v0.4.2）"]
+    subgraph CAN路徑["CAN 讀取路徑"]
         SUB["CANClient.subscribe(frame_handler)\n訂閱 CAN ID"] --> RECV["非同步接收 CANFrame\n背景 listener 持續監聽"]
         RECV --> PARSE["CANFrameParser.parse(frame)\n解碼位元欄位 → 具名值"]
         PARSE --> AGG_CAN["AggregatorPipeline.process()\n可選聚合處理"]
@@ -68,7 +70,7 @@ flowchart TD
 
 ## 4.2 控制循環
 
-從設備數據聚合到功率命令寫入的完整流程。v0.4.2 起加入 [[PowerDistributor]] 分支，支援 per-device 不同命令分配。
+從設備數據聚合到功率命令寫入的完整流程，包含 [[PowerDistributor]] 分支，支援 per-device 不同命令分配。
 
 ```mermaid
 flowchart TD
@@ -79,7 +81,8 @@ flowchart TD
     CMD --> PG["ProtectionGuard.apply(command, context)\nSOCProtection → ReversePowerProtection → SystemAlarmProtection"]
     PG --> PCMD["Protected Command { p_target: 450.0, q_target: 100.0 }"]
 
-    PCMD --> EOV["_evaluate_event_overrides(context)\n評估所有 EventDrivenOverride"]
+    PCMD --> PP["CommandProcessor Pipeline\npost_protection_processors\n（如 PowerCompensator）"]
+    PP --> EOV["_evaluate_event_overrides(context)\n評估所有 EventDrivenOverride"]
     EOV --> DIST{{"有 PowerDistributor\n且有 capability_command_mappings？"}}
 
     DIST -- 否 --> CR["CommandRouter.route(protected_command)\n同值廣播到所有匹配設備"]
@@ -109,6 +112,8 @@ flowchart TD
 | [[DeviceRegistry]] | Trait-based 設備查詢 | [[_MOC Integration]] |
 | [[StrategyExecutor]] | 週期 / 觸發 / 混合模式執行 | [[_MOC Controller]] |
 | [[ProtectionGuard]] | 保護規則鏈 | [[_MOC Controller]] |
+| [[CommandProcessor]] | Post-Protection 命令處理管線 | [[_MOC Controller]] |
+| [[PowerCompensator]] | FF + I 閉環功率補償（實作 CommandProcessor） | [[_MOC Controller]] |
 | [[EventDrivenOverride]] | 事件條件 → 自動 push/pop override | [[EventDrivenOverride]] |
 | [[PowerDistributor]] | 系統命令 → per-device 功率分配 | [[PowerDistributor]] |
 | [[CommandRouter]] | Command → 設備寫入路由 | [[_MOC Integration]] |
@@ -119,7 +124,7 @@ flowchart TD
 
 ## 4.3 模式切換流程
 
-[[ModeManager]] 管理多模式優先級切換，支援基礎模式與覆蓋模式。v0.4.2 起，[[EventDrivenOverride]] 統一負責條件式 push/pop，取代原本硬編碼的 `_handle_auto_stop`。
+[[ModeManager]] 管理多模式優先級切換，支援基礎模式與覆蓋模式。[[EventDrivenOverride]] 統一負責條件式 push/pop，取代原本硬編碼的 `_handle_auto_stop`。
 
 ```mermaid
 graph TB
@@ -154,7 +159,7 @@ graph TB
 2. **覆蓋模式 (Override)** — 高優先級事件觸發，優先於所有基礎模式
 3. **多策略級聯** — 當有多個基礎模式且設定 `capacity_kva` 時，自動組合為 [[CascadingStrategy]]
 4. **優先級堆疊** — Override 以堆疊方式管理，`pop_override` 後自動恢復前一有效策略
-5. **事件驅動** — v0.4.2 的 [[EventDrivenOverride]] 可自動依 context 條件 push/pop，含冷卻防抖
+5. **事件驅動** — [[EventDrivenOverride]] 可自動依 context 條件 push/pop，含冷卻防抖
 
 ### 關鍵元件
 
@@ -168,7 +173,7 @@ graph TB
 
 ---
 
-## 4.4 事件驅動覆蓋流程（v0.4.2）
+## 4.4 事件驅動覆蓋流程
 
 `EventDrivenOverride` 協定讓控制器在每個執行週期自動評估條件，無需外部手動干預即可切換模式。
 

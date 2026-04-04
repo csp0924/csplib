@@ -4,6 +4,8 @@ tags:
   - layer/controller
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # 自訂策略指南
@@ -157,7 +159,7 @@ await executor.run()                   # 開始執行迴圈
 
 ---
 
-## required_capabilities（v0.4.2 新增）
+## required_capabilities
 
 覆寫 `required_capabilities` 屬性，宣告策略所需的設備能力。`SystemController` 在 `register_mode()` 時自動驗證，若找不到符合的設備會記錄警告（不拋出例外）：
 
@@ -194,7 +196,7 @@ controller.register_mode("battery_ctrl", MyBatteryStrategy(), ModePriority.SCHED
 
 ---
 
-## 策略插件發現機制（v0.4.2 新增）
+## 策略插件發現機制
 
 使用 `discover_strategies()` 自動掃描已安裝的第三方策略插件。插件透過 `pyproject.toml` 的 entry_points 機制註冊：
 
@@ -241,7 +243,48 @@ desc.description     # 策略說明（來自 docstring 第一行）
 
 ---
 
+## 自訂 CommandProcessor（Post-Protection 命令處理）
+
+除了自訂策略外，也可實作 [[CommandProcessor]] Protocol 在 ProtectionGuard 和 CommandRouter 之間對命令做額外處理（如功率補償、命令日誌）。
+
+```python
+from csp_lib.controller.core import Command, CommandProcessor, StrategyContext
+
+
+class AuditLogger:
+    """記錄所有經保護鏈處理後的命令"""
+
+    async def process(self, command: Command, context: StrategyContext) -> Command:
+        print(f"[audit] p={command.p_target}, q={command.q_target}, soc={context.soc}")
+        return command  # 不修改命令，僅記錄
+
+
+class MyCompensator:
+    """自訂功率補償"""
+
+    async def process(self, command: Command, context: StrategyContext) -> Command:
+        compensated_p = command.p_target * 1.05  # 補償 5% 損耗
+        return command.with_p(compensated_p)
+```
+
+將 processor 註冊到 `SystemControllerConfig`：
+
+```python
+from csp_lib.integration import SystemControllerConfig
+
+config = SystemControllerConfig(
+    post_protection_processors=[AuditLogger(), MyCompensator()],
+    # ... 其他配置
+)
+```
+
+> [!tip] 內建實作
+> csp_lib 提供 [[PowerCompensator]]（FF + I 閉環功率補償）作為 CommandProcessor 的內建實作。
+
+---
+
 ## 相關頁面
 
 - [[Control Strategy Setup]] - 內建策略總覽
 - [[Full System Integration]] - 完整系統整合
+- [[CommandProcessor]] - CommandProcessor Protocol 參考

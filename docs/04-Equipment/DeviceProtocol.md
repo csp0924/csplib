@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/equipment/device/protocol.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceProtocol
@@ -106,6 +108,21 @@ graph TB
     Integration --> Protocol
     Protocol -.->|結構性滿足| Modbus
     Protocol -.->|結構性滿足| CAN
+```
+
+---
+
+## Quick Example
+
+```python
+from csp_lib.equipment.device import DeviceProtocol
+
+async def monitor_all(devices: list[DeviceProtocol]) -> None:
+    for dev in devices:
+        if dev.is_protected:
+            print(f"[{dev.device_id}] 保護中, 告警: {len(dev.active_alarms)}")
+        report = dev.health()
+        print(f"[{dev.device_id}] {report.status.value}")
 ```
 
 ---

@@ -4,6 +4,8 @@ tags:
   - layer/controller
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # 控制策略設定指南
@@ -21,7 +23,7 @@ created: 2026-02-17
 
 ## 1. 選擇策略
 
-csp_lib 提供 9 種內建策略：
+csp_lib 提供 12 種內建策略：
 
 | 策略 | 類別 | 用途 | 配置類別 | 執行模式 |
 |------|------|------|----------|---------|
@@ -29,11 +31,14 @@ csp_lib 提供 9 種內建策略：
 | PV 平滑 | [[PVSmoothStrategy]] | PV 功率平滑化 | `PVSmoothConfig(capacity, ramp_rate, ...)` | PERIODIC 900s |
 | QV 控制 | [[QVStrategy]] | 電壓-無功功率控制 (Volt-VAR) | `QVConfig(nominal_voltage, v_set, droop, ...)` | PERIODIC 1s |
 | FP 控制 | [[FPStrategy]] | 頻率-功率控制 (AFC) | `FPConfig(f_base, f1~f6, p1~p6)` | PERIODIC 1s |
+| 通用下垂 | [[DroopStrategy]] | 通用下垂控制 | `DroopConfig(...)` | PERIODIC 1s |
 | 離網模式 | [[IslandModeStrategy]] | 離網 Grid Forming | `IslandModeConfig(sync_timeout)` | TRIGGERED |
 | 直通模式 | [[BypassStrategy]] | 維持上一次命令 | -- | PERIODIC 1s |
 | 停機 | [[StopStrategy]] | P=0, Q=0 | -- | PERIODIC 1s |
+| 斜率停機 | [[RampStopStrategy]] | 漸進式降載停機 | `RampStopConfig(...)` | PERIODIC 1s |
 | 排程 | [[ScheduleStrategy]] | 依時間表執行 | -- | PERIODIC 1s |
 | 負載卸載 | [[LoadSheddingStrategy]] | 階段性負載卸載 | `LoadSheddingConfig(stages, ...)` | PERIODIC 5s |
+| FF 校準 | [[FFCalibrationStrategy]] | 維護模式 FF 表校準 | `FFCalibrationConfig(...)` | PERIODIC |
 
 ---
 
@@ -205,7 +210,7 @@ cascading = CascadingStrategy(
 
 ---
 
-## 進階功能（v0.4.2 新增）
+## 進階功能
 
 ### LoadSheddingStrategy（負載卸載）
 

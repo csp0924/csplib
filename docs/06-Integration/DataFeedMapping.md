@@ -4,6 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/schema.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DataFeedMapping
@@ -26,6 +28,7 @@ source: csp_lib/integration/schema.py
 | `point_name` | `str` | 必填 | PV 功率點位名稱 |
 | `device_id` | `str \| None` | `None` | 指定單一設備 ID（與 `trait` 擇一） |
 | `trait` | `str \| None` | `None` | 指定 trait 標籤，取第一台 responsive 設備（與 `device_id` 擇一） |
+| `aggregate` | [[AggregateFunc]] | `FIRST` | trait 模式的聚合函式（預設取第一台設備值） |
 
 ## 使用範例
 

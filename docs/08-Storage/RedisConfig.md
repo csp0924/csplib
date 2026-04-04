@@ -4,6 +4,8 @@ tags:
   - layer/storage
   - status/complete
 source: csp_lib/redis/config.py
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # RedisConfig
@@ -34,14 +36,24 @@ Redis 連線配置，隸屬於 [[_MOC Storage|Storage 模組]]。
 | `socket_connect_timeout` | `None` | Socket 連線超時（秒） |
 | `retry_on_timeout` | `False` | 超時時是否重試 |
 
-## 使用範例
-
-### Standalone
+## Quick Example
 
 ```python
 from csp_lib.redis import RedisConfig
 
 config = RedisConfig(host="localhost", port=6379, password="secret")
+```
+
+## 使用範例
+
+### Standalone + 搭配 RedisClient
+
+```python
+from csp_lib.redis import RedisConfig, RedisClient
+
+config = RedisConfig(host="localhost", port=6379, password="secret")
+client = RedisClient.from_config(config)
+await client.connect()
 ```
 
 ### Sentinel

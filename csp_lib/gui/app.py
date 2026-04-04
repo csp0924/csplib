@@ -71,6 +71,7 @@ def create_app(
 
     # REST API routers
     from .api.alarms import router as alarms_router
+    from .api.capabilities import router as capabilities_router
     from .api.commands import router as commands_router
     from .api.config_io import router as config_io_router
     from .api.devices import router as devices_router
@@ -80,6 +81,7 @@ def create_app(
 
     app.include_router(devices_router, prefix="/api")
     app.include_router(alarms_router, prefix="/api")
+    app.include_router(capabilities_router, prefix="/api")
     app.include_router(commands_router, prefix="/api")
     app.include_router(modes_router, prefix="/api")
     app.include_router(health_router, prefix="/api")

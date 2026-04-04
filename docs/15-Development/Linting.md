@@ -3,6 +3,8 @@ tags:
   - type/guide
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # Linting 與格式化
@@ -67,6 +69,12 @@ uv run mypy csp_lib/
 |------|------|
 | `E501` | 由 formatter 處理行長度 |
 | `B027` | 允許空的 abstract methods（設計意圖） |
+
+### 特定檔案規則
+
+| 檔案 | 忽略規則 | 原因 |
+|------|----------|------|
+| `csp_lib/gui/api/*.py` | `B008` | FastAPI `Depends()` 呼叫模式 |
 
 ---
 

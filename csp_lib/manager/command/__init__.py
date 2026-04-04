@@ -16,6 +16,7 @@
 
 from .adapters.config import CommandAdapterConfig
 from .adapters.redis import CommandResult, RedisCommandAdapter
+from .in_memory import InMemoryCommandRepository
 from .manager import WriteCommandManager
 from .repository import CommandRepository, MongoCommandRepository
 from .schema import ActionCommand, CommandRecord, CommandSource, CommandStatus, WriteCommand
@@ -29,6 +30,7 @@ __all__ = [
     "CommandStatus",
     # Repository
     "CommandRepository",
+    "InMemoryCommandRepository",
     "MongoCommandRepository",
     # Manager
     "WriteCommandManager",

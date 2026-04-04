@@ -5,6 +5,7 @@ tags:
   - status/complete
 source: csp_lib/controller/core/execution.py
 created: 2026-02-17
+updated: 2026-04-04
 ---
 
 # ExecutionMode
@@ -29,10 +30,14 @@ created: 2026-02-17
 | [[PVSmoothStrategy]] | PERIODIC | 900s |
 | [[QVStrategy]] | PERIODIC | 1s |
 | [[FPStrategy]] | PERIODIC | 1s |
+| [[DroopStrategy]] | PERIODIC | 1s |
 | [[IslandModeStrategy]] | TRIGGERED | - |
 | [[BypassStrategy]] | TRIGGERED | - |
 | [[StopStrategy]] | PERIODIC | 1s |
+| [[RampStopStrategy]] | PERIODIC | 1s |
 | [[ScheduleStrategy]] | PERIODIC | 1s (委派給子策略) |
+| [[LoadSheddingStrategy]] | PERIODIC | 5s (config) |
+| [[FFCalibrationStrategy]] | PERIODIC | 1s (config) |
 
 ## ExecutionConfig 類別
 

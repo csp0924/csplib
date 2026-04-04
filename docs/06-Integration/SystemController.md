@@ -4,6 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/system_controller.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # SystemController
@@ -44,6 +46,62 @@ source: csp_lib/integration/system_controller.py
 | `heartbeat_capability_constant_value` | `int` | `1` | CONSTANT 模式的固定寫入值 |
 | `heartbeat_capability_increment_max` | `int` | `65535` | INCREMENT 模式的最大計數值 |
 | `power_distributor` | `PowerDistributor \| None` | `None` | 功率分配器；設定後 capability command mappings 使用 per-device 分配 |
+| `post_protection_processors` | `list[CommandProcessor]` | `[]` | Post-protection 命令處理器列表（如 [[PowerCompensator]]） |
+| `runtime_params` | `RuntimeParameters \| None` | `None` | 系統參數，自動注入到 `StrategyContext.params` |
+| `capability_requirements` | `list[CapabilityRequirement]` | `[]` | 能力需求列表，供 `preflight_check()` 驗證 |
+| `strict_capability_check` | `bool` | `False` | 啟用嚴格能力檢查（preflight 失敗時 raise `ConfigurationError`） |
+
+> [!info] v0.6.0 新增
+> `capability_requirements`、`strict_capability_check`、`post_protection_processors`、`runtime_params` 為 v0.6.0 新增欄位。
+
+### SystemControllerConfig.builder()
+
+> [!info] v0.6.0 新增
+
+`SystemControllerConfig.builder()` 回傳 `SystemControllerConfigBuilder`，提供 fluent API 逐步建構配置：
+
+```python
+from csp_lib.integration import SystemControllerConfig
+from csp_lib.integration.schema import CapabilityRequirement
+
+config = (
+    SystemControllerConfig.builder()
+    .system_base(p_base=2000)
+    .map_context(device_id="MTD1", point_name="f", target="extra.frequency")
+    .map_context(trait="bms", point_name="soc", target="soc")
+    .map_command(field="p_target", device_id="PCS1", point_name="set_p")
+    .protect(DynamicSOCProtection(params))
+    .processor(compensator)
+    .params(runtime_params)
+    .require_capability(CapabilityRequirement(
+        capability=ACTIVE_POWER_CONTROL, min_count=2,
+    ))
+    .strict_capability(True)
+    .build()
+)
+```
+
+#### Builder 方法一覽
+
+| 方法 | 說明 |
+|------|------|
+| `system_base(p_base, q_base=0.0)` | 設定系統基準值 |
+| `map_context(point_name, target, *, device_id, trait, ...)` | 新增 context mapping |
+| `map_command(field, point_name, *, device_id, trait, ...)` | 新增 command mapping |
+| `map_capability_context(mapping)` | 新增 capability context mapping |
+| `map_capability_command(mapping)` | 新增 capability command mapping |
+| `protect(rule)` | 新增保護規則 |
+| `auto_stop(enabled=True, alarm_key="system_alarm")` | 設定自動停機 |
+| `processor(proc)` | 新增 post-protection 命令處理器 |
+| `params(runtime_params)` | 設定 RuntimeParameters |
+| `distributor(dist)` | 設定功率分配器 |
+| `heartbeat(mappings, interval, use_capability, mode)` | 設定心跳服務 |
+| `alarm_mode_per_device(on_alarm, on_clear)` | 設定 per-device 告警模式 |
+| `data_feed(mapping, max_history=300)` | 設定 PV 資料餵入 |
+| `cascading(capacity_kva)` | 設定級聯策略最大視在功率 |
+| `require_capability(requirement)` | 新增能力需求（供 preflight 驗證） |
+| `strict_capability(enabled=True)` | 啟用嚴格能力檢查 |
+| `build()` | 建構 `SystemControllerConfig` |
 
 ## API
 
@@ -59,6 +117,24 @@ source: csp_lib/integration/system_controller.py
 | `pop_override(name)` | 移除 override 模式 |
 | `register_event_override(override)` | 註冊事件驅動 override（見[[EventDrivenOverride]]） |
 | `trigger()` | 手動觸發策略執行 |
+
+### Preflight Check（v0.6.0 新增）
+
+| 方法 | 說明 |
+|------|------|
+| `preflight_check()` | 驗證 `capability_requirements` 是否滿足，回傳失敗描述列表 |
+
+`preflight_check()` 委派 `DeviceRegistry.validate_capabilities()` 驗證所有 [[CapabilityRequirement]]。啟動時（`_on_start()`）自動呼叫。
+
+- 回傳空列表 = 全部通過
+- `strict_capability_check=True` 時，有任何失敗會 raise `ConfigurationError`
+- `strict_capability_check=False` 時（預設），僅記錄 warning 日誌
+
+```python
+failures = controller.preflight_check()
+if failures:
+    print("能力檢查未通過：", failures)
+```
 
 ### 排程模式控制（v0.4.2 新增）
 
@@ -255,4 +331,5 @@ async with controller:
 - [[ModeManager]] — 底層模式管理，`update_mode_strategy()` 由此提供
 - [[CapabilityContextMapping]] — Capability-driven context 映射
 - [[CapabilityCommandMapping]] — Capability-driven command 映射
+- [[CapabilityRequirement]] — 能力需求定義（preflight validation）
 - [[CapabilityBinding Integration]] — 能力驅動整合的完整架構與流程圖

@@ -3,6 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # 所有列舉
@@ -35,6 +37,7 @@ SORT file.name ASC
 |------|------|
 | [[AlarmLevel]] | `INFO`, `WARNING`, `CRITICAL`, `PROTECTION` |
 | [[WriteStatus]] | `SUCCESS`, `VERIFICATION_FAILED`, ... |
+| [[DOMode]] | DO 動作模式（v0.5.0） |
 
 ### Controller 層
 
@@ -49,6 +52,11 @@ SORT file.name ASC
 | 列舉 | 值 |
 |------|------|
 | [[AlarmStatus]] | `ACTIVE`, `RESOLVED` |
+| [[AlarmType]] | 告警類型 |
+| [[CommandSource]] | 命令來源 |
+| [[CommandStatus]] | 命令狀態 |
+| [[ScheduleType]] | 排程類型（v0.4.2） |
+| [[StrategyType]] | 策略類型（v0.4.2） |
 
 ### Integration 層
 
@@ -74,3 +82,22 @@ SORT file.name ASC
 |------|------|
 | [[RequestPriority]] | `HIGH`, `NORMAL`, `LOW`（具體值依實作） |
 | [[CircuitBreakerState]] | （Modbus 客戶端斷路器狀態，與 Core CircuitState 分離） |
+
+### Modbus Gateway 層（v0.6.0）
+
+| 列舉 | 值 |
+|------|------|
+| [[RegisterType]] | 閘道暫存器型別 |
+
+### Modbus Server 層（v0.5.2）
+
+| 列舉 | 值 |
+|------|------|
+| [[AlarmResetMode]] | 告警重置模式 |
+| [[ControllabilityMode]] | 可控性模式 |
+
+### Hierarchical 層（v0.6.0）
+
+| 列舉 | 值 |
+|------|------|
+| [[ExecutorStatus]] | 執行器狀態 |

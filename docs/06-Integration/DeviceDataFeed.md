@@ -4,6 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/data_feed.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceDataFeed
@@ -42,6 +44,25 @@ source: csp_lib/integration/data_feed.py
 
 - 數值型（`int` / `float`）→ `pv_service.append(float(value))`
 - 非數值或缺失 → `pv_service.append(None)`
+
+## Quick Example
+
+```python
+from csp_lib.integration import DeviceDataFeed, DeviceRegistry
+from csp_lib.integration.schema import DataFeedMapping
+from csp_lib.controller.services import PVDataService
+
+pv_service = PVDataService(max_history=300)
+feed = DeviceDataFeed(
+    registry=registry,
+    mapping=DataFeedMapping(point_name="pv_power", trait="solar"),
+    pv_service=pv_service,
+)
+
+feed.attach()    # 訂閱 read_complete 事件
+# ... 控制迴圈運行中 ...
+feed.detach()    # 取消訂閱
+```
 
 ## 相關頁面
 

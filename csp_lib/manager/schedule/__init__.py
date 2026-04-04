@@ -11,6 +11,7 @@
 
 from .config import ScheduleServiceConfig
 from .factory import StrategyFactory
+from .in_memory import InMemoryScheduleRepository
 from .repository import MongoScheduleRepository, ScheduleRepository
 from .schema import ScheduleRule, ScheduleType, StrategyType
 from .service import ScheduleService
@@ -21,6 +22,7 @@ __all__ = [
     # Factory
     "StrategyFactory",
     # Repository
+    "InMemoryScheduleRepository",
     "MongoScheduleRepository",
     "ScheduleRepository",
     # Schema

@@ -5,11 +5,15 @@ tags:
   - status/complete
 source: csp_lib/core/resilience.py
 created: 2026-03-06
+updated: 2026-04-04
+version: v0.6.1
 ---
 
 # Resilience
 
 > 通用韌性模組 — 斷路器與重試策略
+
+回到 [[_MOC Core]]
 
 提供跨層共用的韌性機制，用於保護對外部設備（Modbus、CAN Bus、資料庫等）的連線呼叫，避免連鎖失敗與資源耗盡。
 
@@ -46,15 +50,23 @@ class CircuitState(Enum):
 
 ```python
 class CircuitBreaker:
-    def __init__(self, threshold: int, cooldown: float) -> None
+    def __init__(
+        self,
+        threshold: int,
+        cooldown: float,
+        max_cooldown: float = 300.0,
+        backoff_factor: float = 2.0,
+    ) -> None
 ```
 
 ### 建構參數
 
-| 參數 | 型別 | 說明 |
-|------|------|------|
-| `threshold` | `int` | 連續失敗達此次數後觸發斷路（切換至 `OPEN`） |
-| `cooldown` | `float` | 斷路器開啟後的冷卻時間（秒），冷卻後自動轉為 `HALF_OPEN` |
+| 參數 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `threshold` | `int` | — | 連續失敗達此次數後觸發斷路（切換至 `OPEN`） |
+| `cooldown` | `float` | — | 斷路器開啟後的基礎冷卻時間（秒） |
+| `max_cooldown` | `float` | `300.0` | 指數退避的最大冷卻時間（秒） |
+| `backoff_factor` | `float` | `2.0` | 指數退避的倍率 |
 
 ### 屬性
 

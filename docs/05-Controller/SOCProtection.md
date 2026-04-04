@@ -2,9 +2,10 @@
 tags:
   - type/class
   - layer/controller
-  - status/complete
+  - status/deprecated
 source: csp_lib/controller/system/protection.py
 created: 2026-02-17
+updated: 2026-04-04
 ---
 
 # SOCProtection
@@ -12,6 +13,9 @@ created: 2026-02-17
 SOC 保護規則，提供高低限保護與警戒區漸進限制。
 
 > [!info] 回到 [[_MOC Controller]]
+
+> [!warning] Deprecated — 建議改用 [[DynamicSOCProtection]]
+> `SOCProtection` 已在 v0.5.0 中標記為棄用（建構時會發出 `DeprecationWarning`）。`DynamicSOCProtection` 支援 `RuntimeParameters` 動態參數來源與靜態 `SOCProtectionConfig` 兩種模式，完全涵蓋 `SOCProtection` 的功能。
 
 ## 概述
 
@@ -69,6 +73,7 @@ SOC 保護規則，提供高低限保護與警戒區漸進限制。
 
 ## 相關連結
 
+- [[DynamicSOCProtection]] — 建議替代方案，支援動態參數
 - [[ProtectionGuard]] — 保護規則鏈，管理此規則
 - [[ReversePowerProtection]] — 另一個保護規則
 - [[SystemAlarmProtection]] — 另一個保護規則

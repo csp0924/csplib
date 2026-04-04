@@ -77,6 +77,8 @@ EVENT_WRITE_ERROR = "write_error"
 EVENT_RECONFIGURED = "reconfigured"
 EVENT_RESTARTED = "restarted"
 EVENT_POINT_TOGGLED = "point_toggled"
+EVENT_CAPABILITY_ADDED = "capability_added"
+EVENT_CAPABILITY_REMOVED = "capability_removed"
 
 
 @dataclass(frozen=True)
@@ -182,6 +184,15 @@ class PointToggledPayload:
     device_id: str
     point_name: str
     enabled: bool
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True)
+class CapabilityChangedPayload:
+    """能力變更事件資料"""
+
+    device_id: str
+    capability_name: str
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -425,6 +436,7 @@ __all__ = [
     "ReconfiguredPayload",
     "RestartedPayload",
     "PointToggledPayload",
+    "CapabilityChangedPayload",
     # Event names
     "EVENT_CONNECTED",
     "EVENT_DISCONNECTED",
@@ -438,4 +450,6 @@ __all__ = [
     "EVENT_RECONFIGURED",
     "EVENT_RESTARTED",
     "EVENT_POINT_TOGGLED",
+    "EVENT_CAPABILITY_ADDED",
+    "EVENT_CAPABILITY_REMOVED",
 ]

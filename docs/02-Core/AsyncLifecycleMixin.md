@@ -1,6 +1,8 @@
 ---
 tags: [type/class, layer/core, status/complete]
 source: csp_lib/core/lifecycle.py
+updated: 2026-04-04
+version: v0.6.1
 ---
 # AsyncLifecycleMixin
 
@@ -22,10 +24,10 @@ source: csp_lib/core/lifecycle.py
 | `async stop()` | 停止服務，內部呼叫 `_on_stop()` |
 | `async _on_start()` | 模板方法 — 子類別覆寫以實作啟動邏輯 |
 | `async _on_stop()` | 模板方法 — 子類別覆寫以實作停止邏輯 |
-| `async __aenter__()` | 呼叫 `start()` 並回傳 `self` |
-| `async __aexit__()` | 呼叫 `stop()` |
+| `async __aenter__() -> Self` | 呼叫 `start()` 並回傳 `self`（型別為 `typing.Self`） |
+| `async __aexit__(*args) -> None` | 呼叫 `stop()` |
 
-## 使用範例
+## Quick Example
 
 ```python
 from csp_lib.core import AsyncLifecycleMixin

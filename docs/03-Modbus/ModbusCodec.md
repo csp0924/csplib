@@ -5,24 +5,38 @@ tags:
   - status/complete
 source: csp_lib/modbus/codec.py
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # ModbusCodec
 
 ## Modbus 編解碼器 (`csp_lib.modbus.ModbusCodec`)
 
-`ModbusCodec` 是高階編解碼器，封裝 `ByteOrder` 與 `RegisterOrder` 參數，提供簡潔的 `encode()` / `decode()` API。透過此類別，呼叫端無需每次手動傳入位元組順序和暫存器順序。
+`ModbusCodec` 是高階編解碼器，提供簡潔的 `encode()` / `decode()` API。建構時無需參數，`byte_order` 與 `register_order` 在每次呼叫時傳入（可選，皆有預設值）。
 
 ---
 
-## 建構參數
+## Quick Example
 
-`ModbusCodec` 的 `encode()` 和 `decode()` 方法接受選用的 `byte_order` 與 `register_order` 參數，若未提供則使用預設值：
+```python
+from csp_lib.modbus import ModbusCodec, UInt32
+
+codec = ModbusCodec()
+regs = codec.encode(UInt32(), 0x12345678)  # -> [0x1234, 0x5678]
+val = codec.decode(UInt32(), regs)          # -> 305419896
+```
+
+---
+
+## 建構
+
+`ModbusCodec()` 不接受建構參數。`byte_order` 與 `register_order` 為 `encode()` / `decode()` 的選用參數，未提供時使用預設值：
 
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
-| `byte_order` | `ByteOrder` | `BIG_ENDIAN` | 單一暫存器內的位元組排列方式 |
-| `register_order` | `RegisterOrder` | `HIGH_FIRST` | 多暫存器資料的排列方式 |
+| `byte_order` | `ByteOrder \| None` | `BIG_ENDIAN` | 單一暫存器內的位元組排列方式 |
+| `register_order` | `RegisterOrder \| None` | `HIGH_FIRST` | 多暫存器資料的排列方式 |
 
 ---
 
@@ -53,33 +67,22 @@ created: 2026-02-17
 ```python
 from csp_lib.modbus import ModbusCodec, Float32, ByteOrder, RegisterOrder
 
-codec = ModbusCodec(
-    byte_order=ByteOrder.BIG_ENDIAN,
-    register_order=RegisterOrder.HIGH_FIRST,
-)
+codec = ModbusCodec()
 
-# 編碼
+# 編碼（使用預設 BIG_ENDIAN / HIGH_FIRST）
 encoded = codec.encode(Float32(), 123.45)
 # encoded: [0x42F6, 0xE666]
 
 # 解碼
 decoded = codec.decode(Float32(), encoded)
 # decoded: 123.45
-```
 
-### 搭配不同位元組順序
-
-```python
-from csp_lib.modbus import ModbusCodec, UInt32
-
-codec = ModbusCodec()
-
-# 使用預設順序 (BIG_ENDIAN, HIGH_FIRST)
-registers = codec.encode(UInt32(), 0x12345678)
-# registers: [0x1234, 0x5678]
-
-value = codec.decode(UInt32(), registers)
-# value: 305419896
+# 明確指定順序
+encoded = codec.encode(
+    Float32(), 123.45,
+    byte_order=ByteOrder.BIG_ENDIAN,
+    register_order=RegisterOrder.HIGH_FIRST,
+)
 ```
 
 ---

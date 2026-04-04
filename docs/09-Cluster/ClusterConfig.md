@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/cluster/config.py
 created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
 ---
 
 # ClusterConfig
@@ -45,6 +47,8 @@ etcd 連線配置。
 | `state_ttl` | `int` | `30` | Redis 叢集狀態 key 的 TTL（秒） |
 | `failover_grace_period` | `float` | `2.0` | 升格為 Leader 後的等待時間（秒） |
 | `device_ids` | `list[str]` | `[]` | 需同步的設備 ID 列表 |
+| `max_keepalive_failures` | `int` | `3` | Lease keepalive 連續失敗上限，超過則 self-fencing（必須 > 0） |
+| `campaign_retry_delay` | `float` | `2.0` | 競選失敗後重試延遲（秒，必須 > 0） |
 
 ### 方法
 
@@ -74,6 +78,8 @@ config = ClusterConfig(
     state_ttl=30,
     failover_grace_period=2.0,
     device_ids=["pcs_001", "bms_001"],
+    max_keepalive_failures=3,
+    campaign_retry_delay=2.0,
 )
 ```
 

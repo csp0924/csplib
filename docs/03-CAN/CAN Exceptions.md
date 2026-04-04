@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/can/exceptions.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CAN Exceptions
@@ -24,7 +26,7 @@ CANError                    CAN Bus 基礎例外
 
 ---
 
-## 使用範例
+## Quick Example
 
 ```python
 from csp_lib.can import CANError, CANConnectionError, CANTimeoutError, CANSendError

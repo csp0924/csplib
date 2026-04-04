@@ -4,6 +4,8 @@ tags:
   - layer/integration
   - status/complete
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CapabilityBinding Integration
@@ -307,6 +309,7 @@ controller = SystemController(registry, config)
 
 ## 相關頁面
 
+- [[CapabilityRequirement]] -- 能力需求定義（preflight validation）
 - [[CapabilityContextMapping]] -- Capability-driven context 映射
 - [[CapabilityCommandMapping]] -- Capability-driven command 映射
 - [[ContextMapping]] -- 明確映射版 context

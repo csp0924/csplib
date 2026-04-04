@@ -1,5 +1,7 @@
 ---
 tags: [type/guide, status/complete]
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 # Tag Taxonomy
 
@@ -40,6 +42,16 @@ tags: [type/guide, status/complete]
 |------|------|
 | `#status/draft` | 草稿 |
 | `#status/complete` | 完成 |
+| `#status/stale` | 超過 2 個版本未更新 |
+
+## 元資料欄位 (Metadata Fields)
+
+| 欄位 | 格式 | 說明 |
+|------|------|------|
+| `updated:` | `YYYY-MM-DD` | 最後更新日期 |
+| `version:` | `">=X.Y.Z"` | 此頁面適用的最低版本 |
+
+所有文件的 frontmatter 應包含 `updated` 和 `version` 欄位，以便追蹤文件新鮮度與版本適用性。
 
 ## 查詢範例
 

@@ -1,6 +1,8 @@
 ---
 tags: [type/class, layer/<LAYER>, status/draft]
 source: csp_lib/<path>/<file>.py
+updated: <YYYY-MM-DD>
+version: ">=X.Y.Z"
 ---
 # ClassName
 
@@ -30,6 +32,12 @@ source: csp_lib/<path>/<file>.py
 
 ```python
 # 使用範例
+```
+
+## Quick Example
+
+```python
+# 最小可運行範例（3-5 行）
 ```
 
 ## 使用範例

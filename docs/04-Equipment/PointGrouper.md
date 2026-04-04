@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/transport/base.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # PointGrouper
@@ -44,7 +46,20 @@ source: csp_lib/equipment/transport/base.py
 
 ---
 
-## 程式碼範例
+## PointGrouperConfig
+
+自訂各功能碼的最大讀取長度：
+
+```python
+from csp_lib.equipment.transport import PointGrouper, PointGrouperConfig
+
+config = PointGrouperConfig(fc_max_length={3: 100, 4: 100})
+grouper = PointGrouper(config=config)
+```
+
+---
+
+## Quick Example
 
 ```python
 from csp_lib.equipment.transport import PointGrouper

@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/core/point.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # Validators
@@ -41,7 +43,7 @@ class ValueValidator(Protocol):
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.core import RangeValidator, EnumValidator, CompositeValidator

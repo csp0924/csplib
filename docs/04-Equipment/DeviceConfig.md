@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/config.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceConfig
@@ -22,13 +24,13 @@ source: csp_lib/equipment/device/config.py
 | `unit_id` | `int` | `1` | 0-255 | Modbus 設備位址 (Slave ID) |
 | `address_offset` | `int` | `0` | -- | 位址偏移（PLC 1-based 定址時設為 1） |
 | `read_interval` | `float` | `1.0` | > 0 | 讀取間隔（秒） |
-| `reconnect_interval` | `float` | `5.0` | -- | 重連間隔（秒） |
+| `reconnect_interval` | `float` | `5.0` | > 0 | 重連間隔（秒） |
 | `disconnect_threshold` | `int` | `5` | >= 1 | 連續失敗次數閾值，達到後視為斷線 |
 | `max_concurrent_reads` | `int` | `1` | >= 0 | 最大並行讀取數（0 = 不限制） |
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.device import DeviceConfig

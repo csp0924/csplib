@@ -5,6 +5,7 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/stop_strategy.py
 created: 2026-02-17
+updated: 2026-04-04
 ---
 
 # StopStrategy
@@ -42,3 +43,4 @@ created: 2026-02-17
 - [[Command]] — 固定輸出 P=0, Q=0
 - [[ScheduleStrategy]] — 作為預設 fallback
 - [[SystemAlarmProtection]] — 告警時強制 P=0, Q=0 的效果類似
+- [[RampStopStrategy]] — 斜坡降功率版本（漸進停機，適用於通訊中斷場景）

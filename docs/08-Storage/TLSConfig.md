@@ -4,6 +4,8 @@ tags:
   - layer/storage
   - status/complete
 source: csp_lib/redis/client.py
+updated: 2026-04-04
+version: 0.6.0
 ---
 
 # TLSConfig
@@ -18,7 +20,7 @@ Redis TLS 連線配置，隸屬於 [[_MOC Storage|Storage 模組]]。
 
 | 參數 | 型別 | 預設 | 說明 |
 |------|------|------|------|
-| `ca_certs` | `str` | 必填 | CA 憑證檔案路徑 |
+| `ca_certs` | `str \| None` | `None` | CA 憑證檔案路徑 |
 | `certfile` | `str \| None` | `None` | 客戶端憑證檔案路徑（雙向 TLS 用） |
 | `keyfile` | `str \| None` | `None` | 客戶端私鑰檔案路徑（雙向 TLS 用） |
 | `cert_reqs` | `Literal["required", "optional", "none"]` | `"required"` | 憑證驗證模式 |
@@ -27,20 +29,31 @@ Redis TLS 連線配置，隸屬於 [[_MOC Storage|Storage 模組]]。
 
 | 值 | 說明 |
 |----|------|
-| `"required"` | 必須驗證伺服器憑證（預設） |
-| `"optional"` | 可選驗證 |
-| `"none"` | 不驗證 |
+| `"required"` | 必須驗證伺服器憑證（預設），需提供 `ca_certs` |
+| `"optional"` | 可選驗證，需提供 `ca_certs` |
+| `"none"` | 不驗證憑證，`ca_certs` 可省略 |
+
+## Quick Example
+
+```python
+from csp_lib.redis import TLSConfig
+
+tls = TLSConfig(ca_certs="/path/to/ca.crt")
+```
 
 ## 驗證規則
 
-- `certfile` 和 `keyfile` 必須同時提供或同時不提供
-- 僅提供其一時拋出 `ValueError`
+- `certfile` 和 `keyfile` 必須同時提供或同時不提供，僅提供其一時拋出 `ValueError`
+- `ca_certs` 若提供則不能為空字串
+- `cert_reqs` 非 `"none"` 時必須提供 `ca_certs`
 
 ## API
 
 | 方法 | 說明 |
 |------|------|
 | `to_ssl_context() -> ssl.SSLContext` | 建立配置好的 SSLContext 實例 |
+
+> [!note] 當 `cert_reqs="none"` 且無 `ca_certs` 時，`to_ssl_context()` 會建立不驗證憑證的 SSLContext，適用於需要 TLS 加密但無 CA 憑證的場景（如開發/測試環境）。
 
 ## 使用範例
 
@@ -60,6 +73,12 @@ tls = TLSConfig(
     certfile="/path/to/client.crt",
     keyfile="/path/to/client.key",
 )
+```
+
+### 不驗證憑證（開發/測試用）
+
+```python
+tls = TLSConfig(cert_reqs="none")
 ```
 
 ### 搭配 RedisConfig

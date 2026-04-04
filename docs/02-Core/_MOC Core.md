@@ -1,5 +1,7 @@
 ---
 tags: [type/moc, layer/core, status/complete]
+updated: 2026-04-04
+version: v0.6.1
 ---
 # _MOC Core
 
@@ -16,6 +18,7 @@ tags: [type/moc, layer/core, status/complete]
 - [[Error Hierarchy]] — 統一例外階層
 - [[Health Check]] — 健康狀態檢查
 - [[Resilience]] — 斷路器（CircuitBreaker）與重試策略（RetryPolicy）
+- [[RuntimeParameters]] — Thread-safe 即時參數容器
 
 ## Dataview 索引
 

@@ -6,6 +6,8 @@ tags:
   - status/complete
 source: csp_lib/integration/distributor.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # PowerDistributor
@@ -127,6 +129,8 @@ distributor = ProportionalDistributor(rated_key="rated_p")
 
 ### `SOCBalancingDistributor`
 
+> [!info] v0.4.2 新增
+
 在按額定容量比例分配的基礎上，根據各設備 SOC 偏差**調整 P 分配權重**，Q 仍按額定容量比例分配。適合電池儲能系統（BESS）。
 
 **分配演算法**：
@@ -157,6 +161,17 @@ distributor = SOCBalancingDistributor(
 | `soc_capability` | `str` | `"soc_readable"` | SOC capability 名稱 |
 | `soc_slot` | `str` | `"soc"` | SOC slot 名稱 |
 | `gain` | `float` | `2.0` | SOC 偏差增益係數（越大偏差影響越顯著） |
+| `per_device_max_p` | `float \| None` | `None` | 單台設備最大有功功率限制 (kW)，`None` 表示不限制 |
+| `per_device_max_q` | `float \| None` | `None` | 單台設備最大無功功率限制 (kVar)，`None` 表示不限制 |
+
+#### 硬體限幅與溢出轉移
+
+設定 `per_device_max_p` 或 `per_device_max_q` 後，分配結果會經過限幅處理：
+
+1. **Pass 1**：遍歷每台設備，`|assigned| > max_val` 時限幅（保留符號），累計溢出量
+2. **Pass 2**：將溢出量依未飽和設備的當前分配值按比例重新分配
+3. **Pass 3**：再次限幅，處理重分配後超限的邊界情況
+4. **Pass 4**：剩餘溢出量依 headroom 比例分配
 
 **Fallback 順序**：SOC 平衡分配 → 比例分配（無 SOC 資料時）→ 均分（總額定值為 0 時）
 

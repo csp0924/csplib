@@ -5,11 +5,28 @@ tags:
   - status/complete
 source: csp_lib/can/config.py
 created: 2026-03-06
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # CAN Configuration
 
 > CAN Bus 連線設定與訊框資料結構
+
+---
+
+## Quick Example
+
+```python
+from csp_lib.can import CANBusConfig, CANFrame
+
+# 建立 SocketCAN 配置
+config = CANBusConfig(interface="socketcan", channel="can0")
+
+# 建立 CAN 訊框
+frame = CANFrame(can_id=0x100, data=b"\x01\x02\x03")
+print(f"CAN ID: 0x{frame.can_id:03X}, Data: {frame.data.hex()}")
+```
 
 ---
 

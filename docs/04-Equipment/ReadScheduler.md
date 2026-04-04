@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/transport/scheduler.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # ReadScheduler
@@ -75,7 +77,7 @@ scheduler.update_groups(
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.transport import PointGrouper, ReadScheduler

@@ -230,6 +230,90 @@ class DeviceRegistry:
                 )
         return failures
 
+    def get_capability_map(self) -> dict[str, list[str]]:
+        """取得 capability_name → device_ids 映射
+
+        Returns:
+            capability 名稱對應具備該能力的設備 ID 列表（按 device_id 排序）
+        """
+        with self._lock:
+            result: dict[str, list[str]] = {}
+            for did, device in self._devices.items():
+                for cap_name in device.capabilities:
+                    if cap_name not in result:
+                        result[cap_name] = []
+                    result[cap_name].append(did)
+            # 排序 device_ids 確保確定性
+            for cap_name in result:
+                result[cap_name].sort()
+            return result
+
+    def get_capability_map_text(self) -> str:
+        """取得格式化的 capability 映射文字表格
+
+        Returns:
+            格式化文字，每行一個 capability 及其設備列表
+        """
+        cap_map = self.get_capability_map()
+        if not cap_map:
+            return ""
+        lines: list[str] = []
+        for cap_name in sorted(cap_map):
+            device_ids = cap_map[cap_name]
+            count = len(device_ids)
+            devices_str = ", ".join(device_ids)
+            lines.append(f"{cap_name} ({count} devices): {devices_str}")
+        return "\n".join(lines)
+
+    def capability_health(self, capability: Capability | str) -> dict[str, Any]:
+        """取得指定 capability 的健康狀態
+
+        Args:
+            capability: 能力定義或名稱
+
+        Returns:
+            包含 capability、total_devices、responsive_devices、
+            responsive_ratio、devices 的字典
+        """
+        cap_name = capability.name if hasattr(capability, "name") else str(capability)
+        devices = self.get_devices_with_capability(capability)
+        total = len(devices)
+        device_details: list[dict[str, Any]] = []
+        responsive_count = 0
+        for d in devices:
+            is_resp = d.is_responsive
+            if is_resp:
+                responsive_count += 1
+            device_details.append({"device_id": d.device_id, "is_responsive": is_resp})
+        return {
+            "capability": cap_name,
+            "total_devices": total,
+            "responsive_devices": responsive_count,
+            "responsive_ratio": responsive_count / total if total > 0 else 0.0,
+            "devices": device_details,
+        }
+
+    def refresh_capability_traits(self, device_id: str) -> None:
+        """重新同步設備的 capability traits（cap:xxx）
+
+        根據設備目前的 capabilities 重新建立 cap: 前綴的 traits，
+        移除不再存在的、新增新出現的。
+
+        Args:
+            device_id: 目標設備 ID
+
+        Raises:
+            KeyError: device_id 未註冊時拋出
+        """
+        with self._lock:
+            device = self._devices[device_id]  # KeyError if not found
+            current_cap_traits = {t for t in self._device_traits.get(device_id, set()) if t.startswith("cap:")}
+            desired_cap_traits = {f"cap:{name}" for name in device.capabilities}
+            for trait in current_cap_traits - desired_cap_traits:
+                self._remove_trait_index(device_id, trait)
+            for trait in desired_cap_traits - current_cap_traits:
+                self._add_trait_index(device_id, trait)
+
     def __len__(self) -> int:
         with self._lock:
             return len(self._devices)

@@ -4,6 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/events.py
+updated: 2026-04-04
+version: ">=0.4.2"
 ---
 
 # DeviceEventEmitter
@@ -147,6 +149,34 @@ cancel = device.on("value_change", on_change)
 cancel()
 ```
 
+### WeakRef Listener
+
+> [!info] v0.5.1 新增
+
+`on()` 方法支援 `weak=True` 參數，以弱引用儲存 handler。當 handler 的 referent 被 GC 回收後，自動從處理器列表移除（lazy purge）。
+
+```python
+class MyMonitor:
+    def __init__(self, device):
+        # bound method 使用 WeakMethod，物件銷毀後自動移除
+        device.on("value_change", self.on_change, weak=True)
+
+    async def on_change(self, payload: ValueChangePayload):
+        print(payload.new_value)
+
+monitor = MyMonitor(device)
+# 當 monitor 被 GC 回收後，handler 自動失效
+```
+
+| 參數 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `event` | `str` | (必填) | 事件名稱 |
+| `handler` | `AsyncHandler` | (必填) | 非同步處理函數 |
+| `weak` | `bool` | `False` | 是否以弱引用儲存 handler |
+
+> [!warning] Lambda 與 Closure
+> Lambda 和 closure 雖可弱引用，但若呼叫端未保留強引用，弱引用會立即失效，handler 永遠不會被呼叫。建議 `weak=True` 僅用於 bound method。
+
 ### 發射方式
 
 | 方法 | 說明 |
@@ -154,9 +184,40 @@ cancel()
 | `emit(event, payload)` | 非阻塞，放入佇列由 worker 處理。無監聽器時直接跳過 |
 | `emit_await(event, payload)` | 阻塞，等待處理完成。用於重要事件（連線、告警） |
 
+### 其他方法
+
+| 方法 | 說明 |
+|------|------|
+| `has_listeners(event)` | 檢查是否有（存活的）事件監聽器 |
+| `clear(event=None)` | 清除事件處理器，`None` 清除所有 |
+| `queue_size` | 目前佇列中的事件數量 |
+
+---
+
+## Quick Example
+
+```python
+from csp_lib.equipment.device.events import DeviceEventEmitter, ValueChangePayload
+
+emitter = DeviceEventEmitter(max_queue_size=10000)
+await emitter.start()
+
+async def on_value(payload: ValueChangePayload):
+    print(f"{payload.point_name}: {payload.old_value} -> {payload.new_value}")
+
+cancel = emitter.on("value_change", on_value)
+emitter.emit("value_change", ValueChangePayload(
+    device_id="dev_001", point_name="voltage", old_value=220, new_value=221,
+))
+
+cancel()  # 取消訂閱
+await emitter.stop()
+```
+
 ---
 
 ## 相關頁面
 
 - [[AsyncModbusDevice]] -- 核心設備類別
+- [[AsyncCANDevice]] -- CAN Bus 設備
 - [[_MOC Equipment]] -- 設備模組總覽
