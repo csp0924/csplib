@@ -13,6 +13,120 @@ version: 0.6.1
 
 ---
 
+## [0.6.0] - 2026-04-03
+
+### Added
+
+- **`BatchUploader` Protocol** (`csp_lib.manager.base`): `@runtime_checkable` Protocol，提供 `register_collection()` + `enqueue()` 介面，解耦 [[DataUploadManager]] 與 `StatisticsManager` 對具體 [[MongoBatchUploader]] 的直接依賴
+- **`DOMode` 列舉** (`csp_lib.equipment.device.action`): `PULSE`、`SUSTAINED`、`TOGGLE` — 三種離散輸出動作模式
+- **`DOActionConfig` frozen dataclass**: 宣告式 DO 動作配置
+- **`Actionable` Protocol**: `@runtime_checkable`，統一 ET7050/ET7051 �� PCS/BMS 設備的 DO 控制��面
+- **[[AsyncModbusDevice]] DO action 方法**: `configure_do_actions()`、`execute_do_action()`、`available_do_actions`、`cancel_pending_pulses()`
+- **`CapabilityRequirement` dataclass** (`csp_lib.integration.schema`): `capability`、`min_count`、`trait_filter` — 供 preflight validation 使用
+- **`AggregationResult` dataclass**: `value`、`device_count`、`expected_count`、`quality_ratio` — 聚合品質元資料
+- **[[CapabilityContextMapping]]`.min_device_ratio`**: 可選比例門檻
+- **[[DeviceRegistry]]`.validate_capabilities(requirements)`**: 回傳未滿足需求的可讀訊息列表
+- **[[SystemController]]`.preflight_check()`**: 驗證已註冊的能力需求
+- **`SystemControllerConfigBuilder`**: `require_capability()` 和 `strict_capability()` fluent 方法
+- **Repository Protocol 拆分**: [[AlarmPersistenceManager|AlarmRepository]]、`CommandRepository`、`ScheduleRepository` Protocol 無需安裝 `motor` 即可匯入
+
+### Changed
+
+- **`AlarmRecord.occurred_at` → `timestamp`**: 統一時間戳欄位命名
+- **`AlarmRecord.resolved_at` → `resolved_timestamp`**: 對稱重新命名
+- **`WriteCommand.created_at` → `timestamp`**: 統一指令類型���間戳
+- **`ActionCommand.created_at` → `timestamp`**: 與 WriteCommand 一致
+- **`CommandRecord.created_at` → `timestamp`**: 與告警 schema 統一
+- **[[DataUploadManager]] 建構子型別**: 接受 `BatchUploader`（Protocol）取代 `MongoBatchUploader`
+- **`UnifiedConfig.mongo_uploader`**: 型別�� `MongoBatchUploader` 放寬為 `BatchUploader`
+
+### Fixed
+
+- **靜默低容量聚合**: 設定 `min_device_ratio` 的 [[CapabilityContextMapping]] ���在會在響��設備不足時發出警告並回傳 `default`
+
+> [!info] 遷移���南
+> 時間戳欄位更名需要 MongoDB 遷移，詳見 [[v0.6.0_timestamp_rename|v0.6.0 遷移指南]]
+
+---
+
+## [0.5.2] - 2026-04-02
+
+### Added
+
+- **DroopStrategy 測試**: 38 test cases
+- **RampStopStrategy 測試**: 11 test cases
+- **CommandProcessor pipeline 測試**: 3 test cases
+- **SystemControllerConfigBuilder 測試**: 11 test cases
+- **WriteRule (Gateway) 測試**: 15 test cases
+- **FFTableRepository 測試**: 17 test cases
+- **PowerCompensator 補充測試**: 10 test cases
+- **Root conftest.py 共用 fixture**: `make_mock_device`、`mock_strategy`、`mock_registry`
+- **pytest-xdist 平行測試**: 啟用 `addopts = "-n auto"`，測試時間從 120s 降至 ~48s
+
+### Fixed
+
+- **AlarmRecord.alarm_code 未寫入 MongoDB**: `_on_alarm_triggered` 和 `_on_disconnected` 建立 AlarmRecord 時漏設 `alarm_code`
+
+### Changed
+
+- **DeviceStateSubscriber log 等級修正**: Redis 讀取失敗 log 從 `debug` 升至 `warning`
+- **DeprecationWarning 過濾收窄**: 只過濾已知第三方（pymodbus、motor、redis）
+
+---
+
+## [0.5.1] - 2026-04-01
+
+### Changed
+
+- **錯誤階層擴充**: 新增 `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 結構化例外
+- **ModbusError 上下文**: 子類別攜帶 `address`、`unit_id`、`function_code` 欄位
+- **Modbus 連線生命週期 log**: connect / disconnect / reconnect 以 INFO 記錄
+- **靜默失敗修復**: `aggregator`、`base`、`scheduler` 不再靜默吞掉錯誤
+- **Logger 命名統一**: 29 個檔案統一使用 `__name__`
+- **[[DeviceRegistry]] 並發安全**: 加 `threading.Lock` 保護讀寫操作
+- **[[DeviceEventEmitter]] 優雅關閉**: stop() drain queue + handler 完成等待
+- **Device 重複註冊檢查**: register() 和 register_group() 檢查 duplicate device_id
+- **[[CircuitBreaker]] 指數退避**: 加 `max_cooldown`、`backoff_factor` 參��
+
+### Added
+
+- **WeakRef event listener**: `on(event, handler, weak=True)` 支援弱引用 handler，GC 後自動清理
+
+---
+
+## [0.5.0] - 2026-03-31
+
+### Added
+
+- **[[RuntimeParameters]]** (`csp_lib.core.runtime_params`): Thread-safe 即時參數容器
+  - 支援 `get` / `set` / `update` / `snapshot` / `delete` / `setdefault` 操作
+  - Observer pattern：`on_change(callback)` 在值變更時觸發通知
+  - 以 `threading.Lock` 保護，Modbus hook thread 與 asyncio event loop 之間安全存取
+- **CommandProcessor Protocol** (`csp_lib.controller.core.processor`): Post-Protection 命令處理器
+  - `@runtime_checkable Protocol`，定義 `async def process(command, context) -> Command`
+  - `SystemControllerConfig` 新增 `post_protection_processors` 欄位
+- **DroopStrategy** (`csp_lib.controller.strategies`): 標準下垂一次頻率響應策略
+  - `DroopConfig` 可配置下垂係數、死區寬度、基準頻率、最大 AFC 功率
+  - `context.extra` 無頻率資料時維持上一次命令（fail-safe hold）
+- **PowerCompensator** (`csp_lib.controller.compensator`): 前饋 + 積分閉環功率補償器
+  - 實作 `CommandProcessor` Protocol
+  - FF table 查表 + 積分修正（deadband、anti-windup、rate limiting）
+  - 穩態自動學習：I 項貢獻吸收進 FF 表
+  - FF 表持久化支援 `FFTableRepository` Protocol（JSON / MongoDB）
+- **FFCalibrationStrategy** (`csp_lib.controller.calibration`): FF Table ��階校準策略
+  - 狀態機：IDLE → STEPPING → DONE
+  - 支援 `on_complete` callback
+- **動態保護規則** (`csp_lib.controller.system`):
+  - `DynamicSOCProtection`：從 [[RuntimeParameters]] 讀取動態 SOC 參數
+  - `GridLimitProtection`：外部功率限制保護
+  - `RampStopProtection`：故障/告警時斜坡降功率（已標記 deprecated，建議改用 `RampStopStrategy`）
+- **RampStopStrategy** (`csp_lib.controller.strategies`): 斜坡降功率策略，替代 `RampStopProtection`
+- **[[StrategyContext]]`.params`**: 新增 `params: RuntimeParameters | None` 欄位
+- **ModbusGatewayServer** (`csp_lib.modbus_gateway`): 完整 Modbus TCP Gateway Server 模組
+  - 宣告式 register map、write validation chain、data sync sources、watchdog
+
+---
+
 ## [0.4.2] - 2026-03-06
 
 ### Added

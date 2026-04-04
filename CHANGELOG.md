@@ -6,6 +6,31 @@
 
 ## [Unreleased]
 
+### Added
+- **文件元資料基礎設施**: 全部 153 個 docs 注入 `updated:` 和 `version:` frontmatter 欄位；`Tag Taxonomy.md` 新增 `status/stale` tag 和 Metadata Fields section；Templates 加入 Quick Example section
+- **17 個新文件頁面**:
+  - `02-Core/RuntimeParameters.md` — Thread-safe 即時參數容器
+  - `04-Equipment/DOActions.md` — DOMode、DOActionConfig、Actionable Protocol
+  - `05-Controller/DroopStrategy.md` — 下垂一次頻率響應策略
+  - `05-Controller/PowerCompensator.md` — FF + I 閉環功率補償器
+  - `05-Controller/FFCalibrationStrategy.md` — FF Table 步階校準策略
+  - `05-Controller/FFTableRepository.md` — FF Table 持久化 Protocol
+  - `05-Controller/RampStopStrategy.md` — 斜坡降功率策略
+  - `05-Controller/DynamicSOCProtection.md` — 動態 SOC 保護
+  - `05-Controller/GridLimitProtection.md` — 外部功率限制保護
+  - `05-Controller/CommandProcessor.md` — Post-Protection 命令處理器 Protocol
+  - `06-Integration/CapabilityRequirement.md` — 能力需求 + 聚合品質
+  - `07-Manager/BatchUploader.md` — BatchUploader Protocol
+  - `16-ModbusGateway/` — 6 頁完整模組文件（MOC、Server、RegisterMap、WriteValidation、SyncSources、Config）
+- **Version History 補齊**: v0.5.0、v0.5.1、v0.5.2、v0.6.0 版本歷史條目
+- **Reference 索引更新**: All Classes、All Config Classes、All Enums、Import Paths、UML Diagrams 補齊 v0.5.0~v0.6.0 新增項目
+
+### Changed
+- **152 個既有文件全面審查**: 逐檔比對 source code 確認 API 正確性，補充 Quick Example
+- **13 個重點檔案 API 更新**: SystemController（preflight_check/builder）、DeviceRegistry（validate_capabilities）、AsyncModbusDevice（DO action）、StrategyContext（params）、RedisClient（Sentinel TLS）、Error Hierarchy（3 新 Error）、DataUploadManager/UnifiedDeviceManager（BatchUploader 型別）、AlarmPersistenceManager（timestamp 更名）等
+- **SOCProtection 加入 deprecated callout** 指向 DynamicSOCProtection
+- **Architecture/Guides 文件修正**: Design Patterns 和 Full System Integration 中 Builder API 方法名修正
+
 ## [0.6.0] - 2026-04-03
 
 ### Added
