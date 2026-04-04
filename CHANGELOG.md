@@ -4,8 +4,9 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
-## [0.6.1] - 2026-04-04
+## [Unreleased]
 
+## [0.6.1] - 2026-04-04
 ### Added
 - **`NullBatchUploader`** (`csp_lib.manager.memory`): no-op `BatchUploader` 實作，靜默丟棄所有資料，用於不需要持久化的場景
 - **`InMemoryBatchUploader`** (`csp_lib.manager.memory`): dict-based `BatchUploader` 實作，儲存於記憶體，適合測試與零外部依賴部署
