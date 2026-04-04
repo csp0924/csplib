@@ -5,7 +5,7 @@ tags:
   - status/complete
 source: csp_lib/mongo/client.py
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.0
 ---
 
 # MongoConfig
@@ -41,14 +41,29 @@ MongoDB 連線配置，隸屬於 [[_MOC Storage|Storage 模組]]。
 | `connect_timeout_ms` | `None` | 連線超時（毫秒） |
 | `socket_timeout_ms` | `None` | Socket 讀寫超時（毫秒） |
 
-## 使用範例
-
-### Standalone
+## Quick Example
 
 ```python
 from csp_lib.mongo import MongoConfig, create_mongo_client
 
 config = MongoConfig(host="localhost", port=27017)
+client = create_mongo_client(config)
+db = client["my_database"]
+```
+
+## 使用範例
+
+### Standalone + 帳號密碼
+
+```python
+from csp_lib.mongo import MongoConfig, create_mongo_client
+
+config = MongoConfig(
+    host="mongo.example.com",
+    port=27017,
+    username="user",
+    password="password",
+)
 client = create_mongo_client(config)
 db = client["my_database"]
 ```

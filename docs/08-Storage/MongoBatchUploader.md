@@ -5,6 +5,7 @@ tags:
   - status/complete
 source: csp_lib/mongo/uploader.py
 updated: 2026-04-04
+version: 0.6.0
 ---
 
 # MongoBatchUploader
@@ -74,21 +75,35 @@ MongoBatchUploader              ← csp_lib/mongo/uploader.py
 - 超過 `max_retry_count` 次後丟棄該批資料並 log error
 - 重試計數以 collection 為單位
 
+## Quick Example
+
+```python
+from csp_lib.mongo import MongoBatchUploader
+
+uploader = MongoBatchUploader(db).start()
+await uploader.enqueue("measurements", {"voltage": 220.5})
+await uploader.stop()
+```
+
 ## 使用範例
 
 ```python
 from csp_lib.mongo import MongoBatchUploader, UploaderConfig
 
 config = UploaderConfig(
-    flush_interval=5,           # Flush every 5 seconds
-    batch_size_threshold=100,   # Or when 100 docs accumulated
-    max_queue_size=10000,       # Queue limit
-    max_retry_count=3,          # Max retries per batch
+    flush_interval=5,           # 每 5 秒 flush
+    batch_size_threshold=100,   # 累積 100 筆後觸發上傳
+    max_queue_size=10000,       # Queue 上限
+    max_retry_count=3,          # 單批最大重試次數
 )
 
-uploader = MongoBatchUploader(db=db, config=config)
-async with uploader:
-    await uploader.enqueue("collection_name", {"key": "value"})
+uploader = MongoBatchUploader(mongo_db=db, config=config)
+uploader.start()
+
+await uploader.enqueue("collection_name", {"key": "value"})
+
+# 關閉時確保所有資料都已上傳
+await uploader.stop()
 ```
 
 ## 相關頁面

@@ -4,7 +4,7 @@ tags:
   - layer/storage
   - status/complete
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.0
 ---
 
 # Storage 模組總覽
@@ -35,7 +35,7 @@ pip install csp0924_lib[all]     # 所有功能
 | 頁面 | 類型 | 說明 |
 |------|------|------|
 | [[RedisConfig]] | config | Redis 連線配置（Standalone / Sentinel） |
-| [[RedisClient]] | class | 非同步 Redis 客戶端（Hash / String / Pub/Sub / Key） |
+| [[RedisClient]] | class | 非同步 Redis 客戶端（Hash / String / Set / Pub/Sub / Scan / Key） |
 | [[TLSConfig]] | config | Redis TLS 連線配置 |
 
 ## 相關模組
