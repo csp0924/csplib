@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # 所有設備事件
@@ -24,6 +24,9 @@ version: ">=0.4.2"
 | `write_error` | `WriteErrorPayload` | 寫入失敗 |
 | `alarm_triggered` | `DeviceAlarmPayload` | 告警觸發 |
 | `alarm_cleared` | `DeviceAlarmPayload` | 告警解除 |
+| `reconfigured` | `ReconfiguredPayload` | 設備重新配置（v0.4.2） |
+| `restarted` | `RestartedPayload` | 設備重啟（v0.4.2） |
+| `point_toggled` | `PointToggledPayload` | 點位啟停（v0.4.2） |
 
 ---
 
@@ -129,6 +132,32 @@ cancel()  # 呼叫返回值即可取消訂閱
 | `alarm_code` | `str` | 告警代碼 |
 | `alarm_name` | `str` | 告警名稱 |
 | `level` | `AlarmLevel` | 告警等級 |
+
+### ReconfiguredPayload（v0.4.2）
+
+設備動態重新配置完成時觸發。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `device_id` | `str` | 設備 ID |
+
+### RestartedPayload（v0.4.2）
+
+設備重啟完成時觸發。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `device_id` | `str` | 設備 ID |
+
+### PointToggledPayload（v0.4.2）
+
+點位啟停變更時觸發。
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `device_id` | `str` | 設備 ID |
+| `point_name` | `str` | 點位名稱 |
+| `enabled` | `bool` | 啟用狀態 |
 
 ---
 

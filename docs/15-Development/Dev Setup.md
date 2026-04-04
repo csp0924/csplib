@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # 開發環境設定
@@ -44,6 +44,7 @@ pip install csp0924_lib[mongo]      # MongoDB (motor)
 pip install csp0924_lib[redis]      # Redis (redis-py)
 pip install csp0924_lib[monitor]    # 系統監控 (psutil)
 pip install csp0924_lib[cluster]    # 分散式叢集 (etcd)
+pip install csp0924_lib[gui]        # Web GUI (FastAPI + uvicorn)
 pip install csp0924_lib[all]        # 所有功能
 ```
 
@@ -53,9 +54,20 @@ pip install csp0924_lib[all]        # 所有功能
 
 | 工具 | 用途 |
 |------|------|
-| `pytest` | 測試框架 |
+| `pytest` | 測試框架（含 pytest-xdist 平行測試、pytest-asyncio 非同步支援） |
 | `ruff` | Linting 與格式化 |
 | `mypy` | 靜態型別檢查 |
+| `pre-commit` | Git hook 自動執行 `ruff --fix` 與 `ruff-format` |
+
+---
+
+## Pre-commit Hooks
+
+專案已設定 pre-commit hooks，自動在 commit 前執行：
+
+- `ruff check --fix` — 自動修復 lint 問題
+- `ruff format` — 自動格式化
+- Commit message 格式檢查（`<type>(<scope>): <description>`）
 
 ---
 

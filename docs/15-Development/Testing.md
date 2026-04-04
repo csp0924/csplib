@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # 測試指南
@@ -31,14 +31,23 @@ uv run pytest -k "test_scale_transform"
 
 ---
 
+## 平行測試
+
+專案已啟用 **pytest-xdist**，預設以 `-n auto --dist loadfile` 平行執行測試，可大幅加速。
+
+若需暫時關閉平行：
+
+```bash
+uv run pytest tests/ -v -n 0
+```
+
+---
+
 ## 非同步測試
 
-使用 `@pytest.mark.asyncio` 裝飾器標記非同步測試（專案未設定全域 asyncio 模式）。
+專案已設定 `asyncio_mode = "auto"`，**不需要** `@pytest.mark.asyncio` 裝飾器。所有 `async def test_*` 函式會自動以非同步模式執行。
 
 ```python
-import pytest
-
-@pytest.mark.asyncio
 async def test_device_read():
     async with device:
         values = await device.read_all()
@@ -67,8 +76,12 @@ tests/
 ├── integration/        # Integration 模組測試
 ├── manager/            # Manager 模組測試
 ├── modbus/             # Modbus 模組測試
+├── modbus_gateway/     # Modbus Gateway 模組測試（v0.6.0）
+├── modbus_server/      # Modbus Server 模組測試（v0.5.2）
 ├── mongo/              # MongoDB 模組測試
-└── redis/              # Redis 模組測試
+├── redis/              # Redis 模組測試
+├── statistics/         # Statistics 模組測試（v0.6.0）
+└── gui/                # GUI 模組測試（v0.5.2）
 ```
 
 ---

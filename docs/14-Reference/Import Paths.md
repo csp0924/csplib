@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # Import 路徑
@@ -30,6 +30,9 @@ from csp_lib.core import (
     CommunicationError,
     AlarmError,
     ConfigurationError,
+    StrategyExecutionError,       # v0.5.0
+    ProtectionError,              # v0.5.0
+    DeviceRegistryError,          # v0.5.0
     # Health
     HealthStatus,
     HealthReport,
@@ -38,6 +41,8 @@ from csp_lib.core import (
     CircuitState,
     CircuitBreaker,
     RetryPolicy,
+    # Runtime Parameters (v0.5.0)
+    RuntimeParameters,
 )
 ```
 
@@ -129,6 +134,10 @@ from csp_lib.equipment.device import (
     DeviceProtocol,
     # 配置
     DeviceConfig,
+    # DO 動作（v0.5.0）
+    DOMode,
+    DOActionConfig,
+    Actionable,
     # Capability（v0.4.2 能力綁定系統）
     Capability,
     CapabilityBinding,
@@ -213,6 +222,16 @@ from csp_lib.equipment.simulation import (
 )
 ```
 
+### Template（v0.5.2）
+
+```python
+from csp_lib.equipment.template import (
+    EquipmentTemplate,
+    PointOverride,
+    DeviceFactory,
+)
+```
+
 ---
 
 ## Controller (`csp_lib.controller`)
@@ -222,6 +241,12 @@ from csp_lib.controller import (
     # 核心
     Command, SystemBase, StrategyContext,
     Strategy, ExecutionConfig, ExecutionMode, ConfigMixin,
+    # 命令處理管線（v0.5.1）
+    CommandProcessor,
+    # 校準（v0.5.1）
+    FFCalibrationStrategy, FFCalibrationConfig,
+    # 補償器（v0.5.1）
+    PowerCompensator, PowerCompensatorConfig,
     # 執行器
     StrategyExecutor, ComputeOffloader,
     # 服務
@@ -233,6 +258,8 @@ from csp_lib.controller import (
     PVSmoothStrategy, PVSmoothConfig,
     QVStrategy, QVConfig,
     FPStrategy, FPConfig,
+    DroopStrategy, DroopConfig,              # v0.5.0
+    RampStopStrategy,                         # v0.5.0
     IslandModeStrategy, IslandModeConfig, RelayProtocol,
     BypassStrategy, StopStrategy, ScheduleStrategy,
     # 負載卸載策略（v0.4.2）
@@ -243,6 +270,9 @@ from csp_lib.controller import (
     ModeManager, ModeDefinition, ModePriority, SwitchSource,
     ProtectionGuard, ProtectionRule, ProtectionResult,
     SOCProtection, SOCProtectionConfig,
+    DynamicSOCProtection,                     # v0.5.0
+    GridLimitProtection,                      # v0.5.0
+    RampStopProtection,                       # v0.5.0
     ReversePowerProtection, SystemAlarmProtection,
     CascadingStrategy, CapacityConfig,
     # 事件驅動覆蓋（v0.4.2）
@@ -262,6 +292,7 @@ from csp_lib.controller import (
 from csp_lib.manager import (
     # 基底
     AsyncRepository,
+    BatchUploader,                            # v0.5.0
     DeviceEventSubscriber,
     # 告警
     AlarmPersistenceManager, AlarmPersistenceConfig,
@@ -299,9 +330,11 @@ from csp_lib.integration import (
     DeviceRegistry,
     # Schema
     AggregateFunc,
+    AggregationResult,                        # v0.5.0
     ContextMapping, CommandMapping, DataFeedMapping,
     HeartbeatMapping, HeartbeatMode,
     CapabilityContextMapping, CapabilityCommandMapping,
+    CapabilityRequirement,                    # v0.5.0
     # 建構器
     ContextBuilder, apply_builtin_aggregate,
     CommandRouter,
@@ -327,6 +360,18 @@ from csp_lib.integration import (
     DistributedConfig, RemoteSiteConfig,
     DeviceStateSubscriber, RemoteCommandRouter,
     DistributedController, RemoteSiteRunner,
+)
+```
+
+### Hierarchical Control（v0.6.0）
+
+```python
+from csp_lib.integration.hierarchical import (
+    SubExecutorAgent,
+    TransportAdapter,
+    DispatchCommand,
+    ExecutorStatus,
+    StatusReport,
 )
 ```
 
@@ -404,6 +449,121 @@ from csp_lib.notification import (
     NotificationEvent,
     NotificationChannel,
     NotificationDispatcher,
+)
+```
+
+---
+
+## Modbus Gateway（v0.6.0）
+
+```python
+from csp_lib.modbus_gateway import (
+    # Errors
+    GatewayError,
+    RegisterConflictError,
+    WriteRejectedError,
+    # Config
+    RegisterType,
+    GatewayRegisterDef,
+    WatchdogConfig,
+    GatewayServerConfig,
+    WriteRule,
+    # Protocol
+    WriteValidator,
+    WriteHook,
+    DataSyncSource,
+    UpdateRegisterCallback,
+    # Core
+    GatewayRegisterMap,
+    ModbusGatewayServer,
+    # Watchdog
+    CommunicationWatchdog,
+    # Validators
+    AddressWhitelistValidator,
+    # Hooks
+    RedisPublishHook,
+    CallbackHook,
+    StatePersistHook,
+    # Sync Sources
+    RedisSubscriptionSource,
+    PollingCallbackSource,
+)
+```
+
+---
+
+## Modbus Server（v0.5.2）
+
+```python
+from csp_lib.modbus_server import (
+    # Config
+    ServerConfig,
+    SimulatedDeviceConfig,
+    SimulatedPoint,
+    AlarmPointConfig,
+    AlarmResetMode,
+    ControllabilityMode,
+    PCSSimConfig,
+    PowerMeterSimConfig,
+    SolarSimConfig,
+    GeneratorSimConfig,
+    LoadSimConfig,
+    MicrogridConfig,
+    # Register
+    RegisterBlock,
+    # Server
+    SimulationServer,
+    SimulatorDataBlock,
+    # Microgrid
+    MicrogridSimulator,
+    # Simulators
+    BaseDeviceSimulator,
+    PCSSimulator,
+    PowerMeterSimulator,
+    SolarSimulator,
+    GeneratorSimulator,
+    LoadSimulator,
+    # Behaviors
+    AlarmBehavior,
+    CurveBehavior,
+    NoiseBehavior,
+    RampBehavior,
+)
+```
+
+---
+
+## Statistics（v0.6.0）
+
+```python
+from csp_lib.statistics import (
+    # Config
+    DeviceMeterType,
+    MetricDefinition,
+    PowerSumDefinition,
+    StatisticsConfig,
+    # Tracker
+    IntervalRecord,
+    IntervalAccumulator,
+    DeviceEnergyTracker,
+    # Engine
+    PowerSumRecord,
+    StatisticsEngine,
+    # Manager（需要 csp_lib[mongo]）
+    StatisticsManager,
+)
+```
+
+---
+
+## GUI（v0.5.2）
+
+需安裝：`pip install csp0924_lib[gui]`
+
+```python
+from csp_lib.gui import (
+    create_app,
+    GUIConfig,
 )
 ```
 

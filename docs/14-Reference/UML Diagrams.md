@@ -1,3 +1,12 @@
+---
+tags:
+  - type/reference
+  - status/complete
+created: 2026-02-17
+updated: 2026-04-04
+version: 0.6.1
+---
+
 # UML Class Diagrams — csp_lib
 
 ## 1. Architecture Overview
@@ -39,6 +48,11 @@ classDiagram
             +max_retries int
             +base_delay float
             +exponential_base float
+        }
+        class RuntimeParameters {
+            +get(key) Any
+            +set(key, value)
+            +snapshot() dict
         }
     }
 
@@ -144,6 +158,19 @@ classDiagram
             +cooldown_seconds float
             +should_activate(ctx) bool
         }
+        class CommandProcessor {
+            <<protocol>>
+            +process(cmd, ctx) Command
+        }
+        class DroopStrategy
+        class RampStopStrategy
+        class PowerCompensator {
+            +process(cmd, ctx) Command
+        }
+        class FFCalibrationStrategy
+        class DynamicSOCProtection
+        class GridLimitProtection
+        class RampStopProtection
         class LoadSheddingStrategy
         class SwitchSource {
             <<enumeration>>
@@ -204,6 +231,22 @@ classDiagram
         class RedisClient
     }
 
+    namespace ModbusGateway {
+        class ModbusGatewayServer {
+            +start()
+            +stop()
+            +update_register(address, value)
+        }
+        class GatewayRegisterMap
+        class CommunicationWatchdog
+    }
+
+    namespace Statistics {
+        class StatisticsEngine
+        class DeviceEnergyTracker
+        class StatisticsManager
+    }
+
     %% Core inheritance
     AsyncModbusDevice ..|> HealthCheckable
     DeviceManager --|> AsyncLifecycleMixin
@@ -238,6 +281,13 @@ classDiagram
 
     %% Controller
     LoadSheddingStrategy --|> Strategy
+    DroopStrategy --|> Strategy
+    RampStopStrategy --|> Strategy
+    FFCalibrationStrategy --|> Strategy
+    PowerCompensator ..|> CommandProcessor
+    DynamicSOCProtection --|> ProtectionRule
+    GridLimitProtection --|> ProtectionRule
+    RampStopProtection --|> ProtectionRule
     ModeManager --> SwitchSource
 
     %% Controller composition
@@ -274,6 +324,16 @@ classDiagram
     AlarmPersistenceManager --> MongoClient
     DataUploadManager --> MongoBatchUploader
     StateSyncManager --> RedisClient
+
+    %% Modbus Gateway
+    ModbusGatewayServer --|> AsyncLifecycleMixin
+    ModbusGatewayServer *-- GatewayRegisterMap
+    ModbusGatewayServer o-- CommunicationWatchdog
+
+    %% Statistics
+    StatisticsManager --|> DeviceEventSubscriber
+    StatisticsManager *-- StatisticsEngine
+    StatisticsEngine o-- DeviceEnergyTracker
 ```
 
 ---
@@ -1121,6 +1181,13 @@ classDiagram
     class BypassStrategy
     class StopStrategy
     class ScheduleStrategy
+    class DroopStrategy {
+        -_config DroopConfig
+        +execute(context) Command
+    }
+    class RampStopStrategy {
+        +execute(context) Command
+    }
     class LoadSheddingStrategy {
         -_config LoadSheddingConfig
         +config LoadSheddingConfig
@@ -1129,16 +1196,23 @@ classDiagram
         +on_activate()
         +on_deactivate()
     }
+    class FFCalibrationStrategy {
+        -_config FFCalibrationConfig
+        +execute(context) Command
+    }
 
     PQModeStrategy --|> Strategy
     PVSmoothStrategy --|> Strategy
     QVStrategy --|> Strategy
     FPStrategy --|> Strategy
+    DroopStrategy --|> Strategy
+    RampStopStrategy --|> Strategy
     IslandStrategy --|> Strategy
     BypassStrategy --|> Strategy
     StopStrategy --|> Strategy
     ScheduleStrategy --|> Strategy
     LoadSheddingStrategy --|> Strategy
+    FFCalibrationStrategy --|> Strategy
 ```
 
 ### 5b. Executor & Mode Management
@@ -1280,9 +1354,30 @@ classDiagram
         +is_triggered bool
     }
 
+    class DynamicSOCProtection {
+        +name str
+        +evaluate(command, context) Command
+        +is_triggered bool
+    }
+
+    class GridLimitProtection {
+        +name str
+        +evaluate(command, context) Command
+        +is_triggered bool
+    }
+
+    class RampStopProtection {
+        +name str
+        +evaluate(command, context) Command
+        +is_triggered bool
+    }
+
     SOCProtection --|> ProtectionRule
     ReversePowerProtection --|> ProtectionRule
     SystemAlarmProtection --|> ProtectionRule
+    DynamicSOCProtection --|> ProtectionRule
+    GridLimitProtection --|> ProtectionRule
+    RampStopProtection --|> ProtectionRule
 
     class ProtectionGuard {
         -_rules list~ProtectionRule~
@@ -1306,6 +1401,43 @@ classDiagram
     CascadingStrategy --|> Strategy
     CascadingStrategy o-- Strategy : layers
     CascadingStrategy --> CapacityConfig
+```
+
+### 5d. CommandProcessor Pipeline（v0.5.1）
+
+```mermaid
+classDiagram
+    direction TB
+
+    class CommandProcessor {
+        <<protocol>>
+        +process(command, context) Command
+    }
+
+    class PowerCompensator {
+        -_config PowerCompensatorConfig
+        -_ff_table dict
+        -_integral float
+        +process(command, context) Command
+        +reset()
+    }
+
+    class PowerCompensatorConfig {
+        <<frozen dataclass>>
+        +ki float
+        +integral_limit float
+        +ff_table_path str?
+    }
+
+    class FFCalibrationConfig {
+        <<frozen dataclass>>
+        +step_kw float
+        +settle_seconds float
+        +measure_seconds float
+    }
+
+    PowerCompensator ..|> CommandProcessor
+    PowerCompensator --> PowerCompensatorConfig
 ```
 
 ---
@@ -1810,4 +1942,194 @@ sequenceDiagram
         CR->>D1: write("power", 300)
         CR->>D2: write("power", 650)
     end
+```
+
+---
+
+## 11. Modbus Gateway Layer（v0.6.0）
+
+```mermaid
+classDiagram
+    direction TB
+
+    class GatewayServerConfig {
+        <<frozen dataclass>>
+        +host str
+        +port int
+        +register_defs list~GatewayRegisterDef~
+        +watchdog WatchdogConfig?
+    }
+
+    class GatewayRegisterDef {
+        <<frozen dataclass>>
+        +address int
+        +count int
+        +register_type RegisterType
+        +description str
+    }
+
+    class RegisterType {
+        <<enumeration>>
+        HOLDING
+        INPUT
+        COIL
+        DISCRETE
+    }
+
+    class WatchdogConfig {
+        <<frozen dataclass>>
+        +timeout_seconds float
+        +action str
+    }
+
+    class WriteRule {
+        <<protocol>>
+        +validate(address, value) bool
+    }
+
+    class WriteValidator {
+        <<protocol>>
+        +validate(address, values) bool
+    }
+
+    class WriteHook {
+        <<protocol>>
+        +on_write(address, values)
+    }
+
+    class DataSyncSource {
+        <<protocol>>
+        +start(callback)
+        +stop()
+    }
+
+    class GatewayRegisterMap {
+        -_registers dict
+        +get(address) int
+        +set(address, value)
+        +bulk_update(updates)
+    }
+
+    class ModbusGatewayServer {
+        -_config GatewayServerConfig
+        -_register_map GatewayRegisterMap
+        -_watchdog CommunicationWatchdog?
+        -_validators list~WriteValidator~
+        -_hooks list~WriteHook~
+        -_sync_sources list~DataSyncSource~
+        +start()
+        +stop()
+        +update_register(address, value)
+    }
+
+    class CommunicationWatchdog {
+        -_config WatchdogConfig
+        +start()
+        +stop()
+        +feed()
+    }
+
+    class AddressWhitelistValidator {
+        -_allowed set~int~
+        +validate(address, values) bool
+    }
+
+    ModbusGatewayServer --|> AsyncLifecycleMixin
+    ModbusGatewayServer *-- GatewayRegisterMap
+    ModbusGatewayServer --> GatewayServerConfig
+    ModbusGatewayServer o-- CommunicationWatchdog
+    ModbusGatewayServer o-- WriteValidator
+    ModbusGatewayServer o-- WriteHook
+    ModbusGatewayServer o-- DataSyncSource
+    GatewayServerConfig o-- GatewayRegisterDef
+    GatewayServerConfig --> WatchdogConfig
+    GatewayRegisterDef --> RegisterType
+    AddressWhitelistValidator ..|> WriteValidator
+    CommunicationWatchdog --> WatchdogConfig
+```
+
+---
+
+## 12. Statistics Layer（v0.6.0）
+
+```mermaid
+classDiagram
+    direction TB
+
+    class StatisticsConfig {
+        <<frozen dataclass>>
+        +metrics list~MetricDefinition~
+        +power_sums list~PowerSumDefinition~
+        +interval_seconds float
+    }
+
+    class MetricDefinition {
+        <<frozen dataclass>>
+        +name str
+        +point_name str
+        +device_meter_type DeviceMeterType
+    }
+
+    class PowerSumDefinition {
+        <<frozen dataclass>>
+        +name str
+        +device_ids list~str~
+        +point_name str
+    }
+
+    class DeviceMeterType {
+        <<frozen dataclass>>
+        +device_id str
+        +meter_type str
+    }
+
+    class IntervalRecord {
+        <<frozen dataclass>>
+        +start datetime
+        +end datetime
+        +energy_kwh float
+    }
+
+    class IntervalAccumulator {
+        +add_sample(power_kw, timestamp)
+        +close_interval() IntervalRecord
+    }
+
+    class DeviceEnergyTracker {
+        -_accumulators dict
+        +on_read_complete(payload)
+        +close_all() list~IntervalRecord~
+    }
+
+    class PowerSumRecord {
+        <<frozen dataclass>>
+        +name str
+        +total_kw float
+        +timestamp datetime
+    }
+
+    class StatisticsEngine {
+        -_config StatisticsConfig
+        -_trackers dict~str, DeviceEnergyTracker~
+        +process(device_id, values)
+        +compute_power_sums(registry) list~PowerSumRecord~
+    }
+
+    class StatisticsManager {
+        -_engine StatisticsEngine
+        +subscribe(device)
+        +start()
+        +stop()
+    }
+
+    StatisticsConfig o-- MetricDefinition
+    StatisticsConfig o-- PowerSumDefinition
+    MetricDefinition --> DeviceMeterType
+    StatisticsEngine --> StatisticsConfig
+    StatisticsEngine o-- DeviceEnergyTracker
+    DeviceEnergyTracker o-- IntervalAccumulator
+    IntervalAccumulator ..> IntervalRecord : creates
+    StatisticsEngine ..> PowerSumRecord : creates
+    StatisticsManager *-- StatisticsEngine
+    StatisticsManager --|> DeviceEventSubscriber
 ```
