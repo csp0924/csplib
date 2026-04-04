@@ -6,7 +6,7 @@ tags:
 source: csp_lib/modbus/types/
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.0
 ---
 
 # Data Types
@@ -51,16 +51,37 @@ version: ">=0.4.2"
 
 ---
 
+## Quick Example
+
+```python
+from csp_lib.modbus import UInt16, Float32, ModbusCodec
+
+codec = ModbusCodec()
+
+# 編碼 16-bit 無號整數
+regs = codec.encode(UInt16(), 1234)  # -> [1234]
+
+# 編碼 IEEE 754 浮點數
+regs = codec.encode(Float32(), 3.14)  # -> [0x4048, 0xF5C3]
+value = codec.decode(Float32(), regs)  # -> 3.14
+```
+
+---
+
 ## 使用範例
 
 ### 基本編碼/解碼
 
 ```python
-from csp_lib.modbus import Float32
+from csp_lib.modbus import Float32, ByteOrder, RegisterOrder
 
 data_type = Float32()
-registers = data_type.encode(123.45)  # -> [0x42F6, 0xE666]
-value = data_type.decode(registers)   # -> 123.45
+registers = data_type.encode(
+    123.45, ByteOrder.BIG_ENDIAN, RegisterOrder.HIGH_FIRST
+)  # -> [0x42F6, 0xE666]
+value = data_type.decode(
+    registers, ByteOrder.BIG_ENDIAN, RegisterOrder.HIGH_FIRST
+)  # -> 123.45
 ```
 
 ### 動態長度型別

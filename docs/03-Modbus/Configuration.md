@@ -6,7 +6,7 @@ tags:
 source: csp_lib/modbus/config.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.0
 ---
 
 # Configuration
@@ -20,9 +20,20 @@ version: ">=0.4.2"
 
 ---
 
+## Quick Example
+
+```python
+from csp_lib.modbus import ModbusTcpConfig, ModbusRtuConfig
+
+tcp = ModbusTcpConfig(host="192.168.1.100", port=502)
+rtu = ModbusRtuConfig(port="COM1", baudrate=9600)
+```
+
+---
+
 ## ModbusTcpConfig
 
-Modbus TCP/IP 連線設定。
+Modbus TCP/IP 連線設定（`@dataclass(frozen=True)`）。
 
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
@@ -58,7 +69,7 @@ tcp_config = ModbusTcpConfig(
 
 ## ModbusRtuConfig
 
-Modbus RTU 串口連線設定。
+Modbus RTU 串口連線設定（`@dataclass(frozen=True)`）。
 
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
