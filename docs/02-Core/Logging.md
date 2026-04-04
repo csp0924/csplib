@@ -1,6 +1,8 @@
 ---
 tags: [type/class, layer/core, status/complete]
 source: csp_lib/core/__init__.py
+updated: 2026-04-04
+version: v0.6.1
 ---
 # Logging
 
@@ -20,7 +22,7 @@ source: csp_lib/core/__init__.py
 | `set_level(level, module=None)` | 設定 log 等級；若 `module` 為 `None` 則設定全域等級 |
 | `configure_logging(level, format_string=None)` | 初始化全域 logging 配置，可自訂格式字串 |
 
-## 使用範例
+## Quick Example
 
 ### 基本初始化
 

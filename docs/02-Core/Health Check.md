@@ -1,6 +1,8 @@
 ---
 tags: [type/class, layer/core, status/complete]
 source: csp_lib/core/health.py
+updated: 2026-04-04
+version: v0.6.1
 ---
 # Health Check
 
@@ -43,7 +45,7 @@ class HealthCheckable(Protocol):
     def health(self) -> HealthReport: ...
 ```
 
-## 使用範例
+## Quick Example
 
 ### 基本用法
 
