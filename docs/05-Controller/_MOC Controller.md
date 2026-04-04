@@ -57,6 +57,8 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 | [[StopStrategy]] | 停機 (P=0, Q=0) | PERIODIC 1s |
 | [[BypassStrategy]] | 直通模式 (維持 last_command) | TRIGGERED |
 | [[LoadSheddingStrategy]] | 階段性負載卸載（離網場景） | PERIODIC 5s |
+| [[DroopStrategy]] | 標準下垂一次頻率響應 (Droop/PFR) | PERIODIC 1s |
+| [[RampStopStrategy]] | 斜坡降功率策略 | PERIODIC 1s |
 
 ### 執行引擎
 
@@ -75,6 +77,8 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 | [[SOCProtection]] | SOC 高低限保護與警戒區漸進限制 |
 | [[ReversePowerProtection]] | 表後逆送保護 |
 | [[SystemAlarmProtection]] | 系統告警強制停機保護 |
+| [[DynamicSOCProtection]] | 動態 SOC 保護（支援 RuntimeParameters 即時更新） |
+| [[GridLimitProtection]] | 外部功率限制保護 |
 | [[CascadingStrategy]] | 多策略級聯功率分配 (delta-based clamping) |
 
 ### 策略發現
@@ -82,6 +86,15 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 | 文件 | 說明 |
 |------|------|
 | [[StrategyDiscovery]] | 策略插件自動發現機制（entry_points） |
+
+### 命令處理管線
+
+| 文件 | 說明 |
+|------|------|
+| [[CommandProcessor]] | Post-Protection 命令處理器 Protocol |
+| [[PowerCompensator]] | FF + I 閉環功率補償器（實作 CommandProcessor） |
+| [[FFTableRepository]] | FF Table 持久化介面 (JSON/MongoDB) |
+| [[FFCalibrationStrategy]] | FF Table 步階校準策略 |
 
 ### 輔助服務
 
