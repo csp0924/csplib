@@ -6,7 +6,7 @@ tags:
 source: csp_lib/cluster/controller.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # ClusterController
@@ -85,12 +85,14 @@ version: ">=0.4.2"
 3. 切換 executor 到 live 模式
 4. 啟動 `ClusterStatePublisher`
 5. 同步 follower 快取的模式狀態到 live `ModeManager`
+6. 呼叫使用者的 `on_promoted` hook（若有提供）
 
 ### Demotion（降級為 Follower）
 
 1. 停止 `ClusterStatePublisher`
 2. 切換 executor 到 follower 模式
 3. 停止 `UnifiedDeviceManager`
+4. 呼叫使用者的 `on_demoted` hook（若有提供）
 
 ---
 

@@ -6,7 +6,7 @@ tags:
 source: csp_lib/modbus_server/server.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # SimulationServer
@@ -67,12 +67,22 @@ version: ">=0.4.2"
 
 ---
 
+## 屬性
+
+| 屬性 | 型別 | 說明 |
+|------|------|------|
+| `config` | `ServerConfig` | 伺服器配置 |
+| `simulators` | `dict[int, BaseDeviceSimulator]` | 已註冊的模擬器（unit_id -> simulator，複製） |
+| `is_running` | `bool` | 是否正在運行 |
+
+---
+
 ## 方法
 
 | 方法 | 說明 |
 |------|------|
-| `add_simulator(simulator)` | 註冊設備模擬器（per unit_id） |
-| `set_microgrid(microgrid)` | 設定 MicrogridSimulator 聯動模式 |
+| `add_simulator(simulator)` | 註冊設備模擬器（per unit_id，重複會拋 `ValueError`） |
+| `set_microgrid(microgrid)` | 設定 [[MicrogridSimulator]] 聯動模式（自動註冊所有 simulators） |
 | `start()` | 啟動 pymodbus TCP server 與 tick loop |
 | `stop()` | 停止 server |
 | `serve()` | 持續運行直到被停止 |

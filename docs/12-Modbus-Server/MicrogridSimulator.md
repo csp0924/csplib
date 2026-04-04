@@ -6,7 +6,7 @@ tags:
 source: csp_lib/modbus_server/microgrid.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # MicrogridSimulator

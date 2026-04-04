@@ -6,7 +6,7 @@ tags:
 source: csp_lib/cluster/election.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # LeaderElector
@@ -71,8 +71,9 @@ version: ">=0.4.2"
 
 ## 內部機制
 
-- **Keepalive**：Leader 模式下以 `lease_ttl / 3` 間隔更新 lease，連續失敗 3 次則 self-fencing（自動降級）
+- **Keepalive**：Leader 模式下以 `lease_ttl / 3` 間隔更新 lease，連續失敗達 `max_keepalive_failures` 次（預設 3）則 self-fencing（自動降級）
 - **Watch**：Follower 模式下以 `lease_ttl / 2` 間隔輪詢 election key，key 消失即重新競選
+- **Campaign Retry**：競選失敗時以 `campaign_retry_delay`（預設 2 秒）間隔重試
 - **Self-fencing**：當 keepalive 連續失敗時，主動降級為 follower 避免腦裂
 
 ---

@@ -6,7 +6,7 @@ tags:
 source: csp_lib/modbus_server/behaviors/
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # Behaviors
@@ -56,7 +56,14 @@ version: ">=0.4.2"
 |------|------|
 | `base_value` | 基準值 |
 | `amplitude` | 擾動幅度 |
-| `noise_type` | 擾動類型（`UNIFORM` / `GAUSSIAN`） |
+| `noise_type` | 擾動類型（`NoiseType.UNIFORM` / `NoiseType.GAUSSIAN`） |
+
+`NoiseType` 列舉：
+
+| 值 | 說明 |
+|----|------|
+| `UNIFORM` | 均勻分布（`base_value +/- amplitude`） |
+| `GAUSSIAN` | 高斯分布（`amplitude` 作為 1-sigma） |
 
 ---
 

@@ -6,7 +6,7 @@ tags:
 source: csp_lib/monitor/manager.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # SystemMonitor
@@ -22,8 +22,9 @@ version: ">=0.4.2"
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
 | `redis_client` | `RedisClient \| None` | `None` | Redis 客戶端（用於發布指標） |
-| `dispatcher` | `NotificationDispatcher \| None` | `None` | 通知分發器（用於發送告警通知） |
+| `dispatcher` | `NotificationSender \| None` | `None` | 通知發送者（[[NotificationDispatcher]] 或 `NotificationBatcher` 均滿足） |
 | `config` | `MonitorConfig \| None` | `None` | 監控配置（預設使用 `MonitorConfig()`） |
+| `distributed_config` | `DistributedMonitorConfig \| None` | `None` | 分散式監控配置（啟用節點註冊與叢集聚合） |
 
 ---
 
@@ -65,12 +66,13 @@ version: ">=0.4.2"
 ## 程式碼範例
 
 ```python
-from csp_lib.monitor import SystemMonitor, MonitorConfig
+from csp_lib.monitor import SystemMonitor, MonitorConfig, DistributedMonitorConfig
 
 monitor = SystemMonitor(
     config=MonitorConfig(interval_seconds=5.0),
     redis_client=redis,
     dispatcher=dispatcher,
+    distributed_config=DistributedMonitorConfig(instance_id="node-01"),  # 可選
 )
 
 # 註冊 HealthCheckable 模組

@@ -6,7 +6,7 @@ tags:
 source: csp_lib/monitor/collector.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # SystemMetricsCollector
@@ -44,6 +44,19 @@ version: ">=0.4.2"
 | `net_bytes_recv` | `int` | 網路已接收位元組 |
 | `net_send_rate` | `float` | 網路發送速率（bytes/s） |
 | `net_recv_rate` | `float` | 網路接收速率（bytes/s） |
+| `interface_metrics` | `dict[str, InterfaceMetrics]` | Per-interface 網路指標 |
+
+### InterfaceMetrics
+
+單一網路介面指標（frozen dataclass）：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `name` | `str` | 介面名稱 |
+| `bytes_sent` | `int` | 已發送位元組 |
+| `bytes_recv` | `int` | 已接收位元組 |
+| `send_rate` | `float` | 發送速率（bytes/s） |
+| `recv_rate` | `float` | 接收速率（bytes/s） |
 
 ---
 
@@ -77,6 +90,7 @@ Redis Key 結構：
 |-----|------|------|
 | `{prefix}:metrics` | Hash | 最新系統指標（有 TTL） |
 | `{prefix}:modules` | Hash | 最新模組健康（有 TTL） |
+| `{prefix}:network` | Hash | Per-interface 網路指標（有 TTL） |
 | `{prefix}:alarms` | Set | 活躍系統告警代碼 |
 
 Pub/Sub Channel：

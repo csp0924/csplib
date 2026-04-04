@@ -5,7 +5,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
+version: 0.6.1
 ---
 
 # Custom Channel Guide
@@ -56,18 +56,58 @@ from csp_lib.notification import NotificationDispatcher
 dispatcher = NotificationDispatcher(channels=[LineChannel(), TelegramChannel()])
 ```
 
-### 3. 整合 AlarmPersistenceManager
+### 3. 覆寫 `send_batch()` / `send_event()`（可選）
 
-將 dispatcher 注入 `AlarmPersistenceManager`，告警觸發/解除時自動發送通知：
+若需要自訂批次格式或支援事件通知：
+
+```python
+from typing import Sequence
+from csp_lib.notification import EventNotification, NotificationItem, NotificationChannel, Notification
+
+class LineChannel(NotificationChannel):
+    @property
+    def name(self) -> str:
+        return "line"
+
+    async def send(self, notification: Notification) -> None:
+        # 發送單則告警
+        ...
+
+    async def send_batch(self, items: Sequence[NotificationItem]) -> None:
+        # 自訂批次格式（如摘要訊息）
+        summary = f"共 {len(items)} 則通知\n"
+        for item in items:
+            summary += f"- {item.title}\n"
+        await self._send_line_message(summary)
+
+    async def send_event(self, event: EventNotification) -> None:
+        # 發送非告警事件
+        await self._send_line_message(f"[{event.category.value}] {event.title}")
+```
+
+### 4. 整合 AlarmPersistenceManager
+
+將 dispatcher 或 batcher 注入 `AlarmPersistenceManager`（兩者均滿足 `NotificationSender`），告警觸發/解除時自動發送通知：
 
 ```python
 from csp_lib.manager.alarm import AlarmPersistenceManager
 
+# 即時模式
 alarm_manager = AlarmPersistenceManager(
     device=device,
     repository=repo,
     redis_client=redis,
     dispatcher=dispatcher,
+)
+
+# 批次模式（防抖 + 去重）
+from csp_lib.notification import NotificationBatcher
+batcher = NotificationBatcher(channels=[LineChannel(), TelegramChannel()])
+alarm_manager = AlarmPersistenceManager(
+    device=device,
+    repository=repo,
+    redis_client=redis,
+    dispatcher=batcher,
 )
 ```
 
@@ -91,10 +131,11 @@ alarm_manager = AlarmPersistenceManager(
 
 ## 實作建議
 
-- **錯誤處理**：`send()` 拋出的例外會被 dispatcher 捕獲，不需在內部做全域 catch
+- **錯誤處理**：`send()` 拋出的例外會被 dispatcher/batcher 捕獲，不需在內部做全域 catch
 - **逾時控制**：建議在 HTTP 呼叫中設定合理的 timeout（如 10 秒）
 - **等級過濾**：可在 `send()` 中根據 `notification.level` 過濾低等級告警
-- **批次發送**：對於高頻告警場景，可考慮在 channel 內部實作 debounce 或 batch 機制
+- **批次發送**：使用 `NotificationBatcher` 即可自動防抖 + 去重，或覆寫 `send_batch()` 自訂批次格式
+- **事件通知**：覆寫 `send_event()` 以支援 `EventNotification`（系統事件、報告、維護等）
 
 ---
 
