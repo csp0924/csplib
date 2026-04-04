@@ -6,7 +6,6 @@ tags:
 source: csp_lib/controller/system/protection.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # ProtectionGuard
@@ -59,39 +58,45 @@ ProtectionGuard 維護一組 `ProtectionRule`，透過 `apply()` 方法鏈式套
 
 | 規則 | 說明 | 資料來源 |
 |------|------|---------|
-| [[SOCProtection]] | SOC 高限禁充、低限禁放、警戒區漸進限制 | `context.soc` |
+| [[SOCProtection]] | SOC 高限禁充、低限禁放、警戒區漸進限制 (Deprecated) | `context.soc` |
+| [[DynamicSOCProtection]] | 動態 SOC 保護（支援 RuntimeParameters 與 SOCProtectionConfig） | `context.soc` + `RuntimeParameters` |
+| [[GridLimitProtection]] | 外部功率限制（電力公司/排程） | `RuntimeParameters` |
 | [[ReversePowerProtection]] | 表後逆送保護 | `context.extra["meter_power"]` |
 | [[SystemAlarmProtection]] | 系統告警強制停機 | `context.extra["system_alarm"]` |
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.controller import (
-    ProtectionGuard, SOCProtection, SOCProtectionConfig,
+    ProtectionGuard, SOCProtectionConfig,
     ReversePowerProtection, SystemAlarmProtection,
 )
+from csp_lib.controller.system.dynamic_protection import DynamicSOCProtection
 
 guard = ProtectionGuard(rules=[
-    SOCProtection(SOCProtectionConfig(
-        soc_high=95,      # Prohibit charging above 95%
-        soc_low=5,        # Prohibit discharging below 5%
-        warning_band=5,   # Gradual limiting in warning zone
+    DynamicSOCProtection(SOCProtectionConfig(
+        soc_high=95,      # 禁止充電上限
+        soc_low=5,        # 禁止放電下限
+        warning_band=5,   # 警戒區漸進限制
     )),
-    ReversePowerProtection(threshold=0),  # No reverse power
-    SystemAlarmProtection(),               # Force P=0, Q=0 on system alarm
+    ReversePowerProtection(threshold=0),  # 不允許逆送
+    SystemAlarmProtection(),               # 告警時強制 P=0, Q=0
 ])
 
 result = guard.apply(command, context)
-# result.protected_command   - modified command
-# result.was_modified        - whether command was changed
-# result.triggered_rules     - list of triggered rule names
+# result.protected_command   — 保護後命令
+# result.was_modified        — 命令是否被修改
+# result.triggered_rules     — 觸發的規則名稱列表
 ```
 
 ## 相關連結
 
-- [[SOCProtection]] — SOC 保護規則
+- [[SOCProtection]] — SOC 保護規則 (Deprecated)
+- [[DynamicSOCProtection]] — 動態 SOC 保護規則（取代 SOCProtection）
+- [[GridLimitProtection]] — 外部功率限制保護規則
 - [[ReversePowerProtection]] — 逆送保護規則
 - [[SystemAlarmProtection]] — 系統告警保護規則
+- [[CommandProcessor]] — Post-Protection 命令處理管線（在 ProtectionGuard 之後執行）
 - [[Command]] — 輸入與輸出
 - [[StrategyContext]] — 提供保護評估所需的上下文
 - [[ModeManager]] — 保護模式通常搭配 PROTECTION 等級的 override

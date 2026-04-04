@@ -5,7 +5,6 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # Controller 模組總覽
@@ -52,13 +51,13 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 | [[PVSmoothStrategy]] | PV 功率平滑 | PERIODIC 900s |
 | [[QVStrategy]] | 電壓-無功功率控制 (Volt-VAR) | PERIODIC 1s |
 | [[FPStrategy]] | 頻率-功率控制 (AFC) | PERIODIC 1s |
+| [[DroopStrategy]] | 標準下垂控制一次頻率響應 | PERIODIC 1s |
 | [[IslandModeStrategy]] | 離網模式 (Grid Forming) | TRIGGERED |
 | [[ScheduleStrategy]] | 排程策略 (依時間執行) | PERIODIC 1s |
 | [[StopStrategy]] | 停機 (P=0, Q=0) | PERIODIC 1s |
+| [[RampStopStrategy]] | 斜坡降功率停機 | PERIODIC 1s |
 | [[BypassStrategy]] | 直通模式 (維持 last_command) | TRIGGERED |
 | [[LoadSheddingStrategy]] | 階段性負載卸載（離網場景） | PERIODIC 5s |
-| [[DroopStrategy]] | 標準下垂一次頻率響應 (Droop/PFR) | PERIODIC 1s |
-| [[RampStopStrategy]] | 斜坡降功率策略 | PERIODIC 1s |
 
 ### 執行引擎
 
@@ -74,27 +73,27 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 | [[ScheduleModeController]] | 排程模式控制協定，橋接 ScheduleService (L5) 與 SystemController (L6) |
 | [[EventDrivenOverride]] | 系統事件驅動的自動 Override 協定與內建實現 |
 | [[ProtectionGuard]] | 保護規則鏈 (Chain of Responsibility) |
-| [[SOCProtection]] | SOC 高低限保護與警戒區漸進限制 |
+| [[SOCProtection]] | SOC 高低限保護與警戒區漸進限制 (Deprecated) |
+| [[DynamicSOCProtection]] | 動態 SOC 保護（支援 RuntimeParameters） |
+| [[GridLimitProtection]] | 外部功率限制保護（電力公司/排程） |
 | [[ReversePowerProtection]] | 表後逆送保護 |
 | [[SystemAlarmProtection]] | 系統告警強制停機保護 |
-| [[DynamicSOCProtection]] | 動態 SOC 保護（支援 RuntimeParameters 即時更新） |
-| [[GridLimitProtection]] | 外部功率限制保護 |
 | [[CascadingStrategy]] | 多策略級聯功率分配 (delta-based clamping) |
-
-### 策略發現
-
-| 文件 | 說明 |
-|------|------|
-| [[StrategyDiscovery]] | 策略插件自動發現機制（entry_points） |
 
 ### 命令處理管線
 
 | 文件 | 說明 |
 |------|------|
 | [[CommandProcessor]] | Post-Protection 命令處理器 Protocol |
-| [[PowerCompensator]] | FF + I 閉環功率補償器（實作 CommandProcessor） |
-| [[FFTableRepository]] | FF Table 持久化介面 (JSON/MongoDB) |
-| [[FFCalibrationStrategy]] | FF Table 步階校準策略 |
+| [[PowerCompensator]] | 前饋 + 積分閉環功率補償器 (實作 CommandProcessor) |
+| [[FFCalibrationStrategy]] | FF Table 步階校準策略（維護型一次性操作） |
+| [[FFTableRepository]] | FF Table 持久化介面 (JSON / MongoDB) |
+
+### 策略發現
+
+| 文件 | 說明 |
+|------|------|
+| [[StrategyDiscovery]] | 策略插件自動發現機制（entry_points） |
 
 ### 輔助服務
 

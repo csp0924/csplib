@@ -6,7 +6,6 @@ tags:
 source: csp_lib/controller/system/event_override.py
 created: 2026-03-06
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # EventDrivenOverride
@@ -250,4 +249,5 @@ controller.register_event_override(custom_stop)
 - [[SystemController]] — 執行 `_evaluate_event_overrides()` 的入口
 - [[StrategyContext]] — `should_activate()` 讀取感測值的來源
 - [[Strategy]] — Override 對應的策略基底類別
+- [[RampStopStrategy]] — 常搭配 EventDrivenOverride 使用的斜坡降功率策略
 - [[ProtectionGuard]] — 與 EventDrivenOverride 互補的保護機制（命令層面的限制 vs 模式層面的切換）

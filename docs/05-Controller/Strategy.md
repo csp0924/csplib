@@ -6,7 +6,6 @@ tags:
 source: csp_lib/controller/core/strategy.py
 created: 2026-02-17
 updated: 2026-04-04
-version: ">=0.4.2"
 ---
 
 # Strategy
@@ -79,5 +78,7 @@ class MyPQStrategy(Strategy):
 - [[Command]] — `execute()` 方法的回傳值
 - [[StrategyExecutor]] — 管理 Strategy 的執行生命週期
 - [[ModeManager]] — 管理多個 Strategy 的註冊與切換
+- [[ProtectionGuard]] — 策略輸出 Command 經保護規則鏈修正
+- [[CommandProcessor]] — 保護鏈之後的命令處理管線
 - [[SystemController]] — `register_mode()` 驗證 `required_capabilities`
 - [[CapabilityBinding Integration]] — 能力驅動的設備整合架構
