@@ -37,7 +37,7 @@ csp_lib 提供 12 種內建策略：
 | 停機 | [[StopStrategy]] | P=0, Q=0 | -- | PERIODIC 1s |
 | 斜率停機 | [[RampStopStrategy]] | 漸進式降載停機 | `RampStopConfig(...)` | PERIODIC 1s |
 | 排程 | [[ScheduleStrategy]] | 依時間表執行 | -- | PERIODIC 1s |
-| 負載卸載 | [[LoadSheddingStrategy]] | 階段性���載卸載 | `LoadSheddingConfig(stages, ...)` | PERIODIC 5s |
+| 負載卸載 | [[LoadSheddingStrategy]] | 階段性負載卸載 | `LoadSheddingConfig(stages, ...)` | PERIODIC 5s |
 | FF 校準 | [[FFCalibrationStrategy]] | 維護模式 FF 表校準 | `FFCalibrationConfig(...)` | PERIODIC |
 
 ---
