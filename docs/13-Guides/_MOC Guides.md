@@ -21,6 +21,8 @@ version: 0.6.1
 | [[Full System Integration]] | 完整系統整合：DeviceRegistry、映射 Schema、控制迴圈 |
 | [[Custom Strategy]] | 自訂策略：繼承 Strategy ABC、實作 execute() |
 | [[Cluster HA Setup]] | 叢集高可用設定：etcd leader election、ClusterController |
+| [[No MongoDB Setup]] | 不使用 MongoDB：NullBatchUploader、InMemoryBatchUploader、自訂後端 |
+| [[Custom Repository]] | 實作自訂 Repository：AlarmRepository、CommandRepository、SQLite 範例 |
 
 ## 相關資源
 

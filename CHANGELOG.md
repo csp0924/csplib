@@ -4,9 +4,23 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
-## [Unreleased]
+## [0.6.1] - 2026-04-04
 
 ### Added
+- **`NullBatchUploader`** (`csp_lib.manager.memory`): no-op `BatchUploader` 實作，靜默丟棄所有資料，用於不需要持久化的場景
+- **`InMemoryBatchUploader`** (`csp_lib.manager.memory`): dict-based `BatchUploader` 實作，儲存於記憶體，適合測試與零外部依賴部署
+- **`InMemoryAlarmRepository`** (`csp_lib.manager.memory`): dict-based `AlarmRepository` Protocol 實作，支援告警 CRUD、resolve、list_active
+- **`InMemoryCommandRepository`** (`csp_lib.manager.memory`): dict-based `CommandRepository` Protocol 實作，支援指令紀錄與查詢
+- **`InMemoryScheduleRepository`** (`csp_lib.manager.memory`): dict-based `ScheduleRepository` Protocol 實作，包含從 `MongoScheduleRepository` 提取的時間匹配邏輯（`matcher.py`）
+- **`DeviceRegistry.get_capability_map()`** (`csp_lib.integration`): 回傳 capability → device_ids 結構化快照，供 dashboard 與策略層查詢
+- **`DeviceRegistry.get_capability_map_text()`**: 人類可讀文字表格格式，供 CLI log 輸出能力分布
+- **`DeviceRegistry.capability_health(cap)`**: 回傳指定能力的總設備數、響應中設備數與各設備狀態，供 `SystemController.health()` 整合
+- **`DeviceRegistry.refresh_capability_traits(device_id)`**: 設備 reconfigure 後重新掃描 capabilities 並更新 trait index
+- **`CapabilityBinding.metadata`** (`csp_lib.equipment.device`): per-capability 元資料欄位（如 `step_kw`、`response_ms`、`rated_kw`），frozen dict
+- **`EVENT_CAPABILITY_ADDED` / `EVENT_CAPABILITY_REMOVED`** (`csp_lib.equipment.device`): 能力變更事件，`add_capability()` / `remove_capability()` 時發射
+- **GUI `GET /capabilities`**: 序列化 capability map 為 JSON，供前端 dashboard 顯示能力分布
+- **GUI `GET /capabilities/{name}/health`**: 回傳指定能力的健康狀態 JSON，含 total/responsive/device_statuses
+- **`examples/19_custom_database.py`**: InMemory 全套（`NullBatchUploader` + `InMemoryAlarmRepository` + `InMemoryCommandRepository` + `UnifiedDeviceManager`）零外部依賴示範
 - **文件元資料基礎設施**: 全部 153 個 docs 注入 `updated:` 和 `version:` frontmatter 欄位；`Tag Taxonomy.md` 新增 `status/stale` tag 和 Metadata Fields section；Templates 加入 Quick Example section
 - **17 個新文件頁面**:
   - `02-Core/RuntimeParameters.md` — Thread-safe 即時參數容器
