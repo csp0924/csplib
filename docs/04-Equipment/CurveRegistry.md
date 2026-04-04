@@ -63,7 +63,7 @@ class CurveProvider(Protocol):
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.simulation import CurveRegistry, VirtualMeter

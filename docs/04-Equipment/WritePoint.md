@@ -27,10 +27,12 @@ version: ">=0.4.2"
 | `byte_order` | `ByteOrder` | `BIG_ENDIAN` | 位元組順序 |
 | `register_order` | `RegisterOrder` | `HIGH_FIRST` | 暫存器順序 |
 | `validator` | `ValueValidator \| None` | `None` | 值驗證器 |
+| `pipeline` | `ProcessingPipeline \| None` | `None` | 寫入前資料處理管線（使用者值 → 暫存器值） |
+| `metadata` | `PointMetadata \| None` | `None` | 點位元資料（單位、描述） |
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.core import WritePoint, RangeValidator

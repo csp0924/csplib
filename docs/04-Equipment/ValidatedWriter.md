@@ -29,9 +29,10 @@ version: ">=0.4.2"
 ## 寫入流程
 
 1. **驗證**：若 [[WritePoint]] 有 `validator`，先呼叫 `validate()` 檢查值
-2. **編碼**：呼叫 `data_type.encode()` 將值編碼為暫存器資料
-3. **寫入**：根據 `function_code` 呼叫對應的 Modbus 寫入函數
-4. **讀回驗證**（可選）：寫入後讀回暫存器值，比對是否一致
+2. **管線轉換**：若 [[WritePoint]] 有 `pipeline`，執行 `pipeline.process()` 將使用者值轉為暫存器值
+3. **編碼**：呼叫 `data_type.encode()` 將值編碼為暫存器資料
+4. **寫入**：根據 `function_code` 呼叫對應的 Modbus 寫入函數
+5. **讀回驗證**（可選）：寫入後讀回暫存器值，比對是否一致
 
 ---
 
@@ -57,7 +58,7 @@ version: ">=0.4.2"
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.transport import ValidatedWriter

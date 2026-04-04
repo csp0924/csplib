@@ -104,8 +104,8 @@ await device.disconnect()
 ### 讀取
 
 ```python
-# 讀取所有點位
-values = await device.read_all()
+# 執行一次完整讀取（含自動重連、告警評估）
+values = await device.read_once()
 # -> {"voltage": 220.5, "temperature": 25.3}
 ```
 
@@ -122,7 +122,38 @@ elif result.status == WriteStatus.VERIFICATION_FAILED:
 ```
 
 > [!note] 停用點位保護
-> 對已停用（`disable_point()`）的點位執行寫入操作將被拒絕，`WriteStatus` 會回傳 `POINT_DISABLED`。
+> 對已停用（`disable_point()`）的點位執行寫入操作將被拒絕，`WriteStatus` 會回傳 `VALIDATION_FAILED`。
+
+### ACTIONS 高階動作
+
+```python
+result = await device.execute_action("start", p=5000)
+print(device.available_actions)  # ["start", "stop"]
+```
+
+### DO 動作
+
+> [!info] v0.6.0 新增
+
+透過 `WriteMixin` 整合結構化的 DO 動作控制，詳見 [[DOActions]]。
+
+| 方法 / 屬性 | 說明 |
+|------------|------|
+| `configure_do_actions(configs)` | 配置 DO 動作列表 |
+| `available_do_actions` | 取得已配置的 `DOActionConfig` 列表 |
+| `execute_do_action(label, *, turn_off=False)` | 執行 DO 動作（`WriteResult`） |
+| `cancel_pending_pulses()` | 取消所有 PULSE 任務（`stop()` 時自動呼叫） |
+
+```python
+from csp_lib.equipment.device.action import DOMode, DOActionConfig
+
+device.configure_do_actions([
+    DOActionConfig(point_name="do_trip", label="trip", mode=DOMode.PULSE, pulse_duration=0.3),
+    DOActionConfig(point_name="do_contactor", label="contactor", mode=DOMode.SUSTAINED),
+])
+await device.execute_do_action("trip")
+await device.execute_do_action("contactor", turn_off=True)
+```
 
 ---
 
@@ -317,7 +348,52 @@ class MyInverter(AsyncModbusDevice):
         "start": "set_generator_on",
         "stop": "set_generator_off",
     }
+
+# 透過 execute_action 呼叫
+result = await inverter.execute_action("start")
 ```
+
+---
+
+## 能力系統
+
+> [!info] v0.5.0 新增
+
+透過 `Capability` + `CapabilityBinding` 實現語意插槽到實際點位的映射，讓 Controller 層不需關心具體點位名稱。
+
+| 方法 / 屬性 | 說明 |
+|------------|------|
+| `capabilities` | 所有已綁定的能力（`dict[str, CapabilityBinding]`） |
+| `has_capability(cap)` | 檢查是否具備指定能力 |
+| `get_binding(cap)` | 取得能力綁定（不存在回傳 `None`） |
+| `resolve_point(cap, slot)` | 解析語意插槽到實際點位名稱 |
+| `add_capability(binding)` | 動態新增能力綁定 |
+| `remove_capability(cap)` | 動態移除能力綁定 |
+
+```python
+from csp_lib.equipment.device.capability import ACTIVE_POWER_CONTROL, CapabilityBinding
+
+binding = CapabilityBinding(ACTIVE_POWER_CONTROL, {"p_setpoint": "power_cmd", "p_measurement": "active_power"})
+device.add_capability(binding)
+
+point_name = device.resolve_point(ACTIVE_POWER_CONTROL, "p_setpoint")
+# -> "power_cmd"
+```
+
+---
+
+## 健康檢查
+
+```python
+report = device.health()
+# HealthReport(status=HEALTHY, component="device:inverter_001", details={...})
+```
+
+| 狀態 | 條件 |
+|------|------|
+| `HEALTHY` | connected + responsive + 無保護告警 |
+| `DEGRADED` | connected 但 unresponsive 或有保護告警 |
+| `UNHEALTHY` | disconnected |
 
 ---
 
@@ -327,6 +403,7 @@ class MyInverter(AsyncModbusDevice):
 - [[AsyncCANDevice]] -- CAN Bus 設備（平行實作）
 - [[DeviceConfig]] -- 設備設定參數
 - [[DeviceEventEmitter]] -- 事件發射器（含 12 種事件類型）
+- [[DOActions]] -- DO 動作抽象（v0.6.0）
 - [[ReadScheduler]] -- 讀取排程器（含動態更新）
 - [[GroupReader]] -- 群組讀取器
 - [[ValidatedWriter]] -- 驗證寫入器

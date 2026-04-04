@@ -77,7 +77,7 @@ scheduler.update_groups(
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.transport import PointGrouper, ReadScheduler

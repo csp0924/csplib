@@ -50,7 +50,7 @@ version: ">=0.4.2"
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.transport import GroupReader, PointGrouper

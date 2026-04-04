@@ -112,6 +112,21 @@ graph TB
 
 ---
 
+## Quick Example
+
+```python
+from csp_lib.equipment.device import DeviceProtocol
+
+async def monitor_all(devices: list[DeviceProtocol]) -> None:
+    for dev in devices:
+        if dev.is_protected:
+            print(f"[{dev.device_id}] 保護中, 告警: {len(dev.active_alarms)}")
+        report = dev.health()
+        print(f"[{dev.device_id}] {report.status.value}")
+```
+
+---
+
 ## 相關頁面
 
 - [[AsyncModbusDevice]] — Modbus 設備實作

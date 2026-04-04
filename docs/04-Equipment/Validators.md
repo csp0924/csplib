@@ -43,7 +43,7 @@ class ValueValidator(Protocol):
 
 ---
 
-## 程式碼範例
+## Quick Example
 
 ```python
 from csp_lib.equipment.core import RangeValidator, EnumValidator, CompositeValidator
