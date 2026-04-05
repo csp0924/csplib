@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-05
+version: ">=0.6.2"
 ---
 
 # 所有配置類別
@@ -112,6 +112,9 @@ SORT file.name ASC
 | [[LoadSimConfig]] | 負載模擬配置 |
 | [[MicrogridConfig]] | 微電網模擬配置 |
 | [[AlarmPointConfig]] | 告警點位配置 |
+| [[DeviceLinkConfig]] | 設備到電表的功率路由配置（v0.6.2） |
+| [[MeterAggregationConfig]] | 電表聚合樹配置（v0.6.2） |
+| [[BMSSimulator]] | BMS 模擬器配置（BMSSimConfig，v0.6.2） |
 
 ### Statistics 層（v0.6.0）
 

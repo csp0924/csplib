@@ -47,15 +47,52 @@ class CurvePoint:
     """
     曲線點位 - 不可變
 
+    支援三種模式：
+    - Step: 固定值持續 duration 秒（預設）
+    - Ramp to target: 從 value 線性變化到 end_value
+    - Ramp by rate: 從 value 按 rate/秒 變化，自動算出 end_value
+
+    rate 和 end_value 互斥，同時設定會 raise ValueError。
+
     Attributes:
-        value: 目標值（頻率 Hz 或電壓 V）
+        value: 起始值（step 模式時為固定值）
         duration: 持續時間（秒）
         curve_type: 曲線類型
+        end_value: 終點值（ramp 模式），None 表示 step 模式
+        rate: 每秒變化率（如 -0.01 Hz/s），設定後自動計算 end_value
     """
 
     value: float
     duration: float
     curve_type: CurveType
+    end_value: float | None = None
+    rate: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.rate is not None and self.end_value is not None:
+            raise ValueError("rate 和 end_value 不可同時設定")
+        if self.rate is not None:
+            # 自動計算 end_value（frozen dataclass 需用 object.__setattr__）
+            object.__setattr__(self, "end_value", self.value + self.rate * self.duration)
+
+    @property
+    def is_ramp(self) -> bool:
+        """是否為 ramp 模式（線性變化）"""
+        return self.end_value is not None
+
+    def interpolate(self, progress: float) -> float:
+        """根據進度 (0.0~1.0) 計算當前值。
+
+        Args:
+            progress: 0.0 = 起點，1.0 = 終點
+
+        Returns:
+            step 模式回傳 value，ramp 模式回傳線性插值
+        """
+        if self.end_value is None:
+            return self.value
+        p = max(0.0, min(1.0, progress))
+        return self.value + (self.end_value - self.value) * p
 
 
 # ================ Protocols ================

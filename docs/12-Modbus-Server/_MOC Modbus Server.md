@@ -4,8 +4,8 @@ tags:
   - layer/modbus-server
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-05
+version: ">=0.6.2"
 ---
 
 # Modbus Server 模組總覽
@@ -24,6 +24,7 @@ SimulationServer (AsyncLifecycleMixin, pymodbus TCP)
   ├── BaseDeviceSimulator ─── 設備模擬器基類
   │     ├── SolarSimulator
   │     ├── PCSSimulator
+  │     ├── BMSSimulator       (v0.6.2)
   │     ├── GeneratorSimulator
   │     ├── LoadSimulator
   │     └── PowerMeterSimulator
@@ -45,12 +46,14 @@ SimulationServer (AsyncLifecycleMixin, pymodbus TCP)
 |------|------|
 | [[SimulationServer]] | Modbus TCP 模擬伺服器（含 ServerConfig） |
 | [[MicrogridSimulator]] | 微電網功率平衡協調器 |
+| [[Device Interconnection]] | 多電表路由、DeviceLinkConfig、MeterAggregationConfig（v0.6.2） |
 
 ### 模擬器
 
 | 頁面 | 說明 |
 |------|------|
 | [[Simulators]] | 5 種內建設備模擬器一覽 |
+| [[BMSSimulator]] | 電池管理系統模擬器（v0.6.2） |
 
 ### 行為模組
 

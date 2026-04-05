@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import math
+
 from csp_lib.modbus import Float32, UInt16
 
 from ..behaviors import NoiseBehavior
@@ -87,6 +89,10 @@ class PowerMeterSimulator(BaseDeviceSimulator):
         self._voltage_noise = NoiseBehavior(base_value=380.0, amplitude=self._sim_config.voltage_noise)
         self._frequency_noise = NoiseBehavior(base_value=60.0, amplitude=self._sim_config.frequency_noise)
         self._accumulated_energy: float = 0.0
+        self._linked_p: float = 0.0
+        self._linked_q: float = 0.0
+        self._raw_net_p: float = 0.0
+        self._raw_net_q: float = 0.0
 
     @property
     def power_sign(self) -> float:
@@ -129,6 +135,43 @@ class PowerMeterSimulator(BaseDeviceSimulator):
         current = s / (1.732 * v) if v > 1e-6 else 0.0
         for phase in ("current_a", "current_b", "current_c"):
             self.set_value(phase, current)
+
+    def reset_linked_power(self) -> None:
+        """重置每 tick 的功率累加器。"""
+        self._linked_p = 0.0
+        self._linked_q = 0.0
+
+    def add_linked_power(self, p: float, q: float) -> None:
+        """累加來自連結設備的功率。可在同一 tick 多次呼叫。"""
+        self._linked_p += p
+        self._linked_q += q
+
+    def finalize_linked_reading(self, v: float, f: float) -> None:
+        """累加完畢後設定 V/F 並計算衍生值。內部委派 set_system_reading()。"""
+        self._raw_net_p = self._linked_p
+        self._raw_net_q = self._linked_q
+        self.set_system_reading(v, f, self._linked_p, self._linked_q)
+
+    def set_partial_reading(self, p: float, q: float) -> None:
+        """只更新 P/Q，不覆蓋 V/F。p/q 為原始物理值（pre-power_sign）。"""
+        self._raw_net_p = p
+        self._raw_net_q = q
+        sign = self._power_sign
+        p_signed = p * sign
+        q_signed = q * sign
+        self.set_value("active_power", p_signed)
+        self.set_value("reactive_power", q_signed)
+        s = math.sqrt(p_signed**2 + q_signed**2)
+        self.set_value("apparent_power", s)
+        pf = abs(p_signed / s) if s > 0 else 1.0
+        self.set_value("power_factor", pf)
+        # 重算電流（使用現有電壓）
+        v_a = self.get_value("voltage_a") or 380.0
+        if v_a > 0:
+            i = s / (v_a * math.sqrt(3))
+            self.set_value("current_a", i)
+            self.set_value("current_b", i)
+            self.set_value("current_c", i)
 
     def accumulate_energy(self, power_kw: float, dt: float) -> None:
         """累積電量 (kWh)"""

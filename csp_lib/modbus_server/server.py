@@ -8,6 +8,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.modbus._pymodbus import (
     ensure_pymodbus_server,
     get_BaseModbusDataBlock,
@@ -107,7 +108,7 @@ class SimulationServer(AsyncLifecycleMixin):
     def add_simulator(self, simulator: BaseDeviceSimulator) -> None:
         """註冊設備模擬器"""
         if simulator.unit_id in self._simulators:
-            raise ValueError(f"Unit ID {simulator.unit_id} already registered")
+            raise ConfigurationError(f"Unit ID {simulator.unit_id} already registered")
         self._simulators[simulator.unit_id] = simulator
 
     def set_microgrid(self, microgrid: MicrogridSimulator) -> None:

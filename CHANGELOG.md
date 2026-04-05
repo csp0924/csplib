@@ -6,6 +6,40 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-05
+### Added
+- **`DeviceLinkConfig`** (`csp_lib.modbus_server`): frozen dataclass，宣告設備（PCS/Solar/Load/Generator）到電表的功率路由，支援 `loss_factor` 損耗因子
+- **`MeterAggregationConfig`** (`csp_lib.modbus_server`): frozen dataclass，宣告多個子電表功率累加到父電表，支援任意深度聚合樹
+- **`MicrogridSimulator.add_meter()`**: 支援多電表場景，第一個註冊的電表自動成為 default；`set_meter()` 與 `.meter` 屬性完整向後相容
+- **`MicrogridSimulator.get_meter()`**: 依 ID 取得已註冊電表，不存在時拋 `KeyError`
+- **`MicrogridSimulator.meters`**: 屬性，回傳所有已註冊電表的唯讀字典副本
+- **`MicrogridSimulator.add_device_link()`**: 新增設備到電表的功率路由；驗證設備與電表已註冊，防止重複連結
+- **`MicrogridSimulator.add_meter_aggregation()`**: 新增電表聚合，立即執行 Kahn 拓撲排序 + 循環偵測，失敗時自動回滾
+- **`PowerMeterSimulator.reset_linked_power()`**: 重置每 tick 的功率累加器，由 `MicrogridSimulator.update()` 呼叫
+- **`PowerMeterSimulator.add_linked_power()`**: 累加來自連結設備的功率，同一 tick 可多次呼叫
+- **`PowerMeterSimulator.finalize_linked_reading()`**: 累加完畢後寫入 V/F 並計算衍生值（視在功率、功率因數、電流）
+- **`PowerMeterSimulator.set_partial_reading()`**: 僅更新 P/Q 不覆蓋 V/F，供聚合電表在 Step 8 使用
+- **`BMSSimConfig`** (`csp_lib.modbus_server`): frozen dataclass，BMS 模擬器配置，含 `capacity_kwh`、`initial_soc`、`cells_in_series`、`charge_efficiency` 等 11 個欄位
+- **`BMSSimulator`** (`csp_lib.modbus_server`): 電池管理系統模擬器，追蹤 SOC（含充電效率）、pack 電壓（SOC 線性插值）、電流、電芯電壓與 5 位元告警 register；`soc` 和 `temperature` 為 writable 點位供 debug 測試
+- **`MicrogridSimulator.add_bms()`**: 註冊 BMS 模擬器
+- **`MicrogridSimulator.link_pcs_bms()`**: 連結 PCS 與 BMS，BMS 接管 SOC 計算；有 BMS 時 SOC 應從 BMS 讀取
+- **`MicrogridSimulator.set_grid_voltage()` / `set_grid_frequency()`**: 電網 V/F override，傳 `None` 恢復 config 預設值
+- **`MicrogridSimulator.set_voltage_curve()` / `set_frequency_curve()`**: 簡便 tuple API 設定 V/F 曲線，支援 step `(v, dur)`、ramp `(v, dur, end_v)`、rate `(v, dur, None, rate)` 三種格式
+- **`MicrogridSimulator.set_voltage_behavior()` / `set_frequency_behavior()`**: 進階 API，直接傳入自訂 `CurveBehavior` 實例
+- **`CurvePoint.end_value`**: 線性 ramp 終點值，`CurveBehavior` 在播放時自動線性插值
+- **`CurvePoint.rate`**: 每秒變化率（如 `-0.01` Hz/s），`__post_init__` 自動計算 `end_value = value + rate × duration`；與 `end_value` 互斥
+- **`CurvePoint.interpolate(progress)`**: 根據進度 (0~1) 計算 step/ramp 當前值
+- **`examples/20_multi_meter_simulation.py`**: SimulationServer + 多電表 + BMS + 設備聯動 + V/F 曲線，支援 `--curve` 參數（`qv_ramp` / `fp_ramp` / `fp_step` / `voltage_sag`）
+
+### Changed
+- **`modbus_server` 所有 config dataclass 加入 `slots=True`**：對齊 library 慣例
+- **`modbus_server` config 驗證改用 `ConfigurationError`**：從 `ValueError` 改為 `ConfigurationError`，對齊錯誤階層
+- **`BMSSimulator` 溫度模型簡化**：移除功率溫升，僅保留自然散熱；`temperature` 為 writable 點位，透過 Modbus 寫入 >55°C 觸發過溫告警
+- **`CurveBehavior.update()` 支援線性插值**：當 `CurvePoint.end_value` 有值時，根據已播放時間自動在 start→end 間線性插值
+
+### Fixed
+- **電表聚合符號 bug**：`MicrogridSimulator.update()` Step 8 電表聚合改用 `_raw_net_p`（原始物理淨功率）而非 `active_power`（已套用 `power_sign`），修正混合符號電表（不同 `power_sign` 值）聚合結果錯誤
+
 ## [0.6.1] - 2026-04-04
 ### Added
 - **`NullBatchUploader`** (`csp_lib.manager.in_memory_uploader`): no-op `BatchUploader` 實作，靜默丟棄所有資料，用於不需要持久化的場景

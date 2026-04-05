@@ -3,6 +3,7 @@
 # 設備模擬器
 
 from .base import BaseDeviceSimulator
+from .bms import BMSSimulator
 from .generator import GeneratorSimulator
 from .load import LoadSimulator
 from .pcs import PCSSimulator
@@ -10,6 +11,7 @@ from .power_meter import PowerMeterSimulator
 from .solar import SolarSimulator
 
 __all__ = [
+    "BMSSimulator",
     "BaseDeviceSimulator",
     "GeneratorSimulator",
     "LoadSimulator",
