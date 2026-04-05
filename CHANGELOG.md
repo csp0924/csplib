@@ -29,7 +29,7 @@
 
 ### Changed
 - **`configure_logging()` 新增 keyword-only 參數**: 新增 `enqueue`（預設 `False`）、`json_output`（預設 `False`）、`diagnose`（預設 `False`）、`env_prefix`（預設 `None`）；現在委派給 `SinkManager` 管理 sink 生命週期
-- **`configure_logging()` 回傳值不再為 `None`**: 函式現在透過 `SinkManager` 管理，可透過 `SinkManager.get_instance()` 取得 manager 實例
+- **`configure_logging()` 改為委派 `SinkManager`**: 函式現在透過 `SinkManager` 管理 sink；如需 manager 實例，可透過 `SinkManager.get_instance()` 取得
 - **`diagnose=False` 為生產預設**: `configure_logging()` 與 `SinkManager.add_sink()` 預設 `diagnose=False`，防止 exception traceback 洩漏 Modbus 位址、Redis 密碼等敏感資訊（行為變更，非 breaking）
 - **`set_level()` 不再 remove/re-add sink**: 改為委派給 `LogFilter.default_level` 或 `LogFilter.set_module_level()`，更新 dict 即生效，不需要重建所有 sink
 - **`csp_lib/core/logging/` 子模組**: 原 `core/__init__.py` 中的日誌邏輯拆分至 `csp_lib/core/logging/` 子套件，含 `filter.py`、`sink_manager.py`、`file_config.py`、`context.py`、`capture.py`、`remote.py`、`async_sink.py`；`csp_lib.core` 頂層 `__all__` 保持向後相容

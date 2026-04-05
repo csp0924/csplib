@@ -227,7 +227,16 @@ class SinkManager:
         return None
 
     def remove_all(self) -> None:
-        """移除所有 managed sinks。"""
+        """移除所有 managed sinks。
+
+        同時取消遠端等級來源的背景 task（best-effort 同步取消）。
+        """
+        # 取消 remote source 背景 task
+        if self._remote_task is not None:
+            self._remote_task.cancel()
+            self._remote_task = None
+        self._remote_source = None
+
         for sink_id in list(self._sinks.keys()):
             try:
                 _root_logger.remove(sink_id)
@@ -402,6 +411,8 @@ class SinkManager:
             try:
                 levels = await source.fetch_levels()
                 self._apply_remote_levels(levels)
+            except asyncio.CancelledError:
+                raise
             except Exception:  # noqa: BLE001
                 pass  # 輪詢失敗不應中斷
 
