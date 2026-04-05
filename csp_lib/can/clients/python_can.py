@@ -114,14 +114,16 @@ class PythonCANClient(AsyncCANClientBase):
 
     async def send(self, can_id: int, data: bytes) -> None:
         if not self._connected or self._bus is None:
-            raise CANSendError("CAN 未連線")
+            raise CANSendError("CAN 未連線", can_id=can_id)
         try:
             import can
 
             msg = can.Message(arbitration_id=can_id, data=data, is_extended_id=False)
             await asyncio.to_thread(self._bus.send, msg)
+        except CANSendError:
+            raise
         except Exception as e:
-            raise CANSendError(f"CAN 發送失敗: {e}") from e
+            raise CANSendError(f"CAN 發送失敗: {e}", can_id=can_id) from e
 
     async def request(
         self,
@@ -138,7 +140,7 @@ class PythonCANClient(AsyncCANClientBase):
             await self.send(can_id, data)
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError as e:
-            raise CANTimeoutError(f"等待 CAN ID 0x{response_id:03X} 回應逾時 ({timeout}s)") from e
+            raise CANTimeoutError(f"等待 CAN ID 0x{response_id:03X} 回應逾時 ({timeout}s)", can_id=response_id) from e
         finally:
             self._pending_responses.pop(response_id, None)
 

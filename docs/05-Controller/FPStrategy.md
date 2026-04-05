@@ -5,7 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/fp_strategy.py
 created: 2026-02-17
-updated: 2026-04-04
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # FPStrategy

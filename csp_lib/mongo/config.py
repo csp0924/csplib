@@ -7,7 +7,7 @@ MongoBatchUploader 設定模組
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UploaderConfig:
     """
     批次上傳器設定

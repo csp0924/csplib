@@ -19,7 +19,7 @@ from csp_lib.statistics.tracker import DeviceEnergyTracker, IntervalRecord
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PowerSumRecord:
     """
     功率加總記錄

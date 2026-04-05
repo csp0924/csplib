@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Optional
 
 
 class PVDataService:
@@ -36,7 +35,7 @@ class PVDataService:
             raise ValueError("max_history must be at least 1")
 
         self._max_history = max_history
-        self._queue: deque[Optional[float]] = deque(maxlen=max_history)
+        self._queue: deque[float | None] = deque(maxlen=max_history)
 
     @property
     def max_history(self) -> int:
@@ -48,7 +47,7 @@ class PVDataService:
         """目前資料筆數 (含 None)"""
         return len(self._queue)
 
-    def append(self, power: Optional[float]) -> None:
+    def append(self, power: float | None) -> None:
         """
         新增一筆 PV 功率資料
 
@@ -66,24 +65,24 @@ class PVDataService:
         """
         return [p for p in self._queue if p is not None]
 
-    def get_latest(self) -> Optional[float]:
+    def get_latest(self) -> float | None:
         """
         取得最新一筆有效資料
 
         Returns:
-            Optional[float]: 最新的 PV 功率值，若無資料則回傳 None
+            float | None: 最新的 PV 功率值，若無資料則回傳 None
         """
         for p in reversed(self._queue):
             if p is not None:
                 return p
         return None
 
-    def get_average(self) -> Optional[float]:
+    def get_average(self) -> float | None:
         """
         計算有效資料的平均值
 
         Returns:
-            Optional[float]: 平均 PV 功率，若無資料則回傳 None
+            float | None: 平均 PV 功率，若無資料則回傳 None
         """
         valid = self.get_history()
         if not valid:

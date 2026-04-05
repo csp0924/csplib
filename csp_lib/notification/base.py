@@ -35,7 +35,7 @@ class NotificationEvent(str, Enum):
     RESOLVED = "resolved"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Notification:
     """
     通知資料類別

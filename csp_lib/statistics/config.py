@@ -26,7 +26,7 @@ class DeviceMeterType(Enum):
     INSTANTANEOUS = "instantaneous"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MetricDefinition:
     """
     單一設備的能源計量定義
@@ -42,7 +42,7 @@ class MetricDefinition:
     point_name: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PowerSumDefinition:
     """
     跨設備功率加總定義
@@ -60,7 +60,7 @@ class PowerSumDefinition:
     point_name: str
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StatisticsConfig:
     """
     統計模組整體配置

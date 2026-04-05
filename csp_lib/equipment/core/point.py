@@ -52,7 +52,7 @@ class PointDefinition:
     register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PointMetadata:
     """
     點位元資料（補充資訊）
@@ -116,7 +116,7 @@ class WritePoint(PointDefinition):
 # ========== 內建驗證器 ==========
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RangeValidator:
     """範圍驗證器"""
 
@@ -136,7 +136,7 @@ class RangeValidator:
         return f"值 {value} 超出範圍 [{self.min_value}, {self.max_value}]"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EnumValidator:
     """枚舉驗證器"""
 
@@ -149,7 +149,7 @@ class EnumValidator:
         return f"值 {value} 不在允許列表 {self.allowed_values} 中"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CompositeValidator:
     """組合驗證器 - 所有驗證器都通過才算通過"""
 

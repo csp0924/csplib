@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import inspect
 import weakref
 from dataclasses import dataclass, field
@@ -21,6 +22,25 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 AsyncHandler = Callable[[Any], Awaitable[None]]
+
+
+class DeviceEventType(str, enum.Enum):
+    """設備事件類型（internal，不匯出到 public API）"""
+
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    READ_COMPLETE = "read_complete"
+    READ_ERROR = "read_error"
+    VALUE_CHANGE = "value_change"
+    ALARM_TRIGGERED = "alarm_triggered"
+    ALARM_CLEARED = "alarm_cleared"
+    WRITE_COMPLETE = "write_complete"
+    WRITE_ERROR = "write_error"
+    RECONFIGURED = "reconfigured"
+    RESTARTED = "restarted"
+    POINT_TOGGLED = "point_toggled"
+    CAPABILITY_ADDED = "capability_added"
+    CAPABILITY_REMOVED = "capability_removed"
 
 
 class _WeakHandler:
@@ -81,7 +101,7 @@ EVENT_CAPABILITY_ADDED = "capability_added"
 EVENT_CAPABILITY_REMOVED = "capability_removed"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ValueChangePayload:
     """值變化事件資料"""
 
@@ -92,7 +112,7 @@ class ValueChangePayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ConnectedPayload:
     """連線成功事件資料"""
 
@@ -100,7 +120,7 @@ class ConnectedPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ReadErrorPayload:
     """讀取錯誤事件資料"""
 
@@ -110,7 +130,7 @@ class ReadErrorPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class WriteCompletePayload:
     """寫入完成事件資料"""
 
@@ -120,7 +140,7 @@ class WriteCompletePayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class WriteErrorPayload:
     """寫入錯誤事件資料"""
 
@@ -131,7 +151,7 @@ class WriteErrorPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DisconnectPayload:
     """斷線事件資料"""
 
@@ -141,7 +161,7 @@ class DisconnectPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DeviceAlarmPayload:
     """設備告警事件資料"""
 
@@ -150,7 +170,7 @@ class DeviceAlarmPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ReadCompletePayload:
     """讀取完成事件資料"""
 
@@ -160,7 +180,7 @@ class ReadCompletePayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ReconfiguredPayload:
     """重新配置事件資料"""
 
@@ -169,7 +189,7 @@ class ReconfiguredPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RestartedPayload:
     """重啟事件資料"""
 
@@ -177,7 +197,7 @@ class RestartedPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PointToggledPayload:
     """點位開關事件資料"""
 
@@ -187,7 +207,7 @@ class PointToggledPayload:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CapabilityChangedPayload:
     """能力變更事件資料"""
 

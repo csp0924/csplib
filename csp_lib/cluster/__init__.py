@@ -9,11 +9,16 @@
 #   - VirtualContextBuilder: 從 Redis 資料建構 StrategyContext
 #   - ClusterController: 中央編排器
 
-from .config import ClusterConfig, EtcdConfig
-from .context import DeviceStateProvider, VirtualContextBuilder
-from .controller import ClusterController
-from .election import ElectionState, LeaderElector
-from .sync import ClusterSnapshot, ClusterStatePublisher, ClusterStateSubscriber
+try:
+    from .config import ClusterConfig, EtcdConfig
+    from .context import DeviceStateProvider, VirtualContextBuilder
+    from .controller import ClusterController
+    from .election import ElectionState, LeaderElector
+    from .sync import ClusterSnapshot, ClusterStatePublisher, ClusterStateSubscriber
+except ImportError as _exc:
+    raise ImportError(
+        'csp_lib.cluster requires additional dependencies. Install with: pip install "csp0924_lib[cluster]"'
+    ) from _exc
 
 __all__ = [
     # Config

@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/strategies/droop_strategy.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # DroopStrategy

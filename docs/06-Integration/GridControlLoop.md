@@ -4,8 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/loop.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # GridControlLoop

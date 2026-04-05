@@ -4,7 +4,9 @@ tags:
   - layer/manager
   - status/complete
 source: csp_lib/manager/unified.py
-updated: 2026-04-04
+created: 2026-02-17
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # UnifiedDeviceManager
@@ -21,21 +23,31 @@ updated: 2026-04-04
 
 所有子管理器皆為可選，未配置的功能將自動跳過。
 
-> [!warning] v0.6.0 Changed
-> `mongo_uploader` 欄位型別從 `MongoBatchUploader` 放寬為 [[BatchUploader]] Protocol。既有程式碼傳入 `MongoBatchUploader` 仍然相容。
+> [!note] v0.7.1 frozen=True
+> `UnifiedConfig` 現在使用 `@dataclass(frozen=True, slots=True)`，建立後不可修改。
 
 | 欄位 | 型別 | 預設 | 說明 |
 |------|------|------|------|
 | `alarm_repository` | `AlarmRepository \| None` | `None` | 告警持久化 Repository |
 | `command_repository` | `CommandRepository \| None` | `None` | 寫入指令 Repository |
-| `mongo_uploader` | [[BatchUploader]] `\| None` | `None` | 批次上傳器（命名保留 `mongo_uploader` 以維持向後相容） |
+| `batch_uploader` | [[BatchUploader]] `\| None` | `None` | 批次上傳器（推薦使用） |
+| `mongo_uploader` | [[BatchUploader]] `\| None` | `None` | **Deprecated**，請改用 `batch_uploader`；將於 v1.0.0 移除 |
 | `redis_client` | [[RedisClient]] `\| None` | `None` | Redis 客戶端 |
 | `notification_dispatcher` | `NotificationDispatcher \| None` | `None` | 通知分發器 |
 | `statistics_config` | `StatisticsConfig \| None` | `None` | 統計管理器配置 |
 | `device_registry` | `DeviceRegistry \| None` | `None` | 設備註冊中心（用於 Integration 層） |
 
-> [!note] `mongo_uploader` 命名
-> 此欄位名稱保留 `mongo_uploader` 以維持向後相容，但實際型別已放寬為 `BatchUploader` Protocol，可注入任何符合介面的實作。
+> [!warning] mongo_uploader Deprecated（v0.7.1）
+> `mongo_uploader` 欄位已被 `batch_uploader` 取代。使用 `mongo_uploader` 時會觸發 `DeprecationWarning`，將於 v1.0.0 移除。
+>
+> 遷移方式：
+> ```python
+> # 舊寫法（觸發 DeprecationWarning）
+> config = UnifiedConfig(mongo_uploader=uploader)
+>
+> # 新寫法
+> config = UnifiedConfig(batch_uploader=uploader)
+> ```
 
 ## API
 
@@ -86,7 +98,7 @@ from csp_lib.mongo import MongoBatchUploader
 config = UnifiedConfig(
     alarm_repository=mongo_alarm_repo,
     command_repository=mongo_cmd_repo,
-    mongo_uploader=uploader,        # BatchUploader Protocol
+    batch_uploader=uploader,        # BatchUploader Protocol（v0.7.1 推薦）
     redis_client=redis_client,
 )
 

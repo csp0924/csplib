@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from .command import Command, SystemBase
 
@@ -32,9 +32,9 @@ class StrategyContext:
     """
 
     last_command: Command = field(default_factory=Command)
-    soc: Optional[float] = None
-    system_base: Optional[SystemBase] = None
-    current_time: Optional[datetime] = None
+    soc: float | None = None
+    system_base: SystemBase | None = None
+    current_time: datetime | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     params: RuntimeParameters | None = None
 
@@ -49,3 +49,6 @@ class StrategyContext:
         if self.system_base is None:
             raise ValueError("system_base is not set in StrategyContext")
         return q_percent * self.system_base.q_base / 100
+
+
+__all__ = ["StrategyContext"]

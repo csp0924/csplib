@@ -41,6 +41,7 @@ from csp_lib.controller.system.mode import SwitchSource
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core.errors import ConfigurationError
 from csp_lib.core.health import HealthReport, HealthStatus
+from csp_lib.core.runtime_params import RuntimeParameters
 
 from .command_router import CommandRouter
 from .context_builder import ContextBuilder
@@ -70,7 +71,7 @@ _AUTO_STOP_MODE = "__auto_stop__"
 _SCHEDULE_MODE = "__schedule__"
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class SystemControllerConfig:
     """
     SystemController 配置
@@ -123,7 +124,7 @@ class SystemControllerConfig:
     heartbeat_capability_increment_max: int = 65535
     power_distributor: PowerDistributor | None = None
     post_protection_processors: list[CommandProcessor] = field(default_factory=list)
-    runtime_params: Any = None  # RuntimeParameters | None, 自動注入到 StrategyContext.params
+    runtime_params: RuntimeParameters | None = None  # 自動注入到 StrategyContext.params
     capability_requirements: list[CapabilityRequirement] = field(default_factory=list)
     strict_capability_check: bool = False
 
@@ -177,7 +178,7 @@ class SystemControllerConfigBuilder:
         self._heartbeat_capability_increment_max: int = 65535
         self._power_distributor: PowerDistributor | None = None
         self._processors: list[CommandProcessor] = []
-        self._runtime_params: Any = None
+        self._runtime_params: RuntimeParameters | None = None
         self._capability_requirements: list[CapabilityRequirement] = []
         self._strict_capability_check: bool = False
 
@@ -292,7 +293,7 @@ class SystemControllerConfigBuilder:
 
     # ─────────────── RuntimeParameters ───────────────
 
-    def params(self, runtime_params: Any) -> "SystemControllerConfigBuilder":
+    def params(self, runtime_params: RuntimeParameters | None) -> "SystemControllerConfigBuilder":
         """設定 RuntimeParameters（注入到 StrategyContext.params）"""
         self._runtime_params = runtime_params
         return self

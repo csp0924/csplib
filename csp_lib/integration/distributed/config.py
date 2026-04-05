@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RemoteSiteConfig:
     """
     遠端站台配置
@@ -41,7 +41,7 @@ class RemoteSiteConfig:
         return self.result_channel or f"channel:commands:{self.site_id}:result"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DistributedConfig:
     """
     分散式控制器配置

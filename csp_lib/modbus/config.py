@@ -14,7 +14,7 @@ from .enums import ByteOrder, Parity, RegisterOrder
 from .exceptions import ModbusConfigError
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModbusTcpConfig:
     """
     Modbus TCP 連線設定
@@ -49,7 +49,7 @@ class ModbusTcpConfig:
             raise ModbusConfigError(f"timeout 必須為正數，收到: {self.timeout}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModbusRtuConfig:
     """
     Modbus RTU 連線設定

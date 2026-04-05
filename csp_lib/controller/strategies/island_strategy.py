@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from csp_lib.controller.core import (
     Command,
@@ -68,7 +68,7 @@ class RelayProtocol(Protocol):
 # =============== Island Mode Config ===============
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class IslandModeConfig(ConfigMixin):
     """
     離網模式配置
@@ -107,7 +107,7 @@ class IslandModeStrategy(Strategy):
     def __init__(
         self,
         relay: RelayProtocol,
-        config: Optional[IslandModeConfig] = None,
+        config: IslandModeConfig | None = None,
     ) -> None:
         """
         初始化離網模式策略

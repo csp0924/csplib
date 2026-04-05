@@ -25,7 +25,7 @@ class AlarmLevel(IntEnum):
     ALARM = 3
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HysteresisConfig:
     """
     遲滯設定 - 避免邊緣觸發
@@ -49,7 +49,7 @@ class HysteresisConfig:
 NO_HYSTERESIS = HysteresisConfig(activate_threshold=1, clear_threshold=1)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AlarmDefinition:
     """
     告警定義

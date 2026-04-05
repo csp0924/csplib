@@ -23,7 +23,7 @@ from csp_lib.core import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DeviceSnapshot:
     """
     設備狀態快照

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EtcdConfig:
     """
     etcd 連線配置
@@ -33,7 +33,7 @@ class EtcdConfig:
     cert_cert: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ClusterConfig:
     """
     叢集配置

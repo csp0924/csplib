@@ -29,7 +29,7 @@ class WriteStatus(Enum):
     VERIFICATION_FAILED = "verification_failed"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class WriteResult:
     """寫入結果"""
 

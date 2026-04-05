@@ -52,7 +52,7 @@ from .mixins import AlarmMixin
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CANRxFrameDefinition:
     """
     CAN 接收訊框定義

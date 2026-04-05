@@ -34,7 +34,7 @@ logger = get_logger(__name__)
 # ================ 配置 ================
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class UnifiedConfig:
     """
     統一管理器配置
@@ -61,6 +61,7 @@ class UnifiedConfig:
 
     alarm_repository: AlarmRepository | None = None
     command_repository: CommandRepository | None = None
+    batch_uploader: BatchUploader | None = None
     mongo_uploader: BatchUploader | None = None
     redis_client: RedisClient | None = None
     notification_dispatcher: NotificationDispatcher | None = None
@@ -121,6 +122,9 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         self._config = config
         self._device_manager = DeviceManager()
 
+        # 解析 uploader（支援 deprecated mongo_uploader 過渡）
+        resolved_uploader = self._resolve_uploader()
+
         # 根據配置初始化子管理器（可選）
         self._alarm_manager: AlarmPersistenceManager | None = (
             AlarmPersistenceManager(config.alarm_repository, config.notification_dispatcher)
@@ -131,20 +135,20 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             WriteCommandManager(config.command_repository) if config.command_repository else None
         )
         self._data_manager: DataUploadManager | None = (
-            DataUploadManager(config.mongo_uploader) if config.mongo_uploader else None
+            DataUploadManager(resolved_uploader) if resolved_uploader else None
         )
         self._state_manager: StateSyncManager | None = (
             StateSyncManager(config.redis_client) if config.redis_client else None
         )
 
-        # Statistics manager（需要 mongo_uploader + statistics_config + csp_lib.statistics）
+        # Statistics manager（需要 uploader + statistics_config + csp_lib.statistics）
         self._statistics_manager: StatisticsManager | None = None
-        if config.statistics_config and config.mongo_uploader:
+        if config.statistics_config and resolved_uploader:
             try:
                 from csp_lib.statistics import StatisticsManager
 
                 self._statistics_manager = StatisticsManager(
-                    config.statistics_config, config.mongo_uploader, config.device_registry
+                    config.statistics_config, resolved_uploader, config.device_registry
                 )
             except ImportError:
                 logger.warning("Statistics module not available, skipping StatisticsManager initialization")
@@ -159,6 +163,22 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             f"state={self._state_manager is not None}, "
             f"statistics={self._statistics_manager is not None}"
         )
+
+    def _resolve_uploader(self) -> BatchUploader | None:
+        """解析 uploader，優先使用 batch_uploader，降級到 deprecated mongo_uploader。"""
+        if self._config.batch_uploader is not None:
+            return self._config.batch_uploader
+        if self._config.mongo_uploader is not None:
+            import warnings
+
+            warnings.warn(
+                "UnifiedConfig.mongo_uploader is deprecated, use batch_uploader instead. "
+                "mongo_uploader will be removed in v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self._config.mongo_uploader
+        return None
 
     # ================ 註冊 ================
 

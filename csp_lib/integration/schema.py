@@ -68,7 +68,7 @@ def _validate_device_or_trait(device_id: str | None, trait: str | None) -> None:
         raise ValueError("Must set either device_id or trait; neither was provided.")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ContextMapping:
     """
     設備點位 → StrategyContext 欄位映射
@@ -101,7 +101,7 @@ class ContextMapping:
         _validate_device_or_trait(self.device_id, self.trait)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CommandMapping:
     """
     Command 欄位 → 設備寫入映射
@@ -128,7 +128,7 @@ class CommandMapping:
         _validate_device_or_trait(self.device_id, self.trait)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DataFeedMapping:
     """
     PV 資料餵入映射
@@ -152,7 +152,7 @@ class DataFeedMapping:
         _validate_device_or_trait(self.device_id, self.trait)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class HeartbeatMapping:
     """
     心跳寫入映射
@@ -183,7 +183,7 @@ class HeartbeatMapping:
         _validate_device_or_trait(self.device_id, self.trait)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CapabilityContextMapping:
     """
     Capability-driven context mapping.
@@ -230,7 +230,7 @@ class CapabilityContextMapping:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CapabilityCommandMapping:
     """
     Capability-driven command mapping.

@@ -6,6 +6,31 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-06
+
+### Added
+- **`BackgroundFlushMixin`** (`csp_lib.core.flush_mixin`): 背景定期 flush 迴圈的共用 Mixin（internal，不公開匯出），提供 `_start_flush_loop()` / `_stop_flush_loop()` / `_flush_once()` hook 骨架 (UL-H1)
+- **`DeviceEventType`** (`csp_lib.equipment.device.events`): 設備事件類型 StrEnum（internal，不公開匯出），與現有 `EVENT_xxx` 字串常數共存且完全相等 (UL-E)
+- **`CTX_*` 常數** (`csp_lib.controller.core.constants`): `StrategyContext.extra` 常用 key 常數化（internal），包含 `CTX_FREQUENCY`、`CTX_VOLTAGE`、`CTX_METER_POWER` 等 7 個 (UL-A)
+- **`UnifiedConfig.batch_uploader`** 欄位: 新增 `batch_uploader: BatchUploader | None = None`，作為 `mongo_uploader` 的推薦替代 (TD-001)
+- **CAN exception error context**: `CANError` 新增 `can_id: int | None` 和 `bus_index: int | None` keyword-only 參數，自動格式化為 `[bus=N, can_id=0xNNN]` 前綴；子類別自動繼承
+
+### Changed
+- **Config frozen 對齊**: 12 個 Config dataclass 加 `frozen=True, slots=True`：`DroopConfig`、`FPConfig`、`IslandModeConfig`、`LoadSheddingConfig`、`PQModeConfig`、`PVSmoothConfig`、`QVConfig`、`FFCalibrationConfig`、`PowerCompensatorConfig`、`UnifiedConfig`、`SystemControllerConfig`、`GridControlLoopConfig`
+- **全庫 leaf frozen dataclass 補 `slots=True`**: 約 80 個無繼承關係的 `@dataclass(frozen=True)` 類別加上 `slots=True`，減少記憶體使用（`PointDefinition` 繼承鏈推遲到 v0.8.0）(TD-021)
+- **型別標註現代化**: `from typing import Type` → `type[T]` (TD-008)；`Optional[X]` → `X | None` 於 controller/services、controller/strategies、mongo 層共 20 處 (TD-011)
+- **`Any` 型別收窄**: `SystemControllerConfig.runtime_params` 從 `Any` 收窄為 `RuntimeParameters | None`；`orchestrator._execute_device_action` device 參數從 `Any` 收窄為 `AsyncModbusDevice`
+- **`__all__` 補齊**: `command.py`、`context.py`、`execution.py`、`strategy.py`、`base.py` 等 5 個高優先檔案
+- **`modbus/clients/base.py`**: `__aexit__` 補齊完整型別標註，移除 `# type: ignore`
+
+### Fixed
+- **`TransportAdapter` docstring**: 移除不存在的 `send_override()` 方法說明 (TD-010)
+- **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
+- **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
+
+### Deprecated
+- **`UnifiedConfig.mongo_uploader`**: 改用 `batch_uploader`，使用 `mongo_uploader` 時會觸發 `DeprecationWarning`，將於 v1.0.0 移除 (TD-001)
+
 ## [0.7.0] - 2026-04-05
 ### Added
 - **`LogFilter`** (`csp_lib.core`): 模組等級過濾器，以最長前綴匹配決定每條 log record 是否輸出；可直接作為 loguru `filter` 參數使用；取代舊有重複的 `_filter` closure，統一放入 `csp_lib/core/logging/filter.py`

@@ -38,7 +38,7 @@ class ModePriority(IntEnum):
     PROTECTION = 100
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModeDefinition:
     """
     模式定義

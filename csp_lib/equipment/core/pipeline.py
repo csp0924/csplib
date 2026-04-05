@@ -12,7 +12,7 @@ from typing import Any
 from .transform import TransformStep
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ProcessingPipeline:
     """
     資料處理管線

@@ -44,7 +44,7 @@ class MeterMode(Enum):
 # ================ Data Classes ================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MeterReading:
     """
     電表讀值 - 不可變

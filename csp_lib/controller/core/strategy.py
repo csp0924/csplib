@@ -91,3 +91,6 @@ class Strategy(ABC):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+__all__ = ["Strategy"]

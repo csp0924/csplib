@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CANBusConfig:
     """
     CAN Bus 配置
@@ -25,7 +25,7 @@ class CANBusConfig:
     receive_own_messages: bool = False
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CANFrame:
     """
     CAN 訊框

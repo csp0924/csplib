@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class InterfaceMetrics:
     """
     網路介面指標
@@ -53,7 +53,7 @@ class InterfaceMetrics:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SystemMetrics:
     """
     系統指標資料
@@ -99,7 +99,7 @@ class SystemMetrics:
         return result
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModuleStatus:
     """
     模組狀態
@@ -117,7 +117,7 @@ class ModuleStatus:
     details: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ModuleHealthSnapshot:
     """
     模組健康快照

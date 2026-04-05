@@ -172,7 +172,7 @@ class Operator(Enum):
     NE = "!="
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ThresholdCondition:
     """閾值條件"""
 

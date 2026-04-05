@@ -130,7 +130,7 @@ class RemainingTimeCondition:
 # =============== Shed Stage ===============
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ShedStage:
     """
     卸載階段
@@ -153,7 +153,7 @@ class ShedStage:
 # =============== Config ===============
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class LoadSheddingConfig(ConfigMixin):
     """
     負載卸載策略配置

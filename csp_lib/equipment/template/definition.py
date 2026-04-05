@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from csp_lib.equipment.processing import AggregatorPipeline
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PointOverride:
     """
     點位覆寫定義
@@ -36,7 +36,7 @@ class PointOverride:
     metadata: PointMetadata | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EquipmentTemplate:
     """
     不可變設備模型範本

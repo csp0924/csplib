@@ -19,7 +19,7 @@ def _default_fc_max_length() -> dict[int, int]:
     }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PointGrouperConfig:
     """
     點位分組器配置

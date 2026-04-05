@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NodeRegistration:
     """
     節點註冊資料
@@ -52,7 +52,7 @@ class NodeRegistration:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NodeMetricsSummary:
     """
     節點指標摘要
@@ -82,7 +82,7 @@ class NodeMetricsSummary:
         }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ClusterHealthSnapshot:
     """
     叢集健康快照

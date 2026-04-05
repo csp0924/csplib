@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from csp_lib.controller.core import (
     Command,
@@ -18,7 +17,7 @@ from csp_lib.controller.core import (
 )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class QVConfig(ConfigMixin):
     """
     QV 模式配置
@@ -74,7 +73,7 @@ class QVStrategy(Strategy):
         strategy = QVStrategy(config)
     """
 
-    def __init__(self, config: Optional[QVConfig] = None) -> None:
+    def __init__(self, config: QVConfig | None = None) -> None:
         self._config = config or QVConfig()
 
     @property

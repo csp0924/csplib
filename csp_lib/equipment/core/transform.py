@@ -24,7 +24,7 @@ class TransformStep(Protocol):
         ...
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ScaleTransform:
     """
     縮放轉換
@@ -49,7 +49,7 @@ class ScaleTransform:
         return float(value) * self.magnitude + self.offset
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RoundTransform:
     """
     四捨五入轉換
@@ -66,7 +66,7 @@ class RoundTransform:
         return round(float(value), self.decimals)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EnumMapTransform:
     """
     數值 → 枚舉映射轉換
@@ -98,7 +98,7 @@ class EnumMapTransform:
         return self.mapping.get(value, self.default)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ClampTransform:
     """
     值域限制轉換
@@ -124,7 +124,7 @@ class ClampTransform:
         return result
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BoolTransform:
     """
     布林轉換
@@ -145,7 +145,7 @@ class BoolTransform:
         return bool(value)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class InverseTransform:
     """
     反向縮放轉換 (用於寫入前的逆轉換)
@@ -164,7 +164,7 @@ class InverseTransform:
         return (float(value) - self.offset) / self.magnitude
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BitExtractTransform:
     """
     位元欄位提取轉換
@@ -205,7 +205,7 @@ class BitExtractTransform:
         return bool(result) if self.bit_length == 1 else result
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ByteExtractTransform:
     """
     位元組提取轉換
@@ -242,7 +242,7 @@ class ByteExtractTransform:
         raise TypeError(f"ByteExtractTransform 需要列表，收到: {type(value).__name__}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PowerFactorTransform:
     """
     功率因數解碼轉換（Schneider PM5350 專用）
@@ -293,7 +293,7 @@ class PowerFactorTransform:
         return pf_val
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MultiFieldExtractTransform:
     """
     多位元欄位提取轉換
