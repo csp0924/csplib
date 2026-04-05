@@ -9,9 +9,11 @@
 
 from .client import RedisClient, TLSConfig
 from .config import RedisConfig
+from .log_level_source import RedisLogLevelSource
 
 __all__ = [
     "RedisClient",
     "RedisConfig",
+    "RedisLogLevelSource",
     "TLSConfig",
 ]

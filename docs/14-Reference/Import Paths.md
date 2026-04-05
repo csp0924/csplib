@@ -4,7 +4,8 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-05
-version: ">=0.6.2"
+version: ">=0.7.0"
+
 ---
 
 # Import 路徑
@@ -17,11 +18,23 @@ version: ">=0.6.2"
 
 ```python
 from csp_lib.core import (
-    # Logging
+    # Logging（基本 API）
     get_logger,
     set_level,
     configure_logging,
+    add_file_sink,                # v0.7.0
     logger,
+    DEFAULT_FORMAT,               # v0.7.0
+    # Logging（進階元件，v0.7.0）
+    LogFilter,
+    SinkManager,
+    SinkInfo,
+    FileSinkConfig,
+    LogContext,
+    LogCapture,
+    CapturedRecord,
+    RemoteLevelSource,
+    AsyncSinkAdapter,
     # Lifecycle
     AsyncLifecycleMixin,
     # Errors
@@ -402,6 +415,7 @@ from csp_lib.redis import (
     RedisClient,
     RedisConfig,
     TLSConfig,
+    RedisLogLevelSource,          # v0.7.0 — RemoteLevelSource 的 Redis 實作
 )
 ```
 

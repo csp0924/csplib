@@ -6,6 +6,34 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-05
+### Added
+- **`LogFilter`** (`csp_lib.core`): 模組等級過濾器，以最長前綴匹配決定每條 log record 是否輸出；可直接作為 loguru `filter` 參數使用；取代舊有重複的 `_filter` closure，統一放入 `csp_lib/core/logging/filter.py`
+- **`SinkManager`** (`csp_lib.core`): 全域 Sink 生命週期管理單例；提供 `add_sink()` / `remove_sink()` / `remove_sink_by_name()` / `list_sinks()` / `get_sink()` / `remove_all()` / `set_level()` 操作；整合 `LogFilter` 進行模組等級控制
+- **`SinkInfo`** (`csp_lib.core`): Sink 資訊 frozen dataclass，記錄 `sink_id`、`name`、`sink_type`、`level`、`is_active`
+- **`FileSinkConfig`** (`csp_lib.core`): 檔案 Sink 配置 frozen dataclass，封裝 loguru file sink 所有參數（`path`、`rotation`、`retention`、`compression`、`level`、`format`、`enqueue`、`serialize`、`encoding`、`name`）；對齊 `@dataclass(frozen=True, slots=True)` 慣例
+- **`LogContext`** (`csp_lib.core`): 結構化日誌上下文管理器；使用 `contextvars.ContextVar` 實現 async-safe correlation ID 綁定；支援同步 / 非同步 context manager 與 decorator 三種使用方式；`current()` / `bind()` / `unbind()` 靜態方法供快速操作
+- **`LogCapture`** (`csp_lib.core`): 測試用日誌捕獲器；以 context manager 攔截 loguru 輸出；提供 `contains()` / `filter()` / `clear()` / `text` / `records` 等查詢 API
+- **`CapturedRecord`** (`csp_lib.core`): 單筆捕獲 log 記錄 dataclass，含 `level`、`message`、`module`、`extra`、`time` 欄位
+- **`RemoteLevelSource`** (`csp_lib.core`): 遠端 log 等級來源 `@runtime_checkable` Protocol，定義 `fetch_levels()` 與 `subscribe()` 介面，供 Redis / HTTP 等後端實作
+- **`AsyncSinkAdapter`** (`csp_lib.core`): 非同步 Sink 轉接器；將 async handler 包裝為 loguru 可接受的同步 `write` 介面；內部以 thread-safe queue + asyncio drain task 橋接；佇列滿時靜默丟棄，避免阻塞 logger
+- **`RedisLogLevelSource`** (`csp_lib.redis`): `RemoteLevelSource` 的 Redis 實作；透過 Redis Hash 儲存模組等級設定，Pub/Sub channel 提供即時變更通知；訊息格式 `"module:level"`
+- **`SinkManager.add_file_sink(config)`**: 透過 `FileSinkConfig` 新增檔案 sink 的便利方法
+- **`SinkManager.add_async_sink(handler)`**: 透過 `AsyncSinkAdapter` 新增非同步 sink 的便利方法，可指定 `max_queue_size`
+- **`SinkManager.add_stderr_sink()`**: 新增 stderr sink 的便利方法
+- **`SinkManager.attach_remote_source(source, poll_interval)`**: 連接遠端等級來源，立即拉取設定並啟動背景輪詢 task
+- **`SinkManager.detach_remote_source()`**: 中斷遠端等級來源連線，取消輪詢 task
+- **`add_file_sink(config)`** (`csp_lib.core`): 模組層便利函式，委派給全域 `SinkManager.add_file_sink()`
+- **`DEFAULT_FORMAT`** (`csp_lib.core`): 帶 ANSI 色彩的預設 loguru 格式字串常數
+- **環境變數覆蓋支援**: `configure_logging(env_prefix="CSP")` 可讀取 `CSP_LOG_LEVEL` / `CSP_LOG_FORMAT` / `CSP_LOG_ENQUEUE` / `CSP_LOG_JSON` / `CSP_LOG_DIAGNOSE` 覆蓋配置
+
+### Changed
+- **`configure_logging()` 新增 keyword-only 參數**: 新增 `enqueue`（預設 `False`）、`json_output`（預設 `False`）、`diagnose`（預設 `False`）、`env_prefix`（預設 `None`）；現在委派給 `SinkManager` 管理 sink 生命週期
+- **`configure_logging()` 改為委派 `SinkManager`**: 函式現在透過 `SinkManager` 管理 sink；如需 manager 實例，可透過 `SinkManager.get_instance()` 取得
+- **`diagnose=False` 為生產預設**: `configure_logging()` 與 `SinkManager.add_sink()` 預設 `diagnose=False`，防止 exception traceback 洩漏 Modbus 位址、Redis 密碼等敏感資訊（行為變更，非 breaking）
+- **`set_level()` 不再 remove/re-add sink**: 改為委派給 `LogFilter.default_level` 或 `LogFilter.set_module_level()`，更新 dict 即生效，不需要重建所有 sink
+- **`csp_lib/core/logging/` 子模組**: 原 `core/__init__.py` 中的日誌邏輯拆分至 `csp_lib/core/logging/` 子套件，含 `filter.py`、`sink_manager.py`、`file_config.py`、`context.py`、`capture.py`、`remote.py`、`async_sink.py`；`csp_lib.core` 頂層 `__all__` 保持向後相容
+
 ## [0.6.2] - 2026-04-05
 ### Added
 - **`DeviceLinkConfig`** (`csp_lib.modbus_server`): frozen dataclass，宣告設備（PCS/Solar/Load/Generator）到電表的功率路由，支援 `loss_factor` 損耗因子
