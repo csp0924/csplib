@@ -167,4 +167,4 @@ CLAUDE.md
 .coverage
 .ruff_cache/
 
-BACKLOG.md
+BACKLOG*.md
