@@ -256,7 +256,6 @@ class TestDeviceLinkUpdate:
 
         # PCS 2: 放電 40 kW
 
-
         pcs2_cfg = default_pcs_config(device_id="pcs_2", unit_id=11)
         pcs2 = PCSSimulator(config=pcs2_cfg, p_ramp_rate=10000.0, tick_interval=1.0)
         pcs2.on_write("start_cmd", 0, 1)
@@ -413,7 +412,6 @@ class TestMeterAggregationUpdate:
 
         # 設備連結：不同 PCS → 不同子電表
 
-
         pcs1 = PCSSimulator(p_ramp_rate=10000.0, tick_interval=1.0)
         pcs1.on_write("start_cmd", 0, 1)
         pcs1.on_write("p_setpoint", 0.0, 60.0)
@@ -456,8 +454,6 @@ class TestMeterAggregationUpdate:
 
         for m, mid_str in [(leaf1, "leaf1"), (leaf2, "leaf2"), (mid, "mid"), (root, "root")]:
             mg.add_meter(m, mid_str)
-
-
 
         # PCS1 → leaf1 (30 kW)
         pcs1 = PCSSimulator(p_ramp_rate=10000.0, tick_interval=1.0)
