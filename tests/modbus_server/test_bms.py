@@ -37,10 +37,10 @@ class TestBMSSimulatorBasic:
         assert abs(voltage - expected) < 0.1
 
     def test_initial_temperature(self):
-        """初始溫度等於環境溫度"""
-        sim = BMSSimulator(ambient_temperature=30.0)
+        """初始溫度為 25°C（預設）"""
+        sim = BMSSimulator()
         temp = sim.get_value("temperature")
-        assert abs(temp - 30.0) < 0.01
+        assert abs(temp - 25.0) < 0.01
 
     def test_custom_config(self):
         """自訂 BMSSimConfig"""
@@ -171,15 +171,13 @@ class TestBMSUpdatePower:
         assert sim.get_value("temperature") == 60.0
         assert sim._temperature == 60.0
 
-    def test_temperature_cools_at_idle(self):
-        """無功率且高溫時向環境溫度散熱"""
-        sim = BMSSimulator(ambient_temperature=25.0, cooling_rate=0.1)
-        # 手動設定高溫
-        sim._temperature = 60.0
-        sim.set_value("temperature", 60.0)
-        sim.update_power(power_kw=0.0, dt=10.0)
+    def test_temperature_stays_when_set(self):
+        """溫度設定後不會自動變化（無溫升/散熱模型）"""
+        sim = BMSSimulator(ambient_temperature=25.0)
+        sim.on_write("temperature", 25.0, 60.0)
+        sim.update_power(power_kw=50.0, dt=10.0)
         temp = sim.get_value("temperature")
-        assert temp < 60.0
+        assert temp == 60.0
 
     def test_status_standby(self):
         """|power| < 0.1 → status = 0 (standby)"""

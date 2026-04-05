@@ -70,10 +70,9 @@ class BMSSimulator(BaseDeviceSimulator):
     模擬電池管理系統的物理行為：
     - SOC 追蹤：根據功率與電池容量動態計算
     - 電壓模型：基於 SOC 的線性電壓插值
-    - 溫度：writable 點位，供外部設定（自然散熱朝環境溫度趨近）
     - 電芯電壓：Pack 電壓均攤 ± 擴散
     - 告警管理：過溫、過壓、欠壓、SOC 過高/過低
-    - Debug 用 writable 點位：soc、temperature（可透過 Modbus client 直接寫入測試）
+    - Debug 用 writable 點位：soc、temperature（透過 Modbus 寫入測試告警場景）
 
     Sign convention: +discharge / -charge（與 PCS 一致）
     """
@@ -88,11 +87,9 @@ class BMSSimulator(BaseDeviceSimulator):
         cells_in_series: int = 192,
         min_cell_voltage: float = 2.8,
         max_cell_voltage: float = 4.2,
-        thermal_coefficient: float = 0.01,
-        ambient_temperature: float = 25.0,
-        cooling_rate: float = 0.005,
         charge_efficiency: float = 0.95,
         tick_interval: float = 1.0,
+        **_kwargs: object,  # 忽略舊版 thermal_coefficient/ambient_temperature/cooling_rate
     ) -> None:
         if config is None:
             config = default_bms_config()
@@ -106,9 +103,6 @@ class BMSSimulator(BaseDeviceSimulator):
                 cells_in_series=cells_in_series,
                 min_cell_voltage=min_cell_voltage,
                 max_cell_voltage=max_cell_voltage,
-                thermal_coefficient=thermal_coefficient,
-                ambient_temperature=ambient_temperature,
-                cooling_rate=cooling_rate,
                 charge_efficiency=charge_efficiency,
                 tick_interval=tick_interval,
             )
@@ -117,15 +111,12 @@ class BMSSimulator(BaseDeviceSimulator):
         self._cells_in_series = sim_config.cells_in_series
         self._min_cell_voltage = sim_config.min_cell_voltage
         self._max_cell_voltage = sim_config.max_cell_voltage
-        self._thermal_coefficient = sim_config.thermal_coefficient
-        self._ambient_temperature = sim_config.ambient_temperature
-        self._cooling_rate = sim_config.cooling_rate
         self._charge_efficiency = sim_config.charge_efficiency
         self._tick_interval = sim_config.tick_interval
 
         # 初始化 SOC 與相關衍生值
         self._soc = sim_config.initial_soc
-        self._temperature = sim_config.ambient_temperature
+        self._temperature = 25.0
         self.set_value("soc", self._soc)
         self.set_value("temperature", self._temperature)
         self._update_voltage_from_soc()
@@ -205,10 +196,8 @@ class BMSSimulator(BaseDeviceSimulator):
             current = 0.0
         self.set_value("current", current)
 
-        # 溫度：只做自然散熱（溫度可透過 Modbus 寫入測試 alarm）
+        # 溫度：讀取 register（可能被 Modbus 外部寫入）
         self._temperature = float(self.get_value("temperature") or self._temperature)
-        self._temperature -= self._cooling_rate * max(0.0, self._temperature - self._ambient_temperature) * dt
-        self.set_value("temperature", self._temperature)
 
         # 狀態：0=standby, 1=charging, 2=discharging
         if abs(power_kw) < 0.1:
@@ -228,11 +217,8 @@ class BMSSimulator(BaseDeviceSimulator):
 
         自然散熱 + 告警檢查。
         """
-        # 自然散熱（讀取 register 值，因為可能被外部 Modbus 寫入）
-        dt = self._tick_interval
+        # 溫度：讀取 register（可能被 Modbus 外部寫入）
         self._temperature = float(self.get_value("temperature") or self._temperature)
-        self._temperature -= self._cooling_rate * max(0.0, self._temperature - self._ambient_temperature) * dt
-        self.set_value("temperature", self._temperature)
 
         # 告警檢查
         self._update_alarms()

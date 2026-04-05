@@ -210,13 +210,13 @@ def create_microgrid() -> tuple[MicrogridSimulator, BMSSimulator, BMSSimulator, 
         config=default_pcs_config(device_id="pcs_1", unit_id=10),
         sim_config=PCSSimConfig(capacity_kwh=100.0, p_ramp_rate=50.0),
     )
-    pcs1._running = True
+    pcs1.on_write("start_cmd", 0, 1)
 
     pcs2 = PCSSimulator(
         config=default_pcs_config(device_id="pcs_2", unit_id=11),
         sim_config=PCSSimConfig(capacity_kwh=100.0, p_ramp_rate=50.0),
     )
-    pcs2._running = True
+    pcs2.on_write("start_cmd", 0, 1)
 
     # BMS
     bms1 = BMSSimulator(
@@ -331,7 +331,7 @@ def print_dashboard(
     for name, pcs in [("PCS1", pcs1), ("PCS2", pcs2)]:
         p_set = pcs.get_value("p_setpoint") or 0.0
         p_act = pcs.get_value("p_actual") or 0.0
-        mode = "ON" if pcs._running else "OFF"
+        mode = "ON" if pcs.get_value("operating_mode") == 1 else "OFF"
         print(f"  {name} (unit={pcs.unit_id:2d}) | Setpoint={p_set:+7.1f} kW | Actual={p_act:+7.1f} kW | {mode}")
 
     # BMS 狀態
@@ -430,7 +430,7 @@ async def main(curve_name: str | None = None) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="多電表微電網模擬")
-    parser.add_argument("--curve", type=str, default=None, help="測試曲線名稱 (qv_step, fp_step, voltage_sag)")
+    parser.add_argument("--curve", type=str, default=None, help="測試曲線名稱 (qv_ramp, fp_ramp, fp_step, voltage_sag)")
     args = parser.parse_args()
 
     try:

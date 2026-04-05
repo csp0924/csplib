@@ -71,8 +71,12 @@ class CurveBehavior:
         if self._current_point is not None:
             if self._current_point.is_ramp and self._point_end_time is not None:
                 # 線性插值：根據已經過的時間計算 progress
-                elapsed = self._current_point.duration - (self._point_end_time - now)
-                progress = max(0.0, min(1.0, elapsed / self._current_point.duration))
+                duration = self._current_point.duration
+                if duration <= 0:
+                    progress = 1.0
+                else:
+                    elapsed = duration - (self._point_end_time - now)
+                    progress = max(0.0, min(1.0, elapsed / duration))
                 self._current_value = self._current_point.interpolate(progress)
             else:
                 self._current_value = self._current_point.value

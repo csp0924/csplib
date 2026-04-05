@@ -115,10 +115,7 @@ BMS 模擬器配置（frozen dataclass，含 `slots=True`）。
 3. 電流計算
    current = power_kw × 1000 / pack_voltage
 
-4. 溫度更新
-   heating = thermal_coefficient × |power_kw| × dt
-   cooling = cooling_rate × max(0, T - T_ambient) × dt
-   temperature += heating - cooling
+4. 溫度：writable 點位，由外部 Modbus 寫入設定（用於測試過溫告警等場景）
 
 5. 狀態更新
    |power| < 0.1 → standby(0)

@@ -115,6 +115,10 @@ class MicrogridSimulator:
             elif len(t) == 3:
                 result.append(CurvePoint(value=t[0], duration=t[1], curve_type=curve_type, end_value=t[2]))
             elif len(t) == 4:
+                if t[2] is not None:
+                    raise ConfigurationError(
+                        f"4 元素曲線 tuple 第 3 位須為 None: (value, duration, None, rate)，收到: {t}"
+                    )
                 result.append(CurvePoint(value=t[0], duration=t[1], curve_type=curve_type, rate=t[3]))
             else:
                 raise ConfigurationError(f"曲線 tuple 須為 2~4 個元素，收到 {len(t)}: {t}")
@@ -326,6 +330,10 @@ class MicrogridSimulator:
                 raise ConfigurationError(f"來源電表 '{mid}' 未註冊")
         if agg.target_meter_id not in self._meters:
             raise ConfigurationError(f"目標電表 '{agg.target_meter_id}' 未註冊")
+        # 同一 target 不可重複設定聚合
+        for existing in self._meter_aggregations:
+            if existing.target_meter_id == agg.target_meter_id:
+                raise ConfigurationError(f"電表 '{agg.target_meter_id}' 已有聚合規則")
 
         # 暫時新增，驗證後保留或回滾
         self._meter_aggregations.append(agg)

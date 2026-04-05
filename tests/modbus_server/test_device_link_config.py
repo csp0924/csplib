@@ -26,27 +26,27 @@ class TestDeviceLinkConfig:
         assert cfg.loss_factor == 0.05
 
     def test_empty_source_device_id_raises(self):
-        """空 source_device_id 應拋 ValueError"""
+        """空 source_device_id 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="source_device_id"):
             DeviceLinkConfig(source_device_id="", target_meter_id="meter_sub")
 
     def test_empty_target_meter_id_raises(self):
-        """空 target_meter_id 應拋 ValueError"""
+        """空 target_meter_id 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="target_meter_id"):
             DeviceLinkConfig(source_device_id="pcs_1", target_meter_id="")
 
     def test_loss_factor_negative_raises(self):
-        """loss_factor < 0 應拋 ValueError"""
+        """loss_factor < 0 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="loss_factor"):
             DeviceLinkConfig(source_device_id="pcs_1", target_meter_id="meter_sub", loss_factor=-0.01)
 
     def test_loss_factor_one_raises(self):
-        """loss_factor >= 1.0 應拋 ValueError"""
+        """loss_factor >= 1.0 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="loss_factor"):
             DeviceLinkConfig(source_device_id="pcs_1", target_meter_id="meter_sub", loss_factor=1.0)
 
     def test_loss_factor_above_one_raises(self):
-        """loss_factor > 1.0 應拋 ValueError"""
+        """loss_factor > 1.0 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="loss_factor"):
             DeviceLinkConfig(source_device_id="pcs_1", target_meter_id="meter_sub", loss_factor=1.5)
 
@@ -82,12 +82,12 @@ class TestMeterAggregationConfig:
         assert len(cfg.source_meter_ids) == 1
 
     def test_empty_source_meter_ids_raises(self):
-        """空 source_meter_ids 應拋 ValueError"""
+        """空 source_meter_ids 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="source_meter_ids"):
             MeterAggregationConfig(source_meter_ids=(), target_meter_id="meter_main")
 
     def test_target_in_source_raises(self):
-        """target 在 source 中應拋 ValueError"""
+        """target 在 source 中應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="target_meter_id"):
             MeterAggregationConfig(source_meter_ids=("meter_main", "meter_b"), target_meter_id="meter_main")
 

@@ -292,9 +292,6 @@ class BMSSimConfig:
         cells_in_series: 串聯電芯數
         min_cell_voltage: 電芯最低電壓 (V)
         max_cell_voltage: 電芯最高電壓 (V)
-        thermal_coefficient: 熱係數 (°C/kW)，功率越大溫升越快
-        ambient_temperature: 環境溫度 (°C)
-        cooling_rate: 自然散熱速率 (°C/s)
         charge_efficiency: 充電效率 (0~1)
         tick_interval: 模擬步長 (s)
     """
@@ -305,9 +302,6 @@ class BMSSimConfig:
     cells_in_series: int = 192
     min_cell_voltage: float = 2.8
     max_cell_voltage: float = 4.2
-    thermal_coefficient: float = 0.01
-    ambient_temperature: float = 25.0
-    cooling_rate: float = 0.005
     charge_efficiency: float = 0.95
     tick_interval: float = 1.0
 
