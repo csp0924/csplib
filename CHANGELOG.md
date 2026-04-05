@@ -6,7 +6,7 @@
 
 ## [Unreleased]
 
-## [0.6.2] - Unreleased
+## [0.6.2] - 2026-04-05
 ### Added
 - **`DeviceLinkConfig`** (`csp_lib.modbus_server`): frozen dataclass，宣告設備（PCS/Solar/Load/Generator）到電表的功率路由，支援 `loss_factor` 損耗因子
 - **`MeterAggregationConfig`** (`csp_lib.modbus_server`): frozen dataclass，宣告多個子電表功率累加到父電表，支援任意深度聚合樹
