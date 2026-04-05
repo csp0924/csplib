@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-05
+version: ">=0.6.2"
 ---
 
 # Import 路徑
@@ -509,6 +509,9 @@ from csp_lib.modbus_server import (
     GeneratorSimConfig,
     LoadSimConfig,
     MicrogridConfig,
+    DeviceLinkConfig,          # v0.6.2
+    MeterAggregationConfig,    # v0.6.2
+    BMSSimConfig,              # v0.6.2
     # Register
     RegisterBlock,
     # Server
@@ -523,12 +526,16 @@ from csp_lib.modbus_server import (
     SolarSimulator,
     GeneratorSimulator,
     LoadSimulator,
+    BMSSimulator,              # v0.6.2
     # Behaviors
     AlarmBehavior,
     CurveBehavior,
     NoiseBehavior,
     RampBehavior,
 )
+
+# default_bms_config 輔助函式（子模組 import）
+from csp_lib.modbus_server.simulator.bms import default_bms_config
 ```
 
 ---

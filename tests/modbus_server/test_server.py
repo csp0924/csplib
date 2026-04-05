@@ -4,6 +4,7 @@
 
 import pytest
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.modbus import Float32, UInt16
 from csp_lib.modbus_server.config import SimulatedDeviceConfig, SimulatedPoint
 from csp_lib.modbus_server.server import SimulatorDataBlock
@@ -123,5 +124,5 @@ class TestSimulationServerConfig:
 
         server = SimulationServer()
         server.add_simulator(_make_sim(unit_id=1))
-        with pytest.raises(ValueError, match="Unit ID 1 already registered"):
+        with pytest.raises(ConfigurationError, match="Unit ID 1 already registered"):
             server.add_simulator(_make_sim(unit_id=1))
