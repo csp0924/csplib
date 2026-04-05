@@ -4,7 +4,8 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-05
-version: ">=0.6.2"
+version: ">=0.7.0"
+
 ---
 
 # 所有配置類別
@@ -21,6 +22,12 @@ SORT file.name ASC
 ---
 
 ## 快速參考
+
+### Core 層
+
+| 配置類別 | 說明 |
+|----------|------|
+| [[Logging\|FileSinkConfig]] | 檔案 Sink 配置（`path`, `rotation`, `retention`, `compression`）（v0.7.0） |
 
 ### Modbus 層
 

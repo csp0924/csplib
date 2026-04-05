@@ -1,7 +1,7 @@
 ---
 tags: [type/moc, layer/core, status/complete]
-updated: 2026-04-04
-version: v0.6.1
+updated: 2026-04-05
+version: ">=0.7.0"
 ---
 # _MOC Core
 
@@ -13,7 +13,7 @@ version: v0.6.1
 
 ## 頁面索引
 
-- [[Logging]] — 基於 loguru 的模組化日誌系統
+- [[Logging]] — 基於 loguru 的模組化日誌系統（v0.7.0：SinkManager、LogFilter、LogContext、LogCapture、FileSinkConfig、AsyncSinkAdapter、RemoteLevelSource）
 - [[AsyncLifecycleMixin]] — 非同步生命週期管理基底
 - [[Error Hierarchy]] — 統一例外階層
 - [[Health Check]] — 健康狀態檢查

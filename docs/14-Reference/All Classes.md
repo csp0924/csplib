@@ -4,7 +4,8 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-05
-version: ">=0.6.2"
+version: ">=0.7.0"
+
 ---
 
 # 所有類別
@@ -40,6 +41,15 @@ SORT file.name ASC
 | [[CircuitBreaker]] | 斷路器 |
 | [[RetryPolicy]] | 重試策略 |
 | [[RuntimeParameters]] | 執行期可變參數容器（v0.5.0） |
+| [[Logging\|LogFilter]] | 模組等級過濾器，最長前綴匹配（v0.7.0） |
+| [[Logging\|SinkManager]] | 全域 Sink 生命週期管理單例（v0.7.0） |
+| [[Logging\|SinkInfo]] | Sink 資訊 frozen dataclass（v0.7.0） |
+| [[Logging\|FileSinkConfig]] | 檔案 Sink 配置 frozen dataclass（v0.7.0） |
+| [[Logging\|LogContext]] | Async-safe 結構化日誌上下文（v0.7.0） |
+| [[Logging\|LogCapture]] | 測試用日誌捕獲器（v0.7.0） |
+| [[Logging\|CapturedRecord]] | 單筆捕獲 log 記錄（v0.7.0） |
+| [[Logging\|RemoteLevelSource]] | 遠端等級來源 Protocol（v0.7.0） |
+| [[Logging\|AsyncSinkAdapter]] | 非同步 Sink 轉接器（v0.7.0） |
 
 ### Modbus
 

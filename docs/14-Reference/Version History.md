@@ -3,13 +3,41 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-05
+version: ">=0.7.0"
 ---
 
 # 版本歷史
 
 本專案的所有重要變更皆記錄於此。格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
+
+---
+
+## [0.7.0] - 2026-04-05
+
+### Added
+
+- **`LogFilter`** (`csp_lib.core`): 模組等級過濾器，最長前綴匹配，可直接作為 loguru `filter` 參數
+- **`SinkManager`** (`csp_lib.core`): 全域 Sink 生命週期管理單例，支援 `add_sink()` / `remove_sink()` / `set_level()` / `add_file_sink()` / `add_async_sink()` / `attach_remote_source()`
+- **`SinkInfo`** (`csp_lib.core`): Sink 資訊 frozen dataclass（`sink_id`、`name`、`sink_type`、`level`、`is_active`）
+- **`FileSinkConfig`** (`csp_lib.core`): 檔案 Sink 配置 frozen dataclass，`@dataclass(frozen=True, slots=True)`
+- **`LogContext`** (`csp_lib.core`): Async-safe 結構化日誌上下文，支援 context manager / decorator / `bind()` / `unbind()`
+- **`LogCapture`** / **`CapturedRecord`** (`csp_lib.core`): 測試用日誌捕獲工具，`contains()` / `filter()` 查詢 API
+- **`RemoteLevelSource`** (`csp_lib.core`): 遠端 log 等級來源 `@runtime_checkable` Protocol
+- **`AsyncSinkAdapter`** (`csp_lib.core`): 非同步 Sink 轉接器，thread-safe queue 橋接 async handler
+- **`RedisLogLevelSource`** (`csp_lib.redis`): `RemoteLevelSource` 的 Redis 實作，Hash + Pub/Sub
+- **`add_file_sink(config)`** (`csp_lib.core`): 模組層便利函式，委派全域 SinkManager
+- **`DEFAULT_FORMAT`** (`csp_lib.core`): 帶 ANSI 色彩的預設格式字串常數
+- **環境變數覆蓋**: `configure_logging(env_prefix=...)` 支援 `{PREFIX}_LOG_LEVEL` / `_LOG_FORMAT` / `_LOG_ENQUEUE` / `_LOG_JSON` / `_LOG_DIAGNOSE`
+
+### Changed
+
+- **`configure_logging()` 新增 keyword-only 參數**: `enqueue`、`json_output`、`diagnose`、`env_prefix`；委派給 `SinkManager` 管理 sink 生命週期
+- **`diagnose=False` 為生產預設**: 防止 exception traceback 洩漏 Modbus 位址、Redis 密碼等敏感資訊
+- **`set_level()` 不再重建 Sink**: 改更新 `LogFilter` dict，即時生效無 I/O 開銷
+- **`csp_lib/core/logging/` 子套件**: 日誌邏輯拆分至子套件，`csp_lib.core` 頂層 `__all__` 保持向後相容
+
+詳細 API 文件：[[Logging]]
 
 ---
 
