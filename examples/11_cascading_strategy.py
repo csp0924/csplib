@@ -133,11 +133,11 @@ def demo_basic_cascading():
     # 場景 3：電壓嚴重偏低 → QV 要求大量 Q → delta clamping
     ctx_very_low = StrategyContext(
         system_base=SystemBase(p_base=1000.0, q_base=500.0),
-        extra={"voltage": 340.0},
+        extra={"voltage": 300.0},
     )
     result = cascading.execute(ctx_very_low)
     s = math.hypot(result.p_target, result.q_target)
-    print("\n  Voltage=340V (very low, QV wants large Q):")
+    print("\n  Voltage=300V (very low, QV wants large Q):")
     print(f"    Output: {result}")
     print(f"    S = {s:.1f} kVA (limit: 1000)")
     print("    P preserved at 600kW [OK]" if abs(result.p_target - 600.0) < 0.1 else "    P changed!")

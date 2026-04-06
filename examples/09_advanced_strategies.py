@@ -359,7 +359,7 @@ async def demo_mode_manager():
 
     # 執行有效策略以展示其運作
     context = StrategyContext(soc=50.0)
-    command = pq_strategy.execute(context)
+    command = mode_manager.effective_strategy.execute(context)
     print(f"  Command output: {command}")
 
     # --- 步驟 2: 推入 stop 覆蓋（優先級 50 > 基礎 10）---
@@ -370,7 +370,7 @@ async def demo_mode_manager():
     print(f"  Effective strategy: {mode_manager.effective_strategy}")
     print(f"  Active overrides: {mode_manager.active_override_names}")
 
-    command = stop_strategy.execute(context)
+    command = mode_manager.effective_strategy.execute(context)
     print(f"  Command output: {command}")
 
     # --- 步驟 3: 推入 island 覆蓋（優先級 100 > stop 50）---

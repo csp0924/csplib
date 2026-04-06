@@ -13,22 +13,22 @@ csp_lib Example 12: etcd Leader Election 與 ClusterController
   Instance A (Leader)                 Instance B (Follower)
   +---------------------------+       +---------------------------+
   | ClusterController         |       | ClusterController         |
-  |  +- LeaderElector ----+   |       |  +- LeaderElector ----+   |
-  |  |  state: LEADER     |   |       |  |  state: FOLLOWER   |   |
-  |  +--------------------+   |       |  +--------------------+   |
+  |  +- LeaderElector -----+  |       |  +- LeaderElector -----+  |
+  |  |  state: LEADER      |  |       |  |  state: FOLLOWER    |  |
+  |  +---------------------+  |       |  +---------------------+  |
   |  +- SystemController --+  |       |  +- SystemController --+  |
   |  |  live context       |  |       |  |  virtual context    |  |
   |  |  real command       |  |       |  |  no-op command      |  |
-  |  +--------------------+  |       |  +--------------------+  |
-  |  +- UnifiedManager ---+  |       |                           |
-  |  |  Modbus connected   |  |       |  (devices disconnected)  |
+  |  +---------------------+  |       |  +---------------------+  |
+  |  +- UnifiedManager ----+  |       |                           |
+  |  |  Modbus connected   |  |       |  (devices disconnected)   |
   |  |  MongoDB/Redis sync |  |       |                           |
-  |  +--------------------+  |       |                           |
-  |  +- StatePublisher ---+  |       |  +- StateSubscriber ---+  |
+  |  +---------------------+  |       |                           |
+  |  +- StatePublisher ----+  |       |  +- StateSubscriber ---+  |
   |  |  Redis <-- push     |  |       |  |  Redis --> poll     |  |
-  |  +--------------------+  |       |  +--------------------+  |
+  |  +---------------------+  |       |  +---------------------+  |
   +---------------------------+       +---------------------------+
-           |                                    ^
+           |                                     ^
            |          etcd (election key)        |
            +-----> /csp/cluster/election <-------+
            |          Redis (state sync)         |
