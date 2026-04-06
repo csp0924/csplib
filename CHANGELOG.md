@@ -28,6 +28,13 @@
 - **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
 - **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
 
+### Documentation
+- **Guide: ModbusGateway 設定** (`docs/13-Guides/ModbusGateway Setup.md`): 完整設定指南（GatewayConfig、RegisterMap、資料同步、寫入驗證、Watchdog）(DOC-060)
+- **Guide: Capability-driven 部署驗證** (`docs/13-Guides/Capability-driven Deployment.md`): CapabilityRequirement + preflight_check 流程 (DOC-061)
+- **Guide: 自訂資料庫後端** (`docs/13-Guides/Custom Database Backend.md`): BatchUploader Protocol + non-MongoDB 實作範例 (DOC-062)
+- **Architecture 圖更新**: System Diagrams 加入 ModbusGateway 整合架構圖 (DOC-063)
+- **Data Flow 更新**: 加入 CommandProcessor pipeline + PowerCompensator FF+I 閉環流程圖 (DOC-064)
+
 ### CI/CD
 - **macOS CI**: 測試矩陣新增 `macos-latest`，覆蓋 Ubuntu + Windows + macOS 三平台
 - **Coverage threshold**: CI 中強制 `--fail-under=80`（目前 88%），僅在 Ubuntu runner 檢查

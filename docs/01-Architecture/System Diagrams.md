@@ -4,13 +4,13 @@ tags:
   - layer/architecture
   - status/complete
 created: 2026-03-06
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # System Diagrams
 
-csp_lib v0.6 系統圖表集，以 Mermaid 語法呈現系統總覽、核心流程、狀態機與設備生命週期。
+csp_lib v0.7 系統圖表集，以 Mermaid 語法呈現系統總覽、核心流程、狀態機與設備生命週期。
 
 ---
 
@@ -380,6 +380,70 @@ flowchart TD
 
 ---
 
+---
+
+## 7. ModbusGateway 整合架構圖
+
+展示 `ModbusGatewayServer` 如何作為 Layer 8 元件，對外暴露系統狀態給 EMS/SCADA，並接收命令回傳給 SystemController。
+
+```mermaid
+graph TB
+    subgraph EMS["EMS / SCADA（外部）"]
+        E1["EMS 系統\nModbus TCP Client"]
+    end
+
+    subgraph GW["Layer 8 ── ModbusGateway"]
+        GWS["ModbusGatewayServer\n(port 502)"]
+        subgraph REG["Register Space"]
+            HR["Holding Registers\n(FC03 / FC06 / FC16)\np_command, q_command, mode"]
+            IR["Input Registers\n(FC04)\nsoc, p_meas, status"]
+        end
+        WP["WritePipeline\nWriteRule → WriteValidator → WriteHook"]
+        SS["DataSyncSource\nPollingCallbackSource / RedisSubscriptionSource"]
+        WD["CommunicationWatchdog\n超時保護"]
+    end
+
+    subgraph L6["Layer 6 ── Integration"]
+        SC["SystemController"]
+        DR["DeviceRegistry"]
+        CB["ContextBuilder"]
+    end
+
+    subgraph L3["Layer 3 ── Equipment"]
+        DEV["AsyncModbusDevice / AsyncCANDevice"]
+    end
+
+    E1 -- "讀 Input Registers\n(FC04)" --> IR
+    E1 -- "寫 Holding Registers\n(FC06/FC16)" --> HR
+    HR --> WP
+    WP -- "CallbackHook / RedisPublishHook" --> SC
+    SC -- "get latest_values" --> DR
+    DR -- "監聽 read_complete 事件" --> DEV
+    DEV -- "即時數值" --> SS
+    SS -- "update_register_callback" --> IR
+    WD -- "timeout → 警報" --> SC
+
+    style GWS fill:#FF9800,color:#fff
+    style WP fill:#2196F3,color:#fff
+    style SS fill:#4CAF50,color:#fff
+    style WD fill:#e91e63,color:#fff
+```
+
+### 關鍵元件
+
+| 元件 | 職責 | 頁面 |
+|------|------|------|
+| `ModbusGatewayServer` | Modbus TCP Server 主 orchestrator | [[ModbusGatewayServer]] |
+| `GatewayRegisterDef` | 暫存器定義（名稱、位址、型別、scale） | [[GatewayConfig]] |
+| `WritePipeline` | 寫入驗證鏈（WriteRule → WriteValidator → WriteHook） | [[WriteValidation]] |
+| `PollingCallbackSource` | 定期輪詢 callback 更新 Input Registers | [[SyncSources]] |
+| `RedisSubscriptionSource` | 訂閱 Redis channel 同步狀態 | [[SyncSources]] |
+| `CommunicationWatchdog` | 監控 EMS 通訊活躍度，超時觸發保護 | [[GatewayConfig]] |
+| `CallbackHook` | 寫入成功後轉發命令給 SystemController | [[WriteValidation]] |
+| `StatePersistHook` | 重啟後自動恢復 Holding Register 狀態 | [[WriteValidation]] |
+
+---
+
 ## 相關頁面
 
 | 類別 | 頁面 |
@@ -391,6 +455,7 @@ flowchart TD
 | Integration 模組索引 | [[_MOC Integration]] |
 | Controller 模組索引 | [[_MOC Controller]] |
 | Equipment 模組索引 | [[_MOC Equipment]] |
+| ModbusGateway 模組索引 | [[_MOC ModbusGateway]] |
 | SystemController API | [[SystemController]] |
 | PowerDistributor API | [[PowerDistributor]] |
 | ModeManager API | [[ModeManager]] |
@@ -399,3 +464,5 @@ flowchart TD
 | AsyncCANDevice API | [[AsyncCANDevice]] |
 | DeviceProtocol API | [[DeviceProtocol]] |
 | PeriodicSendScheduler API | [[PeriodicSendScheduler]] |
+| ModbusGatewayServer API | [[ModbusGatewayServer]] |
+| ModbusGateway 設定指南 | [[ModbusGateway Setup]] |
