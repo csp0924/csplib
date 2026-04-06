@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from csp_lib.statistics.config import DeviceMeterType
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IntervalRecord:
     """
     完成的區間能耗記錄

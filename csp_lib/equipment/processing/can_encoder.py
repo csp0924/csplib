@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from .can_parser import CANField
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CANSignalDefinition:
     """
     CAN 信號定義（含 CAN ID）
@@ -33,7 +33,7 @@ class CANSignalDefinition:
     max_raw: int | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FrameBufferConfig:
     """
     Frame Buffer 配置

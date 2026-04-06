@@ -330,6 +330,52 @@ class TestLifecycle:
 # ================ 測試：屬性 ================
 
 
+class TestBatchUploaderDeprecation:
+    """batch_uploader 欄位與 deprecated mongo_uploader 過渡測試"""
+
+    def test_batch_uploader_field_default_none(self):
+        config = UnifiedConfig()
+        assert config.batch_uploader is None
+
+    def test_batch_uploader_used_when_set(self):
+        uploader = MagicMock()
+        config = UnifiedConfig(batch_uploader=uploader)
+        manager = UnifiedDeviceManager(config)
+        assert manager.data_manager is not None
+
+    def test_mongo_uploader_triggers_deprecation_warning(self):
+        import warnings
+
+        uploader = MagicMock()
+        config = UnifiedConfig(mongo_uploader=uploader)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            UnifiedDeviceManager(config)
+            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(dep_warnings) == 1
+            assert "mongo_uploader" in str(dep_warnings[0].message)
+            assert "batch_uploader" in str(dep_warnings[0].message)
+
+    def test_batch_uploader_priority_over_mongo(self):
+        """batch_uploader 設定時，mongo_uploader 被忽略（不觸發 warning）"""
+        import warnings
+
+        batch = MagicMock()
+        mongo = MagicMock()
+        config = UnifiedConfig(batch_uploader=batch, mongo_uploader=mongo)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            manager = UnifiedDeviceManager(config)
+            dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(dep_warnings) == 0
+        assert manager.data_manager is not None
+
+    def test_both_none_no_data_manager(self):
+        config = UnifiedConfig()
+        manager = UnifiedDeviceManager(config)
+        assert manager.data_manager is None
+
+
 class TestProperties:
     """屬性測試"""
 

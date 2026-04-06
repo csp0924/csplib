@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from csp_lib.controller.core import Command, ExecutionConfig, Strategy, StrategyContext
 from csp_lib.core import get_logger
 
@@ -33,14 +31,14 @@ class ScheduleStrategy(Strategy):
         await schedule.update_schedule(None)         # 無排程 → StopStrategy
     """
 
-    def __init__(self, fallback: Optional[Strategy] = None):
+    def __init__(self, fallback: Strategy | None = None):
         """
         初始化排程策略
 
         Args:
             fallback: 無排程時的預設策略，若為 None 則使用 StopStrategy
         """
-        self._current_strategy: Optional[Strategy] = None
+        self._current_strategy: Strategy | None = None
         self._fallback = fallback or StopStrategy()
 
     @property
@@ -58,7 +56,7 @@ class ScheduleStrategy(Strategy):
         # 使用當前策略的執行配置
         return self.current_strategy.execution_config
 
-    async def update_schedule(self, strategy: Optional[Strategy]) -> None:
+    async def update_schedule(self, strategy: Strategy | None) -> None:
         """
         更新排程策略
 

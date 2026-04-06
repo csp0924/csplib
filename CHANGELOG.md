@@ -6,6 +6,58 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-06
+
+### Added
+- **`BackgroundFlushMixin`** (`csp_lib.core.flush_mixin`): 背景定期 flush 迴圈的共用 Mixin（internal，不公開匯出），提供 `_start_flush_loop()` / `_stop_flush_loop()` / `_flush_once()` hook 骨架 (UL-H1)
+- **`DeviceEventType`** (`csp_lib.equipment.device.events`): 設備事件類型 StrEnum（internal，不公開匯出），與現有 `EVENT_xxx` 字串常數共存且完全相等 (UL-E)
+- **`CTX_*` 常數** (`csp_lib.controller.core.constants`): `StrategyContext.extra` 常用 key 常數化（internal），包含 `CTX_FREQUENCY`、`CTX_VOLTAGE`、`CTX_METER_POWER` 等 7 個 (UL-A)
+- **`UnifiedConfig.batch_uploader`** 欄位: 新增 `batch_uploader: BatchUploader | None = None`，作為 `mongo_uploader` 的推薦替代 (TD-001)
+- **`ClampPriority`** enum (`csp_lib.controller.system`): CascadingStrategy 的限幅優先級，`P_FIRST`（保 P 削 Q）或 `Q_FIRST`（保 Q 削 P）
+- **CAN exception error context**: `CANError` 新增 `can_id: int | None` 和 `bus_index: int | None` keyword-only 參數，自動格式化為 `[bus=N, can_id=0xNNN]` 前綴；子類別自動繼承
+
+### Changed
+- **QVStrategy `p_target=0.0`**: QV 策略只控制 Q，P 不再從 `last_command` 帶入（改為 `0.0`）；混合 P+Q 控制請用 cascade/mode switch。v0.8.0 將引入 `Command.NO_CHANGE` sentinel 完整方案
+- **CascadingStrategy 重寫為加法式**: 每層策略輸出「貢獻量」（非總量），逐層相加後依 `ClampPriority` 限幅；新增 `ClampPriority` enum（`P_FIRST` 保 P 削 Q、`Q_FIRST` 保 Q 削 P）；取代舊的 delta-based clamping
+- **Config frozen 對齊**: 12 個 Config dataclass 加 `frozen=True, slots=True`：`DroopConfig`、`FPConfig`、`IslandModeConfig`、`LoadSheddingConfig`、`PQModeConfig`、`PVSmoothConfig`、`QVConfig`、`FFCalibrationConfig`、`PowerCompensatorConfig`、`UnifiedConfig`、`SystemControllerConfig`、`GridControlLoopConfig`
+- **全庫 leaf frozen dataclass 補 `slots=True`**: 約 80 個無繼承關係的 `@dataclass(frozen=True)` 類別加上 `slots=True`，減少記憶體使用（`PointDefinition` 繼承鏈推遲到 v0.8.0）(TD-021)
+- **型別標註現代化**: `from typing import Type` → `type[T]` (TD-008)；`Optional[X]` → `X | None` 於 controller/services、controller/strategies、mongo 層共 20 處 (TD-011)
+- **`Any` 型別收窄**: `SystemControllerConfig.runtime_params` 從 `Any` 收窄為 `RuntimeParameters | None`；`orchestrator._execute_device_action` device 參數從 `Any` 收窄為 `AsyncModbusDevice`
+- **`__all__` 補齊**: `command.py`、`context.py`、`execution.py`、`strategy.py`、`base.py` 等 5 個高優先檔案
+- **`modbus/clients/base.py`**: `__aexit__` 補齊完整型別標註，移除 `# type: ignore`
+
+### Fixed
+- **`_build_device_snapshots` 過濾無 capability 設備**: `SystemController._build_device_snapshots()` 現在只納入具備至少一個 `capability_command_mappings` 中 capability 的設備，避免 meter 等非被控設備灌入 `PowerDistributor` 分母導致分配比例錯誤（如 `EqualDistributor` 200/3=66.67 → 200/2=100）
+- **`TransportAdapter` docstring**: 移除不存在的 `send_override()` 方法說明 (TD-010)
+- **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
+- **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
+
+### Examples
+- **全面重整**: 19 個舊範例重整為 14 個新範例 + README.md 學習指南
+- **全部可執行**: 所有範例使用 SimulationServer，`python examples/XX_xxx.py` 即可運行，無需真實硬體
+- **4 級學習路徑**: Beginner(01-02) → Intermediate(03-05) → Advanced(06-09) → Expert(10-14)
+- **移除 deprecated API**: SOCProtection→DynamicSOCProtection, mongo_uploader→batch_uploader
+- **新增範例**: 日誌系統(13)、運行時參數(14)、微電網模擬(12)、ModbusGateway(10)
+
+### Documentation
+- **Guide: ModbusGateway 設定** (`docs/13-Guides/ModbusGateway Setup.md`): 完整設定指南（GatewayConfig、RegisterMap、資料同步、寫入驗證、Watchdog）(DOC-060)
+- **Guide: Capability-driven 部署驗證** (`docs/13-Guides/Capability-driven Deployment.md`): CapabilityRequirement + preflight_check 流程 (DOC-061)
+- **Guide: 自訂資料庫後端** (`docs/13-Guides/Custom Database Backend.md`): BatchUploader Protocol + non-MongoDB 實作範例 (DOC-062)
+- **Architecture 圖更新**: System Diagrams 加入 ModbusGateway 整合架構圖 (DOC-063)
+- **Data Flow 更新**: 加入 CommandProcessor pipeline + PowerCompensator FF+I 閉環流程圖 (DOC-064)
+
+### CI/CD
+- **macOS CI**: 測試矩陣新增 `macos-latest`，覆蓋 Ubuntu + Windows + macOS 三平台
+- **Coverage threshold**: CI 中強制 `--fail-under=80`（目前 88%），僅在 Ubuntu runner 檢查
+
+### Tests
+- **Pipeline 整合測試**: 新增 `test_pipeline_integration.py`，18 個測試覆蓋 Strategy→Protection→Compensator→Router 端到端流程
+- **Flaky sleep 修復**: `test_queue`(18處)、`test_device_group`(8處)、`test_watchdog`(5處) 的硬編碼 `asyncio.sleep` 改為 `wait_for_condition()` 輪詢同步
+- **Missing return type**: 補齊 4 處缺少的 return type annotation
+
+### Deprecated
+- **`UnifiedConfig.mongo_uploader`**: 改用 `batch_uploader`，使用 `mongo_uploader` 時會觸發 `DeprecationWarning`，將於 v1.0.0 移除 (TD-001)
+
 ## [0.7.0] - 2026-04-05
 ### Added
 - **`LogFilter`** (`csp_lib.core`): 模組等級過濾器，以最長前綴匹配決定每條 log record 是否輸出；可直接作為 loguru `filter` 參數使用；取代舊有重複的 `_filter` closure，統一放入 `csp_lib/core/logging/filter.py`

@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING, Any
 from csp_lib.core import get_logger
 
 if TYPE_CHECKING:
+    from csp_lib.equipment.device import AsyncModbusDevice
+
     from .registry import DeviceRegistry
 
 logger = get_logger(__name__)
@@ -35,7 +37,7 @@ logger = get_logger(__name__)
 # ========== Schema ==========
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StepCheck:
     """
     步驟間健康/就緒檢查
@@ -57,7 +59,7 @@ class StepCheck:
     poll_interval: float = 0.5
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CommandStep:
     """
     系統指令序列中的單一步驟
@@ -81,7 +83,7 @@ class CommandStep:
     description: str = ""
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SystemCommand:
     """
     具名系統級指令，由有序步驟組成
@@ -338,7 +340,7 @@ class SystemCommandOrchestrator:
         return []
 
     @staticmethod
-    async def _execute_device_action(device: Any, action: str, params: dict[str, Any]) -> Any:
+    async def _execute_device_action(device: AsyncModbusDevice, action: str, params: dict[str, Any]) -> Any:
         """執行單一設備的動作"""
         return await device.execute_action(action, **params)
 

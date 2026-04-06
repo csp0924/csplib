@@ -33,7 +33,7 @@ logger = get_logger(__name__)
 # ========== Result Schema ==========
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CommandResult:
     """
     指令執行結果

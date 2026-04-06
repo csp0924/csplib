@@ -55,7 +55,7 @@ class ProtectionRule(ABC):
 # =============== SOC Protection ===============
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SOCProtectionConfig:
     """
     SOC 保護配置
@@ -246,7 +246,7 @@ class SystemAlarmProtection(ProtectionRule):
 # =============== Protection Result ===============
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ProtectionResult:
     """
     保護規則套用結果

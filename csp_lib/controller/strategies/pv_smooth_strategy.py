@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from csp_lib.controller.core import Command, ConfigMixin, ExecutionConfig, ExecutionMode, Strategy, StrategyContext
 from csp_lib.controller.services import PVDataService
@@ -14,7 +13,7 @@ from csp_lib.core import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class PVSmoothConfig(ConfigMixin):
     """
     PV 平滑配置
@@ -53,8 +52,8 @@ class PVSmoothStrategy(Strategy):
 
     def __init__(
         self,
-        config: Optional[PVSmoothConfig] = None,
-        pv_service: Optional[PVDataService] = None,
+        config: PVSmoothConfig | None = None,
+        pv_service: PVDataService | None = None,
         interval_seconds: int = DEFAULT_INTERVAL,
     ):
         """
@@ -75,7 +74,7 @@ class PVSmoothStrategy(Strategy):
         return self._config
 
     @property
-    def pv_service(self) -> Optional[PVDataService]:
+    def pv_service(self) -> PVDataService | None:
         """PV 資料服務"""
         return self._pv_service
 

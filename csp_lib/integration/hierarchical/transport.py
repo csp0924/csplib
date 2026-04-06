@@ -31,7 +31,7 @@ class DispatchPriority(IntEnum):
     PROTECTION = 100
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DispatchCommand:
     """
     調度命令
@@ -97,7 +97,6 @@ class TransportAdapter(Protocol):
     設計原則：
     - 下行：publish_command() 將調度命令推送至目標站點
     - 上行：subscribe_status() 訂閱子站點狀態更新
-    - 雙向：send_override() 用於即時模式切換
     - 生命週期：connect() / disconnect() 管理連線
 
     Usage::

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CANField:
     """
     CAN 欄位定義

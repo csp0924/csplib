@@ -2,18 +2,17 @@
 #
 # 級聯功率分配策略
 #
-# 多策略共存時，依優先順序逐層分配功率：
-#   - CapacityConfig: 系統容量配置
-#   - CascadingStrategy: 級聯策略（delta-based clamping）
-#
-# Delta-based clamping 保護高優先層的分配：
-#   PQ 先佔 P=600kW → QV 想加 Q=900 → S=√(600²+900²)=1082 > 1000
-#   只縮放 QV 的 delta Q，不動 PQ 的 P → Q 限 ≈800kVar
+# 多策略共存時，每層輸出其「貢獻量」，逐層相加：
+#   - PQ 貢獻 P=80kW, Q=0
+#   - QV 貢獻 P=0, Q=50kVar
+#   - 合計 P=80kW, Q=50kVar
+#   - 若 S > S_max，依 priority 決定保留哪個軸
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, replace
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from csp_lib.controller.core import Command, ExecutionConfig, ExecutionMode, StrategyContext
@@ -25,7 +24,14 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+class ClampPriority(str, Enum):
+    """S_max 超限時的限幅優先級"""
+
+    P_FIRST = "p_first"  # 保 P，削 Q
+    Q_FIRST = "q_first"  # 保 Q，削 P
+
+
+@dataclass(frozen=True, slots=True)
 class CapacityConfig:
     """
     系統容量配置
@@ -39,21 +45,21 @@ class CapacityConfig:
 
 class CascadingStrategy:
     """
-    級聯功率分配策略
+    級聯功率分配策略（加法式）
 
-    多策略依優先順序逐層分配功率，使用 delta-based clamping 確保高優先層分配不被修改。
+    每層策略輸出其「貢獻量」（不是總量），逐層相加後限幅。
 
     流程：
-    1. 第一層收到原始 context（保留 executor 注入的 last_command）
-    2. 後續層收到 last_command=當前累積值，extra["remaining_s_kva"]=剩餘容量
-    3. 每層執行後計算 delta_p, delta_q，若加上 delta 後 S 超過容量，只縮放 delta
+    1. 每層獨立執行，輸出此層的 P/Q 貢獻
+    2. 所有層的 P 和 Q 分別累加
+    3. 若 S = √(P²+Q²) > S_max，依 priority 決定保留哪個軸
 
     Usage::
 
         cascading = CascadingStrategy(
             layers=[pq_strategy, qv_strategy],
-            capacity=CapacityConfig(s_max_kva=1000),
-            execution_config=ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1),
+            capacity=CapacityConfig(s_max_kva=200),
+            priority=ClampPriority.P_FIRST,  # 超限時保 P 削 Q
         )
     """
 
@@ -61,10 +67,12 @@ class CascadingStrategy:
         self,
         layers: list[Strategy],
         capacity: CapacityConfig,
+        priority: ClampPriority = ClampPriority.P_FIRST,
         execution_config: ExecutionConfig | None = None,
     ) -> None:
         self._layers = layers
         self._capacity = capacity
+        self._priority = priority
         self._execution_config = execution_config or ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1)
 
     @property
@@ -73,77 +81,67 @@ class CascadingStrategy:
 
     def execute(self, context: StrategyContext) -> Command:
         """
-        逐層執行策略，使用 delta-based clamping 限制總容量
+        逐層執行策略，加法式累積後限幅
 
         Args:
-            context: 策略上下文（含 last_command 由 executor 注入）
+            context: 策略上下文
 
         Returns:
-            最終累積的 Command
+            累積並限幅後的 Command
         """
         if not self._layers:
             return context.last_command
 
         s_max = self._capacity.s_max_kva
-        accumulated = Command(p_target=0.0, q_target=0.0)
+        total_p = 0.0
+        total_q = 0.0
 
         for i, layer in enumerate(self._layers):
-            # 建構此層的 context
-            if i == 0:
-                layer_context = context
-            else:
-                s_used = math.hypot(accumulated.p_target, accumulated.q_target)
-                remaining = max(0.0, s_max - s_used)
-                layer_context = replace(
-                    context,
-                    last_command=accumulated,
-                    extra={**context.extra, "remaining_s_kva": remaining},
-                )
-
-            # 執行此層策略
-            layer_output = layer.execute(layer_context)
-
-            # 計算 delta
-            delta_p = layer_output.p_target - accumulated.p_target
-            delta_q = layer_output.q_target - accumulated.q_target
-
-            # 如果沒有增量，直接跳過 clamping
-            if delta_p == 0.0 and delta_q == 0.0:
-                continue
-
-            # 計算加上 delta 後的 S
-            new_p = accumulated.p_target + delta_p
-            new_q = accumulated.q_target + delta_q
-            new_s = math.hypot(new_p, new_q)
-
-            if new_s > s_max and new_s > 0:
-                # 只縮放 delta，保護高優先層的分配
-                # 用二次方程求 t: |accumulated + t * delta|² = s_max²
-                # A*t² + B*t + C = 0
-                a_p, a_q = accumulated.p_target, accumulated.q_target
-                a_coeff = delta_p**2 + delta_q**2  # A
-                b_coeff = 2.0 * (a_p * delta_p + a_q * delta_q)  # B
-                c_coeff = a_p**2 + a_q**2 - s_max**2  # C
-
-                if a_coeff > 0:
-                    discriminant = b_coeff**2 - 4.0 * a_coeff * c_coeff
-                    if discriminant >= 0:
-                        scale = (-b_coeff + math.sqrt(discriminant)) / (2.0 * a_coeff)
-                        scale = max(0.0, min(1.0, scale))
-                    else:
-                        scale = 0.0
-                    delta_p *= scale
-                    delta_q *= scale
-                    logger.debug(
-                        f"Layer {i} delta clamped: scale={scale:.3f}, delta_p={delta_p:.1f}, delta_q={delta_q:.1f}"
-                    )
-
-            accumulated = Command(
-                p_target=accumulated.p_target + delta_p,
-                q_target=accumulated.q_target + delta_q,
+            # 建構此層的 context：last_command 為目前累積值
+            s_used = math.hypot(total_p, total_q)
+            remaining = max(0.0, s_max - s_used)
+            layer_context = replace(
+                context,
+                last_command=Command(p_target=total_p, q_target=total_q),
+                extra={**context.extra, "remaining_s_kva": remaining},
             )
 
-        return accumulated
+            # 執行此層策略，output 是此層的「貢獻量」
+            layer_output = layer.execute(layer_context)
+
+            logger.trace(
+                f"Layer {i} ({layer}): contribution P={layer_output.p_target:.1f}, Q={layer_output.q_target:.1f}"
+            )
+
+            # 加法式累積
+            total_p += layer_output.p_target
+            total_q += layer_output.q_target
+
+        # 限幅：若 S > S_max，依 priority 保留一個軸，削減另一個
+        total_s = math.hypot(total_p, total_q)
+        if total_s > s_max and total_s > 0:
+            if self._priority == ClampPriority.P_FIRST:
+                # 保 P，削 Q
+                p_clamped = math.copysign(min(abs(total_p), s_max), total_p)
+                q_headroom = math.sqrt(max(0.0, s_max**2 - p_clamped**2))
+                q_clamped = math.copysign(min(abs(total_q), q_headroom), total_q)
+                logger.debug(
+                    f"S={total_s:.1f} > S_max={s_max:.1f}, P_FIRST: "
+                    f"P {total_p:.1f}->{p_clamped:.1f}, Q {total_q:.1f}->{q_clamped:.1f}"
+                )
+                total_p, total_q = p_clamped, q_clamped
+            else:
+                # 保 Q，削 P
+                q_clamped = math.copysign(min(abs(total_q), s_max), total_q)
+                p_headroom = math.sqrt(max(0.0, s_max**2 - q_clamped**2))
+                p_clamped = math.copysign(min(abs(total_p), p_headroom), total_p)
+                logger.debug(
+                    f"S={total_s:.1f} > S_max={s_max:.1f}, Q_FIRST: "
+                    f"P {total_p:.1f}->{p_clamped:.1f}, Q {total_q:.1f}->{q_clamped:.1f}"
+                )
+                total_p, total_q = p_clamped, q_clamped
+
+        return Command(p_target=total_p, q_target=total_q)
 
     @property
     def suppress_heartbeat(self) -> bool:
@@ -162,7 +160,14 @@ class CascadingStrategy:
 
     def __str__(self) -> str:
         layer_names = ", ".join(str(s) for s in self._layers)
-        return f"CascadingStrategy([{layer_names}], S_max={self._capacity.s_max_kva}kVA)"
+        return f"CascadingStrategy([{layer_names}], S_max={self._capacity.s_max_kva}kVA, {self._priority.value})"
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+__all__ = [
+    "CapacityConfig",
+    "CascadingStrategy",
+    "ClampPriority",
+]

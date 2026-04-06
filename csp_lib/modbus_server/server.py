@@ -217,19 +217,19 @@ def _create_datablock(simulator: BaseDeviceSimulator) -> Any:
     wrapper = SimulatorDataBlock(simulator)
 
     class _PymodbusDataBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
-        def __init__(self):
+        def __init__(self) -> None:
             self.address = 0
             self.default_value = 0
             self.values = wrapper._block.registers
 
-        def reset(self):
+        def reset(self) -> None:
             wrapper.reset()
 
-        def getValues(self, address, count=1):
+        def getValues(self, address: int, count: int = 1) -> list[int]:
             return wrapper.getValues(address - 1, count)
 
-        def setValues(self, address, values):
-            return wrapper.setValues(address - 1, values)
+        def setValues(self, address: int, values: list[int]) -> None:
+            wrapper.setValues(address - 1, values)
 
     return _PymodbusDataBlock()
 
@@ -238,18 +238,18 @@ def _create_empty_pymodbus_block() -> Any:
     """建立空的 pymodbus DataBlock"""
 
     class _EmptyBlock(get_BaseModbusDataBlock()):  # type: ignore[misc]
-        def __init__(self):
+        def __init__(self) -> None:
             self.address = 0
             self.default_value = 0
             self.values = [0] * 100
 
-        def reset(self):
+        def reset(self) -> None:
             pass
 
-        def getValues(self, address, count=1):
+        def getValues(self, address: int, count: int = 1) -> list[int]:
             return [0] * count
 
-        def setValues(self, address, values):
+        def setValues(self, address: int, values: list[int]) -> None:
             pass
 
     return _EmptyBlock()

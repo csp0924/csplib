@@ -22,7 +22,7 @@ from typing import Any
 from csp_lib.core.errors import ConfigurationError
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Capability:
     """
     設備能力定義
@@ -48,7 +48,7 @@ class Capability:
         return frozenset(self.write_slots) | frozenset(self.read_slots)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CapabilityBinding:
     """
     設備對能力的具體綁定

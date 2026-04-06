@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from csp_lib.controller.core import (
     Command,
@@ -21,7 +20,7 @@ from csp_lib.core import get_logger
 logger = get_logger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DroopConfig(ConfigMixin):
     """
     Droop 模式配置
@@ -112,7 +111,7 @@ class DroopStrategy(Strategy):
         strategy = DroopStrategy(config)  # noqa: F841
     """
 
-    def __init__(self, config: Optional[DroopConfig] = None) -> None:
+    def __init__(self, config: DroopConfig | None = None) -> None:
         self._config = config or DroopConfig()
         self._active = False
 

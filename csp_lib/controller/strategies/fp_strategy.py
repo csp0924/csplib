@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from csp_lib.controller.core import (
     Command,
@@ -18,7 +17,7 @@ from csp_lib.controller.core import (
 )
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class FPConfig(ConfigMixin):
     """
     FP 模式配置
@@ -95,7 +94,7 @@ class FPStrategy(Strategy):
         strategy = FPStrategy(config)
     """
 
-    def __init__(self, config: Optional[FPConfig] = None) -> None:
+    def __init__(self, config: FPConfig | None = None) -> None:
         self._config = config or FPConfig()
 
     @property

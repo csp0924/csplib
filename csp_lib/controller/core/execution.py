@@ -24,7 +24,7 @@ class ExecutionMode(Enum):
     HYBRID = auto()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExecutionConfig:
     """
     策略執行配置
@@ -37,6 +37,9 @@ class ExecutionConfig:
     mode: ExecutionMode
     interval_seconds: int = 1
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.mode != ExecutionMode.TRIGGERED and self.interval_seconds <= 0:
             raise ValueError("interval_seconds must be positive for PERIODIC/HYBRID mode")
+
+
+__all__ = ["ExecutionConfig", "ExecutionMode"]

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from csp_lib.core.errors import ConfigurationError
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DeviceConfig:
     """
     設備設定

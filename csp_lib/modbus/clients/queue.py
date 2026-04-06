@@ -26,7 +26,7 @@ from ..exceptions import ModbusCircuitBreakerError, ModbusError, ModbusQueueFull
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RequestQueueConfig:
     """
     請求佇列設定

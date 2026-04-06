@@ -5,7 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/core/context.py
 created: 2026-02-17
-updated: 2026-04-04
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # StrategyContext
@@ -54,6 +55,26 @@ updated: 2026-04-04
 | `"remaining_s_kva"` | 剩餘視在功率容量 | [[CascadingStrategy]] |
 | `"schedule_p"` | 排程功率設定點 (kW) | [[DroopStrategy]] |
 | `"dt"` | 距上次呼叫的時間間隔 (秒) | [[PowerCompensator]] |
+
+> [!tip] CTX_* 常數（v0.7.1）
+> `csp_lib.controller.core.constants` 提供上述所有鍵的具名常數，避免字串魔法值：
+>
+> ```python
+> from csp_lib.controller.core.constants import (
+>     CTX_FREQUENCY,       # "frequency"
+>     CTX_VOLTAGE,         # "voltage"
+>     CTX_METER_POWER,     # "meter_power"
+>     CTX_SCHEDULE_P,      # "schedule_p"
+>     CTX_DT,              # "dt"
+>     CTX_SYSTEM_ALARM,    # "system_alarm"
+>     CTX_REMAINING_S_KVA, # "remaining_s_kva"
+> )
+>
+> # 使用常數而非字串
+> freq = context.extra.get(CTX_FREQUENCY, 60.0)
+> ```
+>
+> 這些常數為 internal，僅供策略實作內部使用，不屬於公開 API。
 
 ## 輔助方法
 

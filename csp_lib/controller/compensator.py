@@ -170,7 +170,7 @@ class MongoFFTableRepository:
             return None
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class PowerCompensatorConfig:
     """
     功率補償器配置

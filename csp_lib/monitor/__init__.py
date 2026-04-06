@@ -11,24 +11,29 @@
 #   - RedisMonitorPublisher: Redis 發布器
 #   - ClusterMonitorAggregator: 叢集監控聚合器
 
-from .alarm import SystemAlarmEvaluator, create_system_alarm_evaluators
-from .collector import (
-    InterfaceMetrics,
-    ModuleHealthCollector,
-    ModuleHealthSnapshot,
-    ModuleStatus,
-    SystemMetrics,
-    SystemMetricsCollector,
-)
-from .config import DistributedMonitorConfig, MetricThresholds, MonitorConfig, NetworkThresholds
-from .distributed import (
-    ClusterHealthSnapshot,
-    ClusterMonitorAggregator,
-    NodeMetricsSummary,
-    NodeRegistration,
-)
-from .manager import SystemMonitor
-from .publisher import RedisMonitorPublisher
+try:
+    from .alarm import SystemAlarmEvaluator, create_system_alarm_evaluators
+    from .collector import (
+        InterfaceMetrics,
+        ModuleHealthCollector,
+        ModuleHealthSnapshot,
+        ModuleStatus,
+        SystemMetrics,
+        SystemMetricsCollector,
+    )
+    from .config import DistributedMonitorConfig, MetricThresholds, MonitorConfig, NetworkThresholds
+    from .distributed import (
+        ClusterHealthSnapshot,
+        ClusterMonitorAggregator,
+        NodeMetricsSummary,
+        NodeRegistration,
+    )
+    from .manager import SystemMonitor
+    from .publisher import RedisMonitorPublisher
+except ImportError as _exc:
+    raise ImportError(
+        'csp_lib.monitor requires additional dependencies. Install with: pip install "csp0924_lib[monitor]"'
+    ) from _exc
 
 __all__ = [
     "ClusterHealthSnapshot",

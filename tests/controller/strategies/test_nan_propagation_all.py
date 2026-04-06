@@ -170,8 +170,8 @@ class TestQVStrategyNaNInf:
         result = strategy.execute(ctx)
 
         assert isinstance(result, Command)
-        # p_target is preserved from last_command
-        assert result.p_target == 10.0
+        # QV 只管 Q，P 固定為 0
+        assert result.p_target == 0.0
         if math.isnan(bad_value):
             # NaN falls through all if-branches into deadband -> 0.0
             assert result.q_target == 0.0, (
@@ -204,7 +204,8 @@ class TestQVStrategyNaNInf:
         result = strategy.execute(ctx)
 
         assert isinstance(result, Command)
-        assert result.p_target == 10.0
+        # QV 只管 Q，P 固定為 0
+        assert result.p_target == 0.0
         if math.isnan(bad_value):
             # NaN -> deadband 0.0 ratio -> percent_to_kvar(0) = 0
             assert result.q_target == 0.0, "NaN voltage silently produces q=0 via deadband"
@@ -229,8 +230,8 @@ class TestQVStrategyNaNInf:
         assert not _has_bad_float(result)
 
     @pytest.mark.parametrize("label,bad_value", BAD_FLOATS, ids=[t[0] for t in BAD_FLOATS])
-    def test_bad_last_command_p_preserved(self, label: str, bad_value: float) -> None:
-        """QV preserves last_command.p_target -- if it is bad, it stays bad."""
+    def test_bad_last_command_p_not_preserved(self, label: str, bad_value: float) -> None:
+        """QV 只管 Q，P 固定為 0，不再傳播 last_command 的 bad p_target。"""
         config = QVConfig(nominal_voltage=380.0, v_set=100.0, droop=5.0)
         strategy = QVStrategy(config)
         ctx = StrategyContext(
@@ -241,10 +242,7 @@ class TestQVStrategyNaNInf:
         result = strategy.execute(ctx)
 
         assert isinstance(result, Command)
-        if math.isnan(bad_value):
-            assert math.isnan(result.p_target), "NaN p_target from last_command should propagate"
-        else:
-            assert math.isinf(result.p_target), "Inf p_target from last_command should propagate"
+        assert result.p_target == 0.0, "QV should output p_target=0, not propagate last_command"
 
     @pytest.mark.parametrize("label,bad_value", BAD_FLOATS, ids=[t[0] for t in BAD_FLOATS])
     def test_bad_nominal_voltage_in_config(self, label: str, bad_value: float) -> None:

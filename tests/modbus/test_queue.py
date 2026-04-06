@@ -23,6 +23,7 @@ from csp_lib.modbus.exceptions import (
     ModbusError,
     ModbusQueueFullError,
 )
+from tests.helpers import wait_for_condition
 
 
 class TestRequestQueueConfig:
@@ -195,8 +196,14 @@ class TestModbusRequestQueue:
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
 
-            # Give worker time to start processing the blocking op
-            await asyncio.sleep(0.05)
+            # 等待 blocking op 入隊後被 worker 取出開始處理
+            # worker 取出後 total_size 回到 0，但 future 尚未完成（blocked on gate）
+            # 先等入隊完成（total_size > 0），再等 worker 取出（total_size == 0）
+            await wait_for_condition(lambda: queue._sequence >= 1, message="request should be enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not blocking_future.done(),
+                message="worker should be processing blocking op",
+            )
 
             # Submit READ then WRITE while worker is busy
             read_future = asyncio.ensure_future(
@@ -206,8 +213,8 @@ class TestModbusRequestQueue:
                 queue.submit(unit_id=1, priority=RequestPriority.WRITE, coroutine_factory=write_op)
             )
 
-            # Wait for queued items to be enqueued
-            await asyncio.sleep(0.05)
+            # 等待兩個請求都進入佇列
+            await wait_for_condition(lambda: queue.total_size >= 2)
 
             # Release the gate - worker will process WRITE before READ
             gate.set()
@@ -241,7 +248,11 @@ class TestModbusRequestQueue:
             blocking_future = asyncio.ensure_future(
                 queue.submit(unit_id=99, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="blocking request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not blocking_future.done(),
+                message="worker should pick up blocking op",
+            )
 
             # Submit requests for unit 1, 2, 3 (all same priority)
             futures = []
@@ -256,7 +267,7 @@ class TestModbusRequestQueue:
                     )
                     futures.append(f)
 
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue.total_size >= 6)
             gate.set()
 
             await blocking_future
@@ -301,7 +312,11 @@ class TestModbusRequestQueue:
             f1 = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="first request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not f1.done(),
+                message="worker should pick up blocking op",
+            )
 
             # Fill queue
             f2 = asyncio.ensure_future(
@@ -310,7 +325,7 @@ class TestModbusRequestQueue:
             f3 = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue.total_size >= 2, message="queue should have 2 items")
 
             # Third queued item should fail
             with pytest.raises(ModbusQueueFullError):
@@ -350,7 +365,6 @@ class TestModbusRequestQueue:
         finally:
             await queue.stop()
 
-    @pytest.mark.slow
     @pytest.mark.asyncio
     async def test_circuit_breaker_recovery(self):
         """斷路器冷卻後恢復"""
@@ -370,16 +384,17 @@ class TestModbusRequestQueue:
                     coroutine_factory=lambda: _async_raise(ModbusError("fail")),
                 )
 
-            # Wait for cooldown (must exceed max backoff with jitter: 0.1 * 2 * 1.2 = 0.24)
-            await asyncio.sleep(0.5)
+            # 用 mock clock 跳過 cooldown，不依賴真實等待
+            with patch("csp_lib.core.resilience.time") as mock_time:
+                mock_time.monotonic.return_value = time.monotonic() + 5.0
 
-            # Should work now (HALF_OPEN → CLOSED)
-            result = await queue.submit(
-                unit_id=1,
-                priority=RequestPriority.READ,
-                coroutine_factory=lambda: _async_value("recovered"),
-            )
-            assert result == "recovered"
+                # Should work now (HALF_OPEN -> CLOSED)
+                result = await queue.submit(
+                    unit_id=1,
+                    priority=RequestPriority.READ,
+                    coroutine_factory=lambda: _async_value("recovered"),
+                )
+                assert result == "recovered"
         finally:
             await queue.stop()
 
@@ -399,12 +414,16 @@ class TestModbusRequestQueue:
         _f1 = asyncio.ensure_future(
             queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
         )
-        await asyncio.sleep(0.05)
+        await wait_for_condition(lambda: queue._sequence >= 1, message="first request enqueued")
+        await wait_for_condition(
+            lambda: queue.total_size == 0 and not _f1.done(),
+            message="worker should pick up blocking op",
+        )
 
         _f2 = asyncio.ensure_future(
             queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
         )
-        await asyncio.sleep(0.05)
+        await wait_for_condition(lambda: queue.total_size >= 1)
 
         # Stop the queue
         gate.set()
@@ -547,7 +566,11 @@ class TestModbusRequestQueue:
             f_block = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="blocking request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not f_block.done(),
+                message="worker should pick up blocking op",
+            )
 
             # Submit a request with very short timeout
             f_stale = asyncio.ensure_future(
@@ -567,8 +590,8 @@ class TestModbusRequestQueue:
             gate.set()
             await f_block
 
-            # Give worker time to process
-            await asyncio.sleep(0.1)
+            # 等待 worker 處理完畢（佇列清空）
+            await wait_for_condition(lambda: queue.total_size == 0)
 
             # The stale request's coroutine should NOT have been executed
             assert executed is False
@@ -592,7 +615,11 @@ class TestModbusRequestQueue:
             f_block = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="blocking request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not f_block.done(),
+                message="worker should pick up blocking op",
+            )
 
             # Submit requests with short timeout so they'll be cancelled by caller
             stale_futures = []
@@ -615,7 +642,9 @@ class TestModbusRequestQueue:
             # Release worker so dequeue runs and cleans cancelled requests
             gate.set()
             await f_block
-            await asyncio.sleep(0.1)
+
+            # 等待 worker 清理完畢
+            await wait_for_condition(lambda: queue.total_size == 0)
 
             # Cancelled requests should have been freed
             assert queue.total_size == 0
@@ -703,29 +732,35 @@ class TestModbusRequestQueue:
             f_block = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="blocking request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not f_block.done(),
+                message="worker should pick up blocking op",
+            )
 
-            # Enqueue 1 more → total_size == 1, max == 2, 1 slot left
+            # Enqueue 1 more -> total_size == 1, max == 2, 1 slot left
             f_fill = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue.total_size >= 1)
 
             # Hold the lock so both new submits pass size check then block on lock acquire
             await queue._lock.acquire()
 
-            # Launch 2 concurrent submits — both see total_size=1 < max=2, pass check
+            # Launch 2 concurrent submits -- both see total_size=1 < max=2, pass check
             f_a = asyncio.ensure_future(
                 queue.submit(unit_id=2, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
             f_b = asyncio.ensure_future(
                 queue.submit(unit_id=3, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)  # let both pass size check and block on lock
+            # yield control 讓兩個 submit 都開始等待 lock
+            await asyncio.sleep(0)
 
-            # Release lock — they'll acquire sequentially and enqueue
+            # Release lock -- they'll acquire sequentially and enqueue
             queue._lock.release()
-            await asyncio.sleep(0.1)
+            # 等待兩個 submit 都嘗試完成（其中一個可能因 QueueFull 而結束）
+            await asyncio.sleep(0)
 
             # Bug: total_size == 3 > max == 2 (both passed stale size check)
             # Fix: second submit sees total_size == 2 >= max inside lock → QueueFullError
@@ -766,7 +801,11 @@ class TestModbusRequestQueue:
             f_block = asyncio.ensure_future(
                 queue.submit(unit_id=1, priority=RequestPriority.READ, coroutine_factory=blocking_op)
             )
-            await asyncio.sleep(0.05)
+            await wait_for_condition(lambda: queue._sequence >= 1, message="blocking request enqueued")
+            await wait_for_condition(
+                lambda: queue.total_size == 0 and not f_block.done(),
+                message="worker should pick up blocking op",
+            )
 
             # Submit requests with very short timeout (will become stale)
             stale_futures = []
@@ -789,7 +828,8 @@ class TestModbusRequestQueue:
             # Release worker
             gate.set()
             await f_block
-            await asyncio.sleep(0.1)
+            # 等待 worker 清理完畢
+            await wait_for_condition(lambda: queue.total_size == 0)
 
             # CB should still be CLOSED — stale skips don't count as failures
             cb = queue._get_circuit_breaker(1)

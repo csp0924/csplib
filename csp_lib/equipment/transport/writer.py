@@ -29,7 +29,7 @@ class WriteStatus(Enum):
     VERIFICATION_FAILED = "verification_failed"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class WriteResult:
     """寫入結果"""
 
@@ -149,7 +149,7 @@ class ValidatedWriter:
             return registers[0]
         return registers
 
-    async def _write_to_device(self, point: WritePoint, encoded: list[int] | int | bool):
+    async def _write_to_device(self, point: WritePoint, encoded: list[int] | int | bool) -> None:
         """寫入暫存器"""
         address = point.address + self._address_offset
         function_code = point.function_code

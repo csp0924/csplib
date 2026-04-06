@@ -1,7 +1,7 @@
 ---
 tags: [type/concept, status/complete]
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 # Data Flow
 
@@ -229,6 +229,115 @@ sequenceDiagram
 
 ---
 
+---
+
+## 4.5 CommandProcessor Pipeline（Post-Protection 處理）
+
+`CommandProcessor` 是 `ProtectionGuard` 與 `CommandRouter` 之間的可擴展處理管線，讓使用者注入自訂的命令轉換邏輯（例如 Feed-Forward 補償、量測校正、限速等）。
+
+```mermaid
+flowchart LR
+    PG["ProtectionGuard.apply()\nSOC / 逆送 / 告警保護"] --> PCMD["Protected Command\n{ p_target: 450, q_target: 100 }"]
+
+    subgraph PP["post_protection_processors 管線（依序執行）"]
+        P1["CommandProcessor 1\n（如 PowerCompensator）"]
+        P2["CommandProcessor 2\n（自訂限速器）"]
+        P3["CommandProcessor N\n..."]
+        P1 --> P2 --> P3
+    end
+
+    PCMD --> PP
+    PP --> FCMD["Final Command\n{ p_target: 467, q_target: 100 }"]
+    FCMD --> CR["CommandRouter / PowerDistributor"]
+
+    style PP fill:#e3f2fd,stroke:#2196F3
+    style P1 fill:#4CAF50,color:#fff
+```
+
+### CommandProcessor Protocol
+
+任何實作 `process(command, context)` 的類別均符合 Protocol：
+
+```python
+class CommandProcessor(Protocol):
+    async def process(
+        self,
+        command: Command,
+        context: StrategyContext,
+    ) -> Command:
+        """接收命令，回傳（可能修改過的）命令"""
+        ...
+```
+
+注入方式：
+
+```python
+config = SystemControllerConfig(
+    post_protection_processors=[
+        PowerCompensator(...),   # 內建 FF+I 補償
+        MyRampLimiter(...),      # 自訂限速器
+    ],
+)
+```
+
+---
+
+## 4.6 PowerCompensator 閉環補償流程
+
+[[PowerCompensator]] 是 `CommandProcessor` 的內建實作，提供 Feed-Forward（FF）+ Integral（I）閉環功率補償，修正 PCS 的靜差。
+
+```mermaid
+flowchart TD
+    CMD["Protected Command\np_target = 500 kW"] --> FF
+
+    subgraph FFLookup["FF 查表（前饋補償）"]
+        FF["FFTable.lookup(p_target)\n查詢 setpoint → 補償值對照表\n插值計算"] --> FFVAL["ff_correction = +17 kW\n（從歷史校正資料）"]
+    end
+
+    FFVAL --> SUMFF["p_ff = p_target + ff_correction\n= 517 kW"]
+
+    subgraph IControl["I 控制（積分補償）"]
+        MEAS["context.extra.p_measurement\n量測值 480 kW"] --> ERR
+        SUMFF --> ERR["error = p_ff - p_measurement\n= 517 - 480 = 37 kW"]
+        ERR --> INTEG["integral += error × Ki × dt\n（累積誤差）"]
+        INTEG --> ICLAMP["積分夾緊\n防止 windup"]
+        ICLAMP --> IVAL["i_correction = +13 kW"]
+    end
+
+    SUMFF --> FINALSUM["p_out = p_ff + i_correction\n= 517 + 13 = 530 kW"]
+    IVAL --> FINALSUM
+
+    FINALSUM --> CLAMP["輸出夾緊\nmin(p_out, system_p_max)"]
+    CLAMP --> OUT["Final Command\np_target = 530 kW"]
+
+    OUT --> CR["CommandRouter"]
+
+    style FFLookup fill:#e8f5e9,stroke:#4CAF50
+    style IControl fill:#e3f2fd,stroke:#2196F3
+    style FINALSUM fill:#FF9800,color:#fff
+```
+
+> [!note] 量測值來源
+> `PowerCompensator` 從 `StrategyContext.extra` 讀取量測值（例如 `context.extra["p_measurement"]`）。
+> 需在 `SystemControllerConfig.context_mappings` 中設定對應映射，否則 I 控制器將讀到 `None` 並跳過積分更新。
+
+> [!tip] 獨立校正流程
+> Feed-Forward 表由 [[FFCalibrationStrategy]] 在維護模式下自動建立：
+> 控制器循序施加不同設定點，量測穩態值並記錄對照關係。
+> 校正完成後由 `FFTableRepository`（JSON 或 MongoDB）持久化。
+
+### PowerCompensator 關鍵參數
+
+| 參數 | 說明 |
+|------|------|
+| `ki` | 積分增益（I 控制器） |
+| `integral_limit` | 積分輸出上限（防 windup） |
+| `output_limit` | 最終輸出上限（kW） |
+| `measurement_key` | context.extra 中量測值的 key（預設 `"p_measurement"`） |
+| `repository` | FFTableRepository 實例（FF 查表持久化） |
+
+---
+
 ## 相關頁面
 
 - [[Layered Architecture]] — 各層職責與依賴關係
@@ -238,4 +347,6 @@ sequenceDiagram
 - [[PowerDistributor]] — 功率分配器實作（EqualDistributor / ProportionalDistributor / SOCBalancingDistributor）
 - [[AsyncCANDevice]] — CAN 設備讀寫架構
 - [[SystemController]] — 頂層控制器完整 API
+- [[CommandProcessor]] — Post-Protection 命令處理管線
+- [[PowerCompensator]] — FF + I 閉環功率補償
 - [[_MOC Architecture]] — 返回架構索引

@@ -15,7 +15,7 @@ from typing import Any
 from csp_lib.controller.core import Command
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ExecutorStatus:
     """
     子執行器即時狀態
@@ -41,7 +41,7 @@ class ExecutorStatus:
     healthy_device_count: int = 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class StatusReport:
     """
     狀態回報封包

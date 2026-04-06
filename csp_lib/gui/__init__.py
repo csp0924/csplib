@@ -20,8 +20,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .app import create_app
-from .config import GUIConfig
+try:
+    from .app import create_app
+    from .config import GUIConfig
+except ImportError as _exc:
+    raise ImportError(
+        'csp_lib.gui requires additional dependencies. Install with: pip install "csp0924_lib[gui]"'
+    ) from _exc
 
 if TYPE_CHECKING:
     pass

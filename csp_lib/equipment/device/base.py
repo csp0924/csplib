@@ -788,3 +788,6 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+__all__ = ["AsyncModbusDevice", "PointInfo", "ReconfigureSpec"]

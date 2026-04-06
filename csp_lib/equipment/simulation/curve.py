@@ -42,7 +42,7 @@ class CurveType(Enum):
 # ================ Data Classes ================
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class CurvePoint:
     """
     曲線點位 - 不可變

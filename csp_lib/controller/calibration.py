@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class FFCalibrationConfig(ConfigMixin):
     """
     FF Table 步階校準配置

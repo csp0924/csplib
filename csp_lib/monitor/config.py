@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class NetworkThresholds:
     """
     網路介面閾值
@@ -36,7 +36,7 @@ class NetworkThresholds:
         return self.send_rate_bytes > 0 or self.recv_rate_bytes > 0
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DistributedMonitorConfig:
     """
     分散式監控配置
@@ -82,7 +82,7 @@ class DistributedMonitorConfig:
         return f"monitor:{self.namespace}:cluster:health"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MetricThresholds:
     """
     系統指標閾值
@@ -106,7 +106,7 @@ class MetricThresholds:
                 raise ValueError(f"{name} 必須在 (0, 100] 範圍內，收到: {value}")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class MonitorConfig:
     """
     監控器配置

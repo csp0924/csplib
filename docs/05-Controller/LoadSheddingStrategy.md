@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/load_shedding.py
 created: 2026-03-06
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-06
+version: ">=0.7.1"
 ---
 
 # LoadSheddingStrategy

@@ -5,12 +5,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from csp_lib.controller.core import Command, ConfigMixin, ExecutionConfig, ExecutionMode, Strategy, StrategyContext
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class PQModeConfig(ConfigMixin):
     """
     PQ 模式配置
@@ -36,7 +35,7 @@ class PQModeStrategy(Strategy):
         strategy = PQModeStrategy(config)
     """
 
-    def __init__(self, config: Optional[PQModeConfig] = None):
+    def __init__(self, config: PQModeConfig | None = None):
         """
         初始化 PQ 模式策略
 

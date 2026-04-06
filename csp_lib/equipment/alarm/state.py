@@ -10,7 +10,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
+from csp_lib.core import get_logger
+
 from .definition import AlarmDefinition, AlarmLevel
+
+logger = get_logger(__name__)
 
 
 class AlarmEventType(Enum):
@@ -187,6 +191,10 @@ class AlarmStateManager:
             state = self._states[code]
             event = state.update(is_triggered=is_triggered)
             if event:
+                if event.event_type == AlarmEventType.TRIGGERED:
+                    logger.debug(f"Alarm '{event.alarm.name}' ({code}): TRIGGERED")
+                else:
+                    logger.debug(f"Alarm '{event.alarm.name}' ({code}): CLEARED")
                 events.append(event)
 
         return events

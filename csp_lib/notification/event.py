@@ -34,7 +34,7 @@ class EventCategory(str, Enum):
     CUSTOM = "custom"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class EventNotification:
     """
     事件通知資料類別

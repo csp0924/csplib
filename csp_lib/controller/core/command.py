@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 import re
 from dataclasses import dataclass
-from typing import Type, TypeVar
+from typing import TypeVar
 
 # =============== Config Mixin ===============
 
@@ -24,15 +24,15 @@ class ConfigMixin:
 
     Usage:
         @dataclass
-        class PQModeConfig(ConfigMixin):
+        class MyConfig(ConfigMixin):
             p: float = 0.0
             q: float = 0.0
 
-        config = PQModeConfig.from_dict({"p": 100, "q": 50, "extra": "ignored"})
+        config = MyConfig.from_dict({"p": 100, "q": 50, "extra": "ignored"})
     """
 
     @classmethod
-    def from_dict(cls: Type[T], data: dict) -> T:
+    def from_dict(cls: type[T], data: dict) -> T:
         """
         從字典建立 Config 實例
 
@@ -79,7 +79,7 @@ def _camel_to_snake(name: str) -> str:
 # =============== Command ===============
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Command:
     """
     策略輸出命令 (不可變)
@@ -107,7 +107,7 @@ class Command:
 # =============== System Base ===============
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SystemBase(ConfigMixin):
     """
     系統基準值，用於百分比與絕對值轉換
@@ -125,3 +125,6 @@ class SystemBase(ConfigMixin):
 
     p_base: float = 0.0
     q_base: float = 0.0
+
+
+__all__ = ["ConfigMixin", "Command", "SystemBase"]
