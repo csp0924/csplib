@@ -28,6 +28,10 @@
 - **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
 - **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
 
+### CI/CD
+- **macOS CI**: 測試矩陣新增 `macos-latest`，覆蓋 Ubuntu + Windows + macOS 三平台
+- **Coverage threshold**: CI 中強制 `--fail-under=80`（目前 88%），僅在 Ubuntu runner 檢查
+
 ### Tests
 - **Pipeline 整合測試**: 新增 `test_pipeline_integration.py`，18 個測試覆蓋 Strategy→Protection→Compensator→Router 端到端流程
 - **Flaky sleep 修復**: `test_queue`(18處)、`test_device_group`(8處)、`test_watchdog`(5處) 的硬編碼 `asyncio.sleep` 改為 `wait_for_condition()` 輪詢同步
