@@ -1,4 +1,4 @@
-"""Tests for CommunicationWatchdog — timeout detection and callbacks."""
+"""Tests for CommunicationWatchdog -- timeout detection and callbacks."""
 
 import asyncio
 from unittest.mock import AsyncMock
@@ -7,6 +7,7 @@ import pytest
 
 from csp_lib.modbus_gateway.config import WatchdogConfig
 from csp_lib.modbus_gateway.watchdog import CommunicationWatchdog
+from tests.helpers import wait_for_condition
 
 
 class TestWatchdogProperties:
@@ -81,8 +82,7 @@ class TestWatchdogTimeout:
         await wd.start()
         try:
             t[0] = 115.0  # 15s elapsed > 10s timeout
-            await asyncio.sleep(0.05)  # let check loop run
-            cb.assert_called()
+            await wait_for_condition(lambda: cb.called, message="timeout callback should fire")
             assert wd.is_timed_out is True
         finally:
             await wd.stop()
@@ -102,7 +102,8 @@ class TestWatchdogTimeout:
             t[0] = 105.0
             wd.touch()  # resets last_comm to 105
             t[0] = 110.0  # only 5s elapsed, < 10s timeout
-            await asyncio.sleep(0.05)
+            # 必要的短等待：測試「不觸發」需讓 check loop 至少跑一輪（check_interval=0.01s）
+            await asyncio.sleep(0.02)
             cb.assert_not_called()
             assert wd.is_timed_out is False
         finally:
@@ -126,14 +127,12 @@ class TestWatchdogRecovery:
         try:
             # Trigger timeout
             t[0] = 115.0
-            await asyncio.sleep(0.05)
-            assert wd.is_timed_out is True
+            await wait_for_condition(lambda: wd.is_timed_out, message="watchdog should timeout")
 
             # Touch to recover
             wd.touch()  # last_comm = 115
             t[0] = 116.0  # elapsed = 1s < 10s
-            await asyncio.sleep(0.05)
-            recover_cb.assert_called()
+            await wait_for_condition(lambda: recover_cb.called, message="recover callback should fire")
             assert wd.is_timed_out is False
         finally:
             await wd.stop()
@@ -153,8 +152,7 @@ class TestWatchdogCallbackExceptions:
         await wd.start()
         try:
             t[0] = 115.0
-            await asyncio.sleep(0.05)
-            bad_cb.assert_called()
+            await wait_for_condition(lambda: bad_cb.called, message="timeout callback should fire")
             assert wd._task is not None
             assert not wd._task.done()
         finally:

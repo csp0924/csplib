@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from csp_lib.manager.device.group import DeviceGroup
+from tests.helpers import wait_for_condition
 
 
 class MockClient:
@@ -124,7 +125,7 @@ class TestDeviceGroupSequentialLoop:
     async def test_reads_all_devices(self, group: DeviceGroup):
         """應讀取所有設備"""
         group.start()
-        await asyncio.sleep(0.3)
+        await wait_for_condition(lambda: all(d.read_once.call_count >= 1 for d in group.devices))
         await group.stop()
 
         for device in group.devices:
@@ -145,7 +146,8 @@ class TestDeviceGroupSequentialLoop:
             device.read_once = AsyncMock(side_effect=make_side_effect(device.device_id))
 
         group.start()
-        await asyncio.sleep(0.3)
+        # 等待至少完成一輪完整讀取（3 個設備）
+        await wait_for_condition(lambda: len(read_order) >= 3)
         await group.stop()
 
         # 驗證順序（連續三個應是正確順序）
@@ -160,7 +162,9 @@ class TestDeviceGroupSequentialLoop:
         group.devices[0].read_once = AsyncMock(side_effect=Exception("Read failed"))
 
         group.start()
-        await asyncio.sleep(0.3)
+        await wait_for_condition(
+            lambda: group.devices[1].read_once.call_count >= 1 and group.devices[2].read_once.call_count >= 1
+        )
         await group.stop()
 
         # 其他設備仍應被讀取
@@ -197,7 +201,9 @@ class TestDeviceGroupSkipUnresponsive:
         group.devices[1]._should_attempt_read = False
 
         group.start()
-        await asyncio.sleep(0.3)
+        await wait_for_condition(
+            lambda: group.devices[0].read_once.call_count >= 1 and group.devices[2].read_once.call_count >= 1
+        )
         await group.stop()
 
         # 第一和第三個設備應被讀取
@@ -213,7 +219,11 @@ class TestDeviceGroupSkipUnresponsive:
             device._should_attempt_read = False
 
         group.start()
-        await asyncio.sleep(0.3)
+        # 所有設備都不讀取，無法用 call_count 作為條件。
+        # 先確認 loop 已啟動，再等足夠的 loop 迭代讓測試有意義。
+        await wait_for_condition(lambda: group.is_running, message="Group should be running")
+        # 必要的短等待：測試「不讀取」需讓 loop 至少跑完 2 輪（interval=0.05s）
+        await asyncio.sleep(group.interval * 2)
         await group.stop()
 
         for device in group.devices:
@@ -226,14 +236,17 @@ class TestDeviceGroupSkipUnresponsive:
         group.devices[1]._should_attempt_read = False
 
         group.start()
-        await asyncio.sleep(0.15)
+        # 等待其他設備被讀取至少一次，確保 loop 已跑過
+        await wait_for_condition(
+            lambda: group.devices[0].read_once.call_count >= 1 and group.devices[2].read_once.call_count >= 1
+        )
 
         # 確認被跳過
         assert group.devices[1].read_once.call_count == 0
 
         # 恢復
         group.devices[1]._should_attempt_read = True
-        await asyncio.sleep(0.15)
+        await wait_for_condition(lambda: group.devices[1].read_once.call_count >= 1)
         await group.stop()
 
         # 恢復後應被讀取
@@ -257,7 +270,8 @@ class TestDeviceGroupSkipUnresponsive:
         group.devices[1]._should_attempt_read = False
 
         group.start()
-        await asyncio.sleep(0.3)
+        # 等待有讀取的設備至少被讀一次
+        await wait_for_condition(lambda: len(read_order) >= 2)
         await group.stop()
 
         # 讀取順序應只有 device_001 和 device_003

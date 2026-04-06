@@ -28,6 +28,11 @@
 - **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
 - **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
 
+### Tests
+- **Pipeline 整合測試**: 新增 `test_pipeline_integration.py`，18 個測試覆蓋 Strategy→Protection→Compensator→Router 端到端流程
+- **Flaky sleep 修復**: `test_queue`(18處)、`test_device_group`(8處)、`test_watchdog`(5處) 的硬編碼 `asyncio.sleep` 改為 `wait_for_condition()` 輪詢同步
+- **Missing return type**: 補齊 4 處缺少的 return type annotation
+
 ### Deprecated
 - **`UnifiedConfig.mongo_uploader`**: 改用 `batch_uploader`，使用 `mongo_uploader` 時會觸發 `DeprecationWarning`，將於 v1.0.0 移除 (TD-001)
 
