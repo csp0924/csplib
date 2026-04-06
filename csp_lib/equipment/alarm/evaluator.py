@@ -91,9 +91,9 @@ class BitMaskAlarmEvaluator(AlarmEvaluator):
             is_triggered = bool((value >> bit_pos) & 1)
             result[alarm.code] = is_triggered
             if is_triggered:
-                logger.debug(f"Alarm '{alarm.name}' triggered: point={self.point_name}, value={value}")
+                logger.trace(f"Alarm '{alarm.name}' triggered: point={self.point_name}, value={value}")
             else:
-                logger.debug(f"Alarm '{alarm.name}' cleared: point={self.point_name}, value={value}")
+                logger.trace(f"Alarm '{alarm.name}' not triggered: point={self.point_name}, value={value}")
         return result
 
     def get_alarms(self) -> list[AlarmDefinition]:
@@ -248,9 +248,9 @@ class ThresholdAlarmEvaluator(AlarmEvaluator):
             is_triggered = condition.check(value)
             result[condition.alarm.code] = is_triggered
             if is_triggered:
-                logger.debug(f"Alarm '{condition.alarm.name}' triggered: point={self.point_name}, value={value}")
+                logger.trace(f"Alarm '{condition.alarm.name}' triggered: point={self.point_name}, value={value}")
             else:
-                logger.debug(f"Alarm '{condition.alarm.name}' cleared: point={self.point_name}, value={value}")
+                logger.trace(f"Alarm '{condition.alarm.name}' not triggered: point={self.point_name}, value={value}")
         return result
 
     def get_alarms(self) -> list[AlarmDefinition]:
