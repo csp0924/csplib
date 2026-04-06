@@ -6,7 +6,7 @@
 #   - ModeManager: 模式註冊、優先權切換
 #   - ProtectionGuard: 保護規則鏈式套用
 
-from .cascading import CapacityConfig, CascadingStrategy
+from .cascading import CapacityConfig, CascadingStrategy, ClampPriority
 from .dynamic_protection import DynamicSOCProtection, GridLimitProtection, RampStopProtection
 from .event_override import AlarmStopOverride, ContextKeyOverride, EventDrivenOverride
 from .mode import ModeDefinition, ModeManager, ModePriority, SwitchSource
@@ -25,6 +25,7 @@ __all__ = [
     # Cascading
     "CapacityConfig",
     "CascadingStrategy",
+    "ClampPriority",
     # Dynamic Protection
     "DynamicSOCProtection",
     "GridLimitProtection",

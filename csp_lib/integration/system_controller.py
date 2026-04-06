@@ -822,9 +822,9 @@ class SystemController(AsyncLifecycleMixin):
             return base[0]
         if self._config.capacity_kva is not None:
             return CascadingStrategy(  # type: ignore[return-value]  # CascadingStrategy is structurally compatible
-                base,
-                CapacityConfig(self._config.capacity_kva),
-                ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1),
+                layers=base,
+                capacity=CapacityConfig(self._config.capacity_kva),
+                execution_config=ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1),
             )
         return base[0]  # 無容量設定時 fallback 到最高優先權
 
