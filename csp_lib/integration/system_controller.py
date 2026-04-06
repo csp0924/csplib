@@ -783,9 +783,14 @@ class SystemController(AsyncLifecycleMixin):
 
     def _build_device_snapshots(self) -> list[DeviceSnapshot]:
         """建構所有可用設備的狀態快照（供 PowerDistributor 使用）"""
+        # 只納入具備至少一個 capability_command_mappings 中 capability 的設備
+        required_caps = {m.capability.name for m in self._config.capability_command_mappings}
         snapshots: list[DeviceSnapshot] = []
         for device in self._registry.all_devices:
             if not device.is_responsive or device.is_protected:
+                continue
+            bindings = getattr(device, "capabilities", {})
+            if not required_caps.intersection(bindings.keys()):
                 continue
             metadata = self._registry.get_metadata(device.device_id)
             values = device.latest_values

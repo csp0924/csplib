@@ -8,8 +8,9 @@ import pytest
 from csp_lib.controller.core import Command, ExecutionConfig, ExecutionMode, Strategy, StrategyContext
 from csp_lib.controller.system import ModePriority, SOCProtection, SOCProtectionConfig, SystemAlarmProtection
 from csp_lib.core.health import HealthReport, HealthStatus
+from csp_lib.equipment.device.capability import ACTIVE_POWER_CONTROL, CapabilityBinding
 from csp_lib.integration.registry import DeviceRegistry
-from csp_lib.integration.schema import CommandMapping, ContextMapping
+from csp_lib.integration.schema import CapabilityCommandMapping, CommandMapping, ContextMapping
 from csp_lib.integration.system_controller import SystemController, SystemControllerConfig
 
 
@@ -660,3 +661,72 @@ class TestSystemControllerHealth:
 
         assert "mode" in report.details
         assert "alarmed" in report.details
+
+
+class TestBuildDeviceSnapshots:
+    """測試 _build_device_snapshots 應僅回傳有 capability binding 的設備。
+
+    Bug: _build_device_snapshots() 迭代 registry.all_devices 而未過濾無 capability 的設備。
+    當 registry 包含無 capability 的設備（如電表），它們會被包含在 snapshot 清單中，
+    導致 EqualDistributor 以錯誤的設備數量分配功率（例如 3 台而非 2 台 PCS）。
+
+    修復前：回傳 3 個 snapshot（2 PCS + 1 meter）
+    修復後：回傳 2 個 snapshot（僅 PCS）
+    """
+
+    @staticmethod
+    def _make_pcs_device(device_id: str) -> MagicMock:
+        """建立具有 ACTIVE_POWER_CONTROL capability 的 PCS 設備 mock。"""
+        dev = _make_device(device_id, values={"p_meas": 50.0}, responsive=True, protected=False)
+        binding = CapabilityBinding(
+            ACTIVE_POWER_CONTROL,
+            {"p_setpoint": "p_set", "p_measurement": "p_meas"},
+        )
+        # 設備的 capabilities 屬性：capability_name → CapabilityBinding
+        type(dev).capabilities = PropertyMock(return_value={"active_power_control": binding})
+        return dev
+
+    @staticmethod
+    def _make_meter_device(device_id: str) -> MagicMock:
+        """建立不具備任何 capability 的電表設備 mock。"""
+        dev = _make_device(device_id, values={"voltage": 220.0}, responsive=True, protected=False)
+        # 電表沒有 capability binding
+        type(dev).capabilities = PropertyMock(return_value={})
+        return dev
+
+    def test_snapshots_exclude_devices_without_capabilities(self):
+        """_build_device_snapshots 應僅回傳有 capability 的設備，排除無 capability 的電表。
+
+        這是 bug 重現測試：修復前 len(snapshots) == 3（錯誤包含電表），
+        修復後應為 len(snapshots) == 2（僅 PCS）。
+        """
+        reg = DeviceRegistry()
+        pcs1 = self._make_pcs_device("pcs_1")
+        pcs2 = self._make_pcs_device("pcs_2")
+        meter = self._make_meter_device("meter_1")
+
+        reg.register(pcs1, metadata={"rated_p": 100.0})
+        reg.register(pcs2, metadata={"rated_p": 100.0})
+        reg.register(meter, metadata={"type": "meter"})
+
+        config = SystemControllerConfig(
+            auto_stop_on_alarm=False,
+            capability_command_mappings=[
+                CapabilityCommandMapping(
+                    command_field="p_target",
+                    capability=ACTIVE_POWER_CONTROL,
+                    slot="p_setpoint",
+                    trait="pcs",
+                ),
+            ],
+        )
+        sc = SystemController(reg, config)
+
+        snapshots = sc._build_device_snapshots()
+
+        # 修復後：僅有 2 台 PCS 設備的 snapshot
+        assert len(snapshots) == 2, (
+            f"預期僅回傳 2 個有 capability 的設備 snapshot，但實際回傳 {len(snapshots)} 個（包含無 capability 的電表）"
+        )
+        snapshot_ids = {s.device_id for s in snapshots}
+        assert snapshot_ids == {"pcs_1", "pcs_2"}, f"Snapshot 應僅包含 PCS 設備，但包含了: {snapshot_ids}"
