@@ -13,9 +13,12 @@
 - **`DeviceEventType`** (`csp_lib.equipment.device.events`): 設備事件類型 StrEnum（internal，不公開匯出），與現有 `EVENT_xxx` 字串常數共存且完全相等 (UL-E)
 - **`CTX_*` 常數** (`csp_lib.controller.core.constants`): `StrategyContext.extra` 常用 key 常數化（internal），包含 `CTX_FREQUENCY`、`CTX_VOLTAGE`、`CTX_METER_POWER` 等 7 個 (UL-A)
 - **`UnifiedConfig.batch_uploader`** 欄位: 新增 `batch_uploader: BatchUploader | None = None`，作為 `mongo_uploader` 的推薦替代 (TD-001)
+- **`ClampPriority`** enum (`csp_lib.controller.system`): CascadingStrategy 的限幅優先級，`P_FIRST`（保 P 削 Q）或 `Q_FIRST`（保 Q 削 P）
 - **CAN exception error context**: `CANError` 新增 `can_id: int | None` 和 `bus_index: int | None` keyword-only 參數，自動格式化為 `[bus=N, can_id=0xNNN]` 前綴；子類別自動繼承
 
 ### Changed
+- **QVStrategy `p_target=0.0`**: QV 策略只控制 Q，P 不再從 `last_command` 帶入（改為 `0.0`）；混合 P+Q 控制請用 cascade/mode switch。v0.8.0 將引入 `Command.NO_CHANGE` sentinel 完整方案
+- **CascadingStrategy 重寫為加法式**: 每層策略輸出「貢獻量」（非總量），逐層相加後依 `ClampPriority` 限幅；新增 `ClampPriority` enum（`P_FIRST` 保 P 削 Q、`Q_FIRST` 保 Q 削 P）；取代舊的 delta-based clamping
 - **Config frozen 對齊**: 12 個 Config dataclass 加 `frozen=True, slots=True`：`DroopConfig`、`FPConfig`、`IslandModeConfig`、`LoadSheddingConfig`、`PQModeConfig`、`PVSmoothConfig`、`QVConfig`、`FFCalibrationConfig`、`PowerCompensatorConfig`、`UnifiedConfig`、`SystemControllerConfig`、`GridControlLoopConfig`
 - **全庫 leaf frozen dataclass 補 `slots=True`**: 約 80 個無繼承關係的 `@dataclass(frozen=True)` 類別加上 `slots=True`，減少記憶體使用（`PointDefinition` 繼承鏈推遲到 v0.8.0）(TD-021)
 - **型別標註現代化**: `from typing import Type` → `type[T]` (TD-008)；`Optional[X]` → `X | None` 於 controller/services、controller/strategies、mongo 層共 20 處 (TD-011)
@@ -24,9 +27,17 @@
 - **`modbus/clients/base.py`**: `__aexit__` 補齊完整型別標註，移除 `# type: ignore`
 
 ### Fixed
+- **`_build_device_snapshots` 過濾無 capability 設備**: `SystemController._build_device_snapshots()` 現在只納入具備至少一個 `capability_command_mappings` 中 capability 的設備，避免 meter 等非被控設備灌入 `PowerDistributor` 分母導致分配比例錯誤（如 `EqualDistributor` 200/3=66.67 → 200/2=100）
 - **`TransportAdapter` docstring**: 移除不存在的 `send_override()` 方法說明 (TD-010)
 - **`modbus_server/server.py`**: `_PymodbusDataBlock` / `_EmptyBlock` 6 個方法補齊 return type (TD-018)
 - **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護，未安裝 optional dependency 時給出清楚安裝提示 (TD-013, TD-015, TD-025, TD-026, TD-027)
+
+### Examples
+- **全面重整**: 19 個舊範例重整為 14 個新範例 + README.md 學習指南
+- **全部可執行**: 所有範例使用 SimulationServer，`python examples/XX_xxx.py` 即可運行，無需真實硬體
+- **4 級學習路徑**: Beginner(01-02) → Intermediate(03-05) → Advanced(06-09) → Expert(10-14)
+- **移除 deprecated API**: SOCProtection→DynamicSOCProtection, mongo_uploader→batch_uploader
+- **新增範例**: 日誌系統(13)、運行時參數(14)、微電網模擬(12)、ModbusGateway(10)
 
 ### Documentation
 - **Guide: ModbusGateway 設定** (`docs/13-Guides/ModbusGateway Setup.md`): 完整設定指南（GatewayConfig、RegisterMap、資料同步、寫入驗證、Watchdog）(DOC-060)

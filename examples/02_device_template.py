@@ -1,211 +1,272 @@
 """
-Example 02: Device Templates & Capabilities — 設備範本與能力系統
+Example 02: Device Template — 設備模板
 
-Demonstrates:
-  - Defining reusable EquipmentTemplate for different device models
-  - Using Capability and CapabilityBinding so the SAME capability works
-    across devices with DIFFERENT register names
-  - DeviceFactory for single and batch device creation
-  - Runtime capability addition/removal
+學習目標：
+  - EquipmentTemplate 定義可重用的設備模型
+  - DeviceFactory 從模板批次建立多台設備
+  - DeviceConfig 設定（read_interval, auto_reconnect）
+  - 同時連線多台設備，展示模板複用優勢
 
-Scenario:
-  Two PCS models from different manufacturers:
-    - Sungrow SG110CX: heartbeat register = "watchdog", p_set = "p_ref"
-    - Huawei SUN2000:   heartbeat register = "hb_reg",  p_set = "active_power_set"
-  Both declare HEARTBEAT and ACTIVE_POWER_CONTROL capabilities.
-  The controller uses capabilities to find devices, regardless of register names.
+Run:
+  uv run python examples/02_device_template.py
 """
 
-from csp_lib.equipment.core import ReadPoint, ScaleTransform, WritePoint, pipeline
-from csp_lib.equipment.core.point import RangeValidator
-from csp_lib.equipment.device import DeviceConfig
-from csp_lib.equipment.device.capability import (
-    ACTIVE_POWER_CONTROL,
-    HEARTBEAT,
-    MEASURABLE,
-    REACTIVE_POWER_CONTROL,
-    SOC_READABLE,
-    Capability,
-    CapabilityBinding,
+import asyncio
+
+from csp_lib.equipment.alarm import (
+    AlarmDefinition,
+    AlarmLevel,
+    Operator,
+    ThresholdAlarmEvaluator,
+    ThresholdCondition,
 )
+from csp_lib.equipment.core import ReadPoint, WritePoint
+from csp_lib.equipment.core.point import PointMetadata, RangeValidator
+from csp_lib.equipment.device import DeviceConfig
 from csp_lib.equipment.template import DeviceFactory, EquipmentTemplate
 from csp_lib.modbus import Float32, ModbusTcpConfig, PymodbusTcpClient, UInt16
+from csp_lib.modbus_server import PCSSimulator, ServerConfig, SimulationServer
+from csp_lib.modbus_server.simulator.pcs import default_pcs_config
 
 # ============================================================
-# Step 1: Define Templates for Different PCS Models
+# 模擬伺服器設定
 # ============================================================
+SIM_HOST, SIM_PORT = "127.0.0.1", 5020
 
-# --- Sungrow SG110CX ---
-sungrow_template = EquipmentTemplate(
-    model="Sungrow-SG110CX",
-    always_points=(
-        ReadPoint(name="active_power", address=5000, data_type=Float32(), pipeline=pipeline(ScaleTransform(0.1))),
-        ReadPoint(name="soc", address=5034, data_type=UInt16(), pipeline=pipeline(ScaleTransform(0.1))),
-    ),
-    write_points=(
-        WritePoint(name="p_ref", address=6000, data_type=Float32(), validator=RangeValidator(-110.0, 110.0)),
-        WritePoint(name="q_ref", address=6002, data_type=Float32(), validator=RangeValidator(-60.0, 60.0)),
-        WritePoint(name="watchdog", address=6100, data_type=UInt16()),
-    ),
-    capability_bindings=(
-        # Sungrow calls its heartbeat register "watchdog"
-        CapabilityBinding(HEARTBEAT, {"heartbeat": "watchdog"}),
-        # Sungrow calls its P setpoint "p_ref"
-        CapabilityBinding(ACTIVE_POWER_CONTROL, {"p_setpoint": "p_ref", "p_measurement": "active_power"}),
-        CapabilityBinding(REACTIVE_POWER_CONTROL, {"q_setpoint": "q_ref"}),
-        CapabilityBinding(MEASURABLE, {"active_power": "active_power"}),
-        CapabilityBinding(SOC_READABLE, {"soc": "soc"}),
-    ),
-    description="Sungrow 110kW hybrid inverter",
-)
 
-# --- Huawei SUN2000 ---
-huawei_template = EquipmentTemplate(
-    model="Huawei-SUN2000-100KTL",
+def create_sim() -> SimulationServer:
+    """建立模擬伺服器，包含 3 台 PCS 模擬器"""
+    server = SimulationServer(ServerConfig(host=SIM_HOST, port=SIM_PORT, tick_interval=1.0))
+
+    # 建立 3 台 PCS，各自不同 unit_id 和初始 SOC
+    for i, (uid, initial_soc) in enumerate([(10, 80.0), (11, 50.0), (12, 30.0)]):
+        pcs = PCSSimulator(
+            config=default_pcs_config(f"pcs_{i + 1:02d}", unit_id=uid),
+            capacity_kwh=200.0,
+            p_ramp_rate=50.0,
+        )
+        pcs.set_value("soc", initial_soc)
+        pcs.set_value("operating_mode", 1)
+        pcs._running = True
+        server.add_simulator(pcs)
+
+    return server
+
+
+# ============================================================
+# Step 1: 定義 PCS 設備模板（EquipmentTemplate）
+# ============================================================
+# 模板定義一次，所有同型號設備共用
+
+pcs_template = EquipmentTemplate(
+    model="GenericPCS-200kW",
+    description="通用型 200kW PCS 模板",
     always_points=(
-        ReadPoint(name="grid_power", address=32080, data_type=Float32()),
-        ReadPoint(name="bat_soc", address=37004, data_type=UInt16(), pipeline=pipeline(ScaleTransform(0.1))),
+        ReadPoint(
+            name="p_actual",
+            address=4,
+            data_type=Float32(),
+            metadata=PointMetadata(unit="kW", description="實際有功功率"),
+        ),
+        ReadPoint(
+            name="q_actual",
+            address=6,
+            data_type=Float32(),
+            metadata=PointMetadata(unit="kVar", description="實際無功功率"),
+        ),
+        ReadPoint(
+            name="soc",
+            address=8,
+            data_type=Float32(),
+            metadata=PointMetadata(unit="%", description="電池荷電狀態"),
+        ),
+        ReadPoint(
+            name="operating_mode",
+            address=10,
+            data_type=UInt16(),
+            metadata=PointMetadata(
+                description="運行模式",
+                value_map={0: "停機", 1: "運行", 2: "故障"},
+            ),
+        ),
     ),
     write_points=(
         WritePoint(
-            name="active_power_set", address=47075, data_type=Float32(), validator=RangeValidator(-100.0, 100.0)
+            name="p_setpoint",
+            address=0,
+            data_type=Float32(),
+            validator=RangeValidator(min_value=-200.0, max_value=200.0),
+            metadata=PointMetadata(unit="kW", description="有功功率設定值"),
         ),
-        WritePoint(name="reactive_power_set", address=47077, data_type=Float32()),
-        WritePoint(name="hb_reg", address=47000, data_type=UInt16()),
+        WritePoint(
+            name="q_setpoint",
+            address=2,
+            data_type=Float32(),
+            validator=RangeValidator(min_value=-100.0, max_value=100.0),
+            metadata=PointMetadata(unit="kVar", description="無功功率設定值"),
+        ),
     ),
-    capability_bindings=(
-        # Huawei calls its heartbeat register "hb_reg"
-        CapabilityBinding(HEARTBEAT, {"heartbeat": "hb_reg"}),
-        # Huawei calls its P setpoint "active_power_set"
-        CapabilityBinding(ACTIVE_POWER_CONTROL, {"p_setpoint": "active_power_set", "p_measurement": "grid_power"}),
-        CapabilityBinding(REACTIVE_POWER_CONTROL, {"q_setpoint": "reactive_power_set"}),
-        CapabilityBinding(MEASURABLE, {"active_power": "grid_power"}),
-        CapabilityBinding(SOC_READABLE, {"soc": "bat_soc"}),
+    alarm_evaluators=(
+        ThresholdAlarmEvaluator(
+            point_name="soc",
+            conditions=[
+                ThresholdCondition(
+                    alarm=AlarmDefinition(
+                        code="SOC_LOW",
+                        name="SOC 過低",
+                        level=AlarmLevel.WARNING,
+                        description="SOC 低於 20%",
+                    ),
+                    operator=Operator.LT,
+                    value=20.0,
+                ),
+                ThresholdCondition(
+                    alarm=AlarmDefinition(
+                        code="SOC_HIGH",
+                        name="SOC 過高",
+                        level=AlarmLevel.WARNING,
+                        description="SOC 超過 95%",
+                    ),
+                    operator=Operator.GT,
+                    value=95.0,
+                ),
+            ],
+        ),
     ),
-    description="Huawei 100kW string inverter",
 )
 
-# ============================================================
-# Step 2: Create Devices with DeviceFactory
-# ============================================================
 
+async def main() -> None:
+    print("=" * 60)
+    print("  Example 02: Device Template — 設備模板")
+    print("=" * 60)
 
-def create_devices():
-    # --- Single device creation ---
-    sungrow_client = PymodbusTcpClient(ModbusTcpConfig(host="192.168.1.100", port=502))
-    sungrow_config = DeviceConfig(device_id="pcs_sungrow_01", unit_id=1, read_interval=1.0)
+    # ========================================================
+    # Step 2: 啟動模擬伺服器
+    # ========================================================
+    print("\n=== Step 1: 啟動模擬伺服器（3 台 PCS）===")
+    sim_server = create_sim()
+    async with sim_server:
+        print(f"  模擬伺服器已啟動：{SIM_HOST}:{SIM_PORT}")
+        for uid, sim in sim_server.simulators.items():
+            print(f"  - unit_id={uid}, device_id={sim.device_id}, SOC={sim.get_value('soc')}")
 
-    sungrow_device = DeviceFactory.create(
-        template=sungrow_template,
-        config=sungrow_config,
-        client=sungrow_client,
-    )
+        # ====================================================
+        # Step 3: 用模板 + DeviceFactory 建立 3 台設備
+        # ====================================================
+        print("\n=== Step 2: 用模板建立 3 台 PCS 設備 ===")
+        print(f"  模板型號：{pcs_template.model}")
+        print(f"  模板描述：{pcs_template.description}")
+        print(f"  讀取點位：{[p.name for p in pcs_template.always_points]}")
+        print(f"  寫入點位：{[p.name for p in pcs_template.write_points]}")
+        print("============================")
 
-    # --- Batch creation (3 Huawei units sharing same template) ---
-    huawei_configs = [
-        DeviceConfig(device_id="pcs_huawei_01", unit_id=1),
-        DeviceConfig(device_id="pcs_huawei_02", unit_id=2),
-        DeviceConfig(device_id="pcs_huawei_03", unit_id=3),
-    ]
+        # 定義 3 台設備的配置
+        configs = [
+            DeviceConfig(device_id="pcs_01", unit_id=10, read_interval=1.0),
+            DeviceConfig(device_id="pcs_02", unit_id=11, read_interval=1.0),
+            DeviceConfig(device_id="pcs_03", unit_id=12, read_interval=1.0),
+        ]
 
-    huawei_devices = DeviceFactory.create_batch(
-        template=huawei_template,
-        instances=huawei_configs,
-        client_factory=lambda cfg: PymodbusTcpClient(ModbusTcpConfig(host="192.168.1.200", port=502)),
-    )
+        # 共用同一個 Modbus TCP 連線（因為是同一台模擬伺服器）
+        # 使用 client_factory 為每台設備建立獨立的 client
+        def client_factory(cfg: DeviceConfig) -> PymodbusTcpClient:
+            return PymodbusTcpClient(ModbusTcpConfig(host=SIM_HOST, port=SIM_PORT))
 
-    return sungrow_device, huawei_devices
+        # 批次建立
+        devices = DeviceFactory.create_batch(
+            template=pcs_template,
+            instances=configs,
+            client_factory=client_factory,
+        )
 
+        for dev in devices:
+            print(f"  已建立設備：{dev.device_id} (unit_id={dev._config.unit_id})")
+            print(f"    讀取點位：{[p.name for p in dev.read_points]}")
+            print(f"    寫入點位：{dev.write_point_names}")
 
-# ============================================================
-# Step 3: Use Capabilities for Uniform Access
-# ============================================================
+        # ====================================================
+        # Step 4: 同時連線並讀取所有設備
+        # ====================================================
+        print("\n=== Step 3: 同時連線所有設備 ===")
 
+        # 使用 gather 同時連線（真正的並行）
+        await asyncio.gather(*(dev.connect() for dev in devices))
+        await asyncio.gather(*(dev.start() for dev in devices))
 
-def demonstrate_capabilities():
-    sungrow_device, huawei_devices = create_devices()
-    all_devices = [sungrow_device, *huawei_devices]
+        print("  所有設備已連線並啟動讀取循環")
 
-    # Check capabilities
-    for dev in all_devices:
-        print(f"\n{dev.device_id}:")
-        print(f"  Has HEARTBEAT: {dev.has_capability(HEARTBEAT)}")
-        print(f"  Has ACTIVE_POWER_CONTROL: {dev.has_capability(ACTIVE_POWER_CONTROL)}")
+        # 等待讀取
+        await asyncio.sleep(2.0)
 
-        # Resolve the ACTUAL point name — different per device model!
-        hb_point = dev.resolve_point(HEARTBEAT, "heartbeat")
-        p_point = dev.resolve_point(ACTIVE_POWER_CONTROL, "p_setpoint")
-        print(f"  Heartbeat point: {hb_point}")  # "watchdog" or "hb_reg"
-        print(f"  P setpoint point: {p_point}")  # "p_ref" or "active_power_set"
+        # ====================================================
+        # Step 5: 展示所有設備的即時值
+        # ====================================================
+        print("\n=== Step 4: 讀取所有設備的即時值 ===")
+        for dev in devices:
+            values = dev.latest_values
+            soc_val = values.get("soc", "N/A")
+            p_val = values.get("p_actual", "N/A")
+            mode = values.get("operating_mode", "N/A")
+            print(f"  {dev.device_id}: SOC={soc_val}, P={p_val} kW, Mode={mode}")
 
+        # ====================================================
+        # Step 6: 同時對所有設備下達命令
+        # ====================================================
+        print("\n=== Step 5: 批次下達功率命令 ===")
+        setpoints = [30.0, 50.0, 20.0]
+        # 使用 gather 同時寫入（真正的並行）
+        results = await asyncio.gather(
+            *(dev.write("p_setpoint", sp) for dev, sp in zip(devices, setpoints, strict=True))
+        )
+        for dev, sp, result in zip(devices, setpoints, results, strict=True):
+            print(f"  {dev.device_id}: 寫入 P={sp} kW, 結果={result.status.value}")
 
-# ============================================================
-# Step 4: Runtime Capability Changes
-# ============================================================
+        # 等待追蹤
+        print("\n=== Step 6: 觀察功率追蹤（等待 3 秒）===")
+        for i in range(3):
+            await asyncio.sleep(1.0)
+            line = f"  第 {i + 1} 秒 —"
+            for dev in devices:
+                p_val = dev.latest_values.get("p_actual", 0)
+                if isinstance(p_val, float):
+                    line += f" {dev.device_id}: P={p_val:.1f}"
+                else:
+                    line += f" {dev.device_id}: P={p_val}"
+            print(line)
 
+        # ====================================================
+        # Step 7: 展示 DeviceConfig 的差異
+        # ====================================================
+        print("\n=== Step 7: DeviceConfig 參數說明 ===")
+        sample = configs[0]
+        print(f"  device_id:           {sample.device_id}")
+        print(f"  unit_id:             {sample.unit_id}")
+        print(f"  read_interval:       {sample.read_interval} 秒（讀取間隔）")
+        print(f"  reconnect_interval:  {sample.reconnect_interval} 秒（重連間隔）")
+        print(f"  disconnect_threshold:{sample.disconnect_threshold}（連續失敗次數閾值）")
 
-def demonstrate_runtime_capabilities():
-    sungrow_device, _ = create_devices()
+        # ====================================================
+        # 清理
+        # ====================================================
+        print("\n=== Step 8: 清理 ===")
+        for dev in devices:
+            await dev.stop()
+            await dev.disconnect()
+        print("  所有設備已斷線")
 
-    # Define a custom capability
-    GRID_FORMING = Capability(
-        name="grid_forming",
-        write_slots=("vf_enable",),
-        read_slots=("grid_status",),
-        description="Grid-forming / island mode",
-    )
-
-    # Initially, device doesn't have grid_forming
-    print(f"Has GRID_FORMING: {sungrow_device.has_capability(GRID_FORMING)}")  # False
-
-    # Firmware update adds new capability — add at runtime
-    # (normally the write/read points would also need to exist on the device)
-    sungrow_device.add_capability(
-        CapabilityBinding(GRID_FORMING, {"vf_enable": "island_cmd", "grid_status": "grid_relay_fb"})
-    )
-    print(f"Has GRID_FORMING: {sungrow_device.has_capability(GRID_FORMING)}")  # True
-
-    # Remove capability
-    sungrow_device.remove_capability(GRID_FORMING)
-    print(f"Has GRID_FORMING: {sungrow_device.has_capability(GRID_FORMING)}")  # False
-
-
-# ============================================================
-# Step 5: Registry with Capability Queries
-# ============================================================
-
-
-def demonstrate_registry():
-    from csp_lib.integration import DeviceRegistry
-
-    sungrow_device, huawei_devices = create_devices()
-
-    registry = DeviceRegistry()
-    registry.register(sungrow_device, traits=["pcs", "hybrid"])
-    for dev in huawei_devices:
-        registry.register(dev, traits=["pcs", "string"])
-
-    # Query by trait (traditional)
-    all_pcs = registry.get_devices_by_trait("pcs")
-    print(f"PCS devices: {[d.device_id for d in all_pcs]}")
-
-    # Query by capability (new) — works across different device models
-    heartbeat_devices = registry.get_devices_with_capability(HEARTBEAT)
-    print(f"Heartbeat-capable: {[d.device_id for d in heartbeat_devices]}")
-
-    # Resolve point names uniformly
-    for dev in heartbeat_devices:
-        point = dev.resolve_point(HEARTBEAT, "heartbeat")
-        print(f"  {dev.device_id} -> heartbeat point = '{point}'")
-        # pcs_sungrow_01 → "watchdog"
-        # pcs_huawei_01  → "hb_reg"
-        # pcs_huawei_02  → "hb_reg"
-        # pcs_huawei_03  → "hb_reg"
+    # ============================================================
+    # 摘要
+    # ============================================================
+    print("\n" + "=" * 60)
+    print("  學到了什麼：")
+    print("  1. EquipmentTemplate 定義可重用的設備模型（點位+告警）")
+    print("  2. DeviceFactory.create_batch() 一次建立多台同型設備")
+    print("  3. 每台設備有獨立的 DeviceConfig（unit_id, read_interval）")
+    print("  4. 模板 + 工廠模式消除重複定義，新增設備只需一行配置")
+    print("  5. create_stride() 可用於固定位址步幅的場景（如 BMS sub-module）")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    demonstrate_capabilities()
-    print("\n--- Runtime Capabilities ---")
-    demonstrate_runtime_capabilities()
-    print("\n--- Registry Queries ---")
-    demonstrate_registry()
+    asyncio.run(main())
