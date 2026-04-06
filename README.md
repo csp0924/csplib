@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue.svg)](CHANGELOG.md)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/csp0924-lib?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/csp0924-lib)
 
 CSP Common Library 是一個模組化的 Python 工具集，專為**能源管理系統**與**工業設備通訊**設計。
@@ -171,7 +171,7 @@ uv run mypy csp_lib/
   author = {Cheng Sin Pang (鄭善淜)},
   year = {2024},
   url = {https://github.com/csp0924/csp_lib},
-  version = {0.7.0},
+  version = {0.7.1},
   license = {Apache-2.0}
 }
 ```
