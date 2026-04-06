@@ -111,8 +111,8 @@ class QVStrategy(Strategy):
         else:
             q_kvar = q_ratio  # 無 system_base 時直接輸出比值
 
-        # 保持 P 不變 (從 last_command)
-        return Command(p_target=context.last_command.p_target, q_target=q_kvar)
+        # QV 只控制 Q，P 設為 0（混合 P+Q 控制請用 cascade/mode switch）
+        return Command(p_target=0.0, q_target=q_kvar)
 
     def _calculate_q_ratio(self, voltage: float) -> float:
         """根據電壓計算無功功率比值 (-1 ~ 1)"""
