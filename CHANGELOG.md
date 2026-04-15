@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-04-15
+
+### Added
+
+- **`PowerCompensatorConfig.saturation_learn_min_cycles`**（預設 `2`）：連續飽和達到 N 個週期後才觸發飽和學習，避免單次瞬態飽和即更新 FF 表
+- **`PowerCompensatorConfig.saturation_learn_alpha`**（預設 `0.5`）：飽和學習的 EMA 平滑係數（0 = 完全保留舊值，1 = 完全採用物理推算值）
+- **`PowerCompensatorConfig.saturation_learn_max_step`**（預設 `0.03`）：單次飽和學習 FF 最大變動量，限制單步衝擊
+- **`PowerCompensator._learn_from_saturation()`**：連續飽和期間以 `output / measurement`（放電）或 `measurement / output`（充電）物理比值直接推算 FF 係數，經 EMA 平滑與 max_step clamp 後更新 FF 表
+
+### Fixed
+
+- **`PowerCompensator` Asymmetric anti-windup (BUG-012)**：修復飽和時無條件清零 integral 導致 FF 表過高 bin 永久鎖死的現場 bug。現在依飽和方向與誤差方向判斷：高飽和 + error < -deadband（量測超標）→ 允許累積負 integral 拉回；低飽和 + error > +deadband → 允許累積正 integral；飽和同向 → 凍結 integral（避免 windup）。現場症狀：setpoint=1993kW 但 PCS 持續輸出 2200kW（rel_err 9.4% 不自修正）
+- **`PowerCompensator._learn_if_steady` setpoint=0 除以零 (BUG-002)**：修復 `deadband=0` 時 guard 失效，`setpoint=0` 在 `filtered_error / setpoint` 行 crash 的問題。改用 `abs(setpoint) < max(cfg.deadband, 1e-6)` 確保零 setpoint 一定被攔截
+
 ## [0.7.1] - 2026-04-06
 
 ### Added
