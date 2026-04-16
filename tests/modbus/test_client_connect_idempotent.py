@@ -86,9 +86,7 @@ class TestPymodbusTcpClientIdempotentConnect:
 
             # 再呼叫 connect() 應觸發重連
             await client.connect()
-            assert mock_inner.connect.await_count == 2, (
-                "掉線後 connect() 應重新呼叫底層；sticky flag 設計會在此卡死"
-            )
+            assert mock_inner.connect.await_count == 2, "掉線後 connect() 應重新呼叫底層；sticky flag 設計會在此卡死"
 
     async def test_connect_after_successful_connected_skips_underlying(self):
         """
