@@ -86,6 +86,15 @@ class DynamicSOCProtection(ProtectionRule):
             soc_min = float(self._params.get(self._soc_min_key, 5.0))
             wb = self._warning_band
 
+        # SEC-013a + SEC-004：先驗證非有限值（NaN/Inf clamp 後仍是 NaN/Inf，
+        # 後續 BUG-003 的 < 比較對 NaN 永遠 False，會無聲繞過反轉檢查與
+        # SOC 保護。必須在 clamp 前明確攔截）。
+        if is_non_finite_float(soc_max) or is_non_finite_float(soc_min):
+            raise ValueError(
+                f"DynamicSOC: soc_max ({soc_max}) / soc_min ({soc_min}) 含 NaN/Inf — "
+                f"無效配置，請檢查 RuntimeParameters '{self._soc_max_key}' / '{self._soc_min_key}'"
+            )
+
         # SEC-004：SOC 百分比物理合理範圍為 [0, 100]，clamp 以防 EMS/Modbus
         # 寫入異常值（如 soc_max=150 會讓上限保護永不觸發，可能過充）。
         soc_max = clamp(soc_max, 0.0, 100.0)

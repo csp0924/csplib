@@ -23,20 +23,24 @@ class TestPymodbusTcpClientIdempotentConnect:
 
     async def test_consecutive_connect_calls_invoke_underlying_once(self):
         """
-        BUG-006：同一 PymodbusTcpClient 連續 await connect() 兩次，
-        底層 AsyncModbusTcpClient.connect 應只被呼叫一次。
+        BUG-006：連續 await connect() 兩次，第二次應看到 client.connected=True 跳過。
 
-        Mock 場景：connect() 回傳 True 但 `connected` 屬性保持 False（模擬
-        狀態未翻、或並發前一個 connect 尚未完成）。
+        Mock 場景：第一次 connect() 後 connected 翻為 True（模擬真實 pymodbus 行為）。
+        修復後若網路掉線，client.connected 翻為 False 仍可正常重連（不卡 sticky flag）。
         """
         with (
             patch("csp_lib.modbus.clients.client._ensure_pymodbus_imported"),
             patch("csp_lib.modbus.clients.client._AsyncModbusTcpClient") as MockTcpCls,
         ):
             mock_inner = AsyncMock()
-            # connected 永遠為 False → 模擬狀態未翻的 race / mock 情境
             mock_inner.connected = False
-            mock_inner.connect = AsyncMock(return_value=True)
+
+            async def fake_connect() -> bool:
+                # 模擬真實 pymodbus：成功 connect 後 connected 翻為 True
+                mock_inner.connected = True
+                return True
+
+            mock_inner.connect = AsyncMock(side_effect=fake_connect)
             MockTcpCls.return_value = mock_inner
 
             from csp_lib.modbus.clients.client import PymodbusTcpClient
@@ -44,13 +48,46 @@ class TestPymodbusTcpClientIdempotentConnect:
             config = ModbusTcpConfig(host="192.168.1.1")
             client = PymodbusTcpClient(config)
 
-            # 連續 connect 兩次
             await client.connect()
             await client.connect()
 
-            # 修復後：底層 connect 應只被呼叫一次（內部 flag 或 lock 保護）
             assert mock_inner.connect.await_count == 1, (
-                f"底層 connect 被呼叫 {mock_inner.connect.await_count} 次，缺重複連線保護"
+                f"已連線後再 connect() 不應重複呼叫底層；實際 {mock_inner.connect.await_count} 次"
+            )
+
+    async def test_reconnect_after_drop(self):
+        """
+        BUG-006 重連場景（Copilot review #3）：
+        若網路掉線，client.connected 翻為 False，再呼叫 connect() 應觸發實際重連。
+        修復前的 sticky flag 設計在此情境下會 early-return 卡死無法重連。
+        """
+        with (
+            patch("csp_lib.modbus.clients.client._ensure_pymodbus_imported"),
+            patch("csp_lib.modbus.clients.client._AsyncModbusTcpClient") as MockTcpCls,
+        ):
+            mock_inner = AsyncMock()
+            mock_inner.connected = False
+
+            async def fake_connect() -> bool:
+                mock_inner.connected = True
+                return True
+
+            mock_inner.connect = AsyncMock(side_effect=fake_connect)
+            MockTcpCls.return_value = mock_inner
+
+            from csp_lib.modbus.clients.client import PymodbusTcpClient
+
+            client = PymodbusTcpClient(ModbusTcpConfig(host="192.168.1.1"))
+            await client.connect()
+            assert mock_inner.connect.await_count == 1
+
+            # 模擬網路掉線：connected 自動翻 False
+            mock_inner.connected = False
+
+            # 再呼叫 connect() 應觸發重連
+            await client.connect()
+            assert mock_inner.connect.await_count == 2, (
+                "掉線後 connect() 應重新呼叫底層；sticky flag 設計會在此卡死"
             )
 
     async def test_connect_after_successful_connected_skips_underlying(self):
@@ -93,7 +130,12 @@ class TestPymodbusTcpClientIdempotentConnect:
         ):
             mock_inner = AsyncMock()
             mock_inner.connected = False
-            mock_inner.connect = AsyncMock(return_value=True)
+
+            async def fake_connect() -> bool:
+                mock_inner.connected = True
+                return True
+
+            mock_inner.connect = AsyncMock(side_effect=fake_connect)
             MockTcpCls.return_value = mock_inner
 
             from csp_lib.modbus.clients.client import PymodbusTcpClient

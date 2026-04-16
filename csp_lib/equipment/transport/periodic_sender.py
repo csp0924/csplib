@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 
 if TYPE_CHECKING:
     from csp_lib.equipment.processing.can_encoder import CANFrameBuffer
@@ -110,9 +111,8 @@ class PeriodicSendScheduler:
         """單一 CAN ID 的發送循環。
 
         採用絕對時間錨定（absolute time anchoring）避免時序漂移：
-        anchor 為 loop 起點，第 N 次 tick 目標 = anchor + N × interval。
-        採「先做再等」work-first 語義，sleep delay 補償 send_callback 耗時。
-        exception 路徑保持固定 interval 避免緊迴圈，並重新錨定。
+        以 ``next_tick_delay`` helper 統一計算 sleep delay，補償 send_callback 耗時；
+        exception 路徑保持固定 interval 避免緊迴圈並重新錨定。
         """
         anchor = time.monotonic()
         n = 0
@@ -121,19 +121,8 @@ class PeriodicSendScheduler:
                 if can_id not in self._paused:
                     data = self._frame_buffer.get_frame(can_id)
                     await self._send_callback(can_id, data)
-                n += 1
-                next_time = anchor + n * interval
-                remaining = next_time - time.monotonic()
-                if remaining > 0:
-                    await asyncio.sleep(remaining)
-                elif remaining <= -interval:
-                    # 落後超過一個週期，重設 anchor 避免 burst catch-up
-                    anchor = time.monotonic()
-                    n = 0
-                    await asyncio.sleep(0)
-                else:
-                    # 輕微落後（<interval），讓出 event loop 但不睡
-                    await asyncio.sleep(0)
+                delay, anchor, n = next_tick_delay(anchor, n, interval)
+                await asyncio.sleep(delay)
             except asyncio.CancelledError:
                 break
             except Exception:

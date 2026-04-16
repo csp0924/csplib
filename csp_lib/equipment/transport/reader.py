@@ -118,16 +118,17 @@ class GroupReader:
         # 並行讀取（TCP）
         # SEC-016：使用 return_exceptions=True 避免單一 group 失敗讓整批結果丟失。
         # - 成功：merge 進 merged dict
-        # - CancelledError：必須正常傳播（否則 lifecycle 停機會卡住）
-        # - 其他 Exception：log warning 不中斷其他 group 的結果
+        # - CancelledError 與其他 BaseException（SystemExit/KeyboardInterrupt）：必須
+        #   傳播，否則 lifecycle 停機 / 中斷會被吞掉。只有一般 Exception 才 log+continue
         tasks = [self.read(group) for group in groups]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: dict[str, Any] = {}
         for group, outcome in zip(groups, results, strict=True):
-            if isinstance(outcome, asyncio.CancelledError):
+            if isinstance(outcome, BaseException) and not isinstance(outcome, Exception):
+                # CancelledError / SystemExit / KeyboardInterrupt 等：直接 re-raise
                 raise outcome
-            if isinstance(outcome, BaseException):
+            if isinstance(outcome, Exception):
                 logger.warning(
                     f"GroupReader.read_many: group read failed "
                     f"(fc={group.function_code}, addr={group.start_address}, count={group.count}): {outcome}"

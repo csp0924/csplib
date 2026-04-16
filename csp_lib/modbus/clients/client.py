@@ -82,8 +82,8 @@ class PymodbusTcpClient(AsyncModbusClientBase):
     def __init__(self, config: ModbusTcpConfig) -> None:
         self._config = config
         self._client: AsyncModbusTcpClient | None = None
-        # BUG-006：防止連續/併發 connect() 重複呼叫底層
-        self._resources_acquired = False
+        # BUG-006：lock 防止併發 connect() 重複呼叫底層；以 client.connected 為準，
+        # 不用 sticky flag（避免網路掉線後 client.connected=False 卻被誤判已連線）
         self._connect_lock = asyncio.Lock()
 
     def _get_client(self) -> AsyncModbusTcpClient:
@@ -101,30 +101,26 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         return self._client
 
     async def connect(self) -> None:
-        """建立 TCP 連線"""
-        # BUG-006：用 lock + flag 保證連續/併發 connect() 只呼叫底層一次
+        """建立 TCP 連線（idempotent + 併發安全）"""
+        # BUG-006：lock 序列化併發呼叫；lock 內以 client.connected 為準判斷是否需 connect
+        # 確保網路掉線（client.connected 自動翻為 False）後仍可重連
         async with self._connect_lock:
-            if self._resources_acquired:
-                return  # 本實例已連線過，避免重複呼叫底層
-
             client = self._get_client()
-            if not client.connected:
-                logger.info(f"Connecting to {self._config.host}:{self._config.port}...")
-                connected = await client.connect()
-                if not connected:
-                    logger.warning(f"Connection failed: {self._config.host}:{self._config.port}")
-                    raise ModbusError(f"無法連線到 {self._config.host}:{self._config.port}")
-                logger.info(f"Connected to {self._config.host}:{self._config.port}")
+            if client.connected:
+                return  # 真實連線狀態已連，跳過底層呼叫
 
-            self._resources_acquired = True
+            logger.info(f"Connecting to {self._config.host}:{self._config.port}...")
+            connected = await client.connect()
+            if not connected:
+                logger.warning(f"Connection failed: {self._config.host}:{self._config.port}")
+                raise ModbusError(f"無法連線到 {self._config.host}:{self._config.port}")
+            logger.info(f"Connected to {self._config.host}:{self._config.port}")
 
     async def disconnect(self) -> None:
         """斷開 TCP 連線"""
         if self._client is not None:
             self._client.close()
             logger.info(f"Disconnected from {self._config.host}:{self._config.port}")
-        # BUG-006：重置 flag，使得 disconnect 後仍可再次 connect
-        self._resources_acquired = False
 
     async def is_connected(self) -> bool:
         """檢查連線狀態"""
