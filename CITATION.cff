@@ -10,7 +10,7 @@ authors:
 repository-code: "https://github.com/csp0924/csp_lib"
 url: "https://github.com/csp0924/csp_lib"
 license: Apache-2.0
-version: 0.7.2
+version: 0.7.3
 date-released: "2026-04-16"
 keywords:
   - energy-management

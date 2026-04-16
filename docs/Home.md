@@ -89,5 +89,5 @@ version: 0.7.2
 - **作者**: Cheng Sin Pang (鄭善淜)
 - **聯絡**: donaldpang123@gmail.com
 - **Python**: 3.13+
-- **目前版本**: 0.7.2
+- **目前版本**: 0.7.3
 - **授權**: Apache-2.0
