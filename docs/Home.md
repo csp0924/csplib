@@ -1,7 +1,7 @@
 ---
 tags: [type/reference, status/complete]
-updated: 2026-04-16
-version: 0.7.2
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 # CSP Library 知識庫
 
@@ -89,5 +89,5 @@ version: 0.7.2
 - **作者**: Cheng Sin Pang (鄭善淜)
 - **聯絡**: donaldpang123@gmail.com
 - **Python**: 3.13+
-- **目前版本**: 0.7.3
+- **目前版本**: 0.8.0
 - **授權**: Apache-2.0
