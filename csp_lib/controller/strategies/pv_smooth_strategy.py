@@ -48,13 +48,13 @@ class PVSmoothStrategy(Strategy):
         pv_service.append(current_pv_power)
     """
 
-    DEFAULT_INTERVAL = 900
+    DEFAULT_INTERVAL: float = 900.0
 
     def __init__(
         self,
         config: PVSmoothConfig | None = None,
         pv_service: PVDataService | None = None,
-        interval_seconds: int = DEFAULT_INTERVAL,
+        interval_seconds: float = DEFAULT_INTERVAL,
     ):
         """
         初始化 PV 平滑策略
@@ -62,7 +62,7 @@ class PVSmoothStrategy(Strategy):
         Args:
             config: PV 平滑配置
             pv_service: PV 資料服務 (注入)
-            interval_seconds: 執行週期 (秒)
+            interval_seconds: 執行週期 (秒)，v0.8.0 起支援 float 次秒級週期
         """
         self._config = config or PVSmoothConfig()
         self._pv_service = pv_service
@@ -137,8 +137,8 @@ class PVSmoothStrategy(Strategy):
         # 例如: 1000kW × 10% = 100kW/週期
         rate_limit = self._config.capacity * self._config.ramp_rate / 100.0
 
-        # 取得上次指令的有功功率作為變化基準
-        last_command_p = context.last_command.p_target
+        # 取得上次指令的有功功率作為變化基準（NO_CHANGE 降級為 0.0）
+        last_command_p = context.last_command.effective_p(0.0)
 
         # ============================================================
         # 步驟 6: 套用斜率限制，計算最終目標功率

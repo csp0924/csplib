@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from csp_lib.controller.core import is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core.errors import DeviceError
 
@@ -70,6 +71,13 @@ class CommandRouter:
             value = getattr(command, mapping.command_field, None)
             if value is None:
                 continue
+            # NO_CHANGE：跳過此軸寫入，保留設備當前值
+            if is_no_change(value):
+                logger.trace(
+                    f"Command field '{mapping.command_field}' is NO_CHANGE, skipping write to "
+                    f"{mapping.device_id or f'trait:{mapping.trait}'}.{mapping.point_name}"
+                )
+                continue
 
             # 套用轉換函式（例如均分功率）
             if mapping.transform is not None:
@@ -87,6 +95,12 @@ class CommandRouter:
         for cap_mapping in self._capability_mappings:
             value = getattr(command, cap_mapping.command_field, None)
             if value is None:
+                continue
+            # NO_CHANGE：跳過此軸寫入
+            if is_no_change(value):
+                logger.trace(
+                    f"Capability command field '{cap_mapping.command_field}' is NO_CHANGE, skipping capability write"
+                )
                 continue
 
             if cap_mapping.transform is not None:
@@ -197,6 +211,13 @@ class CommandRouter:
             value = getattr(command, mapping.command_field, None)
             if value is None:
                 continue
+            # NO_CHANGE：跳過此軸寫入
+            if is_no_change(value):
+                logger.trace(
+                    f"Command field '{mapping.command_field}' is NO_CHANGE, skipping write to "
+                    f"{mapping.device_id or f'trait:{mapping.trait}'}.{mapping.point_name}"
+                )
+                continue
             if mapping.transform is not None:
                 try:
                     value = mapping.transform(value)
@@ -217,6 +238,13 @@ class CommandRouter:
                     continue
                 value = getattr(dev_cmd, cap_mapping.command_field, None)
                 if value is None:
+                    continue
+                # per-device command 同樣過濾 NO_CHANGE
+                if is_no_change(value):
+                    logger.trace(
+                        f"Per-device capability field '{cap_mapping.command_field}' is NO_CHANGE "
+                        f"for device '{device.device_id}', skipping"
+                    )
                     continue
                 await self._apply_transform_and_write(device, cap_mapping, value)
 

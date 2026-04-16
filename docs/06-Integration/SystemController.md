@@ -4,8 +4,9 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/system_controller.py
-updated: 2026-04-06
-version: ">=0.7.1"
+created: 2026-02-17
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # SystemController
@@ -50,9 +51,11 @@ version: ">=0.7.1"
 | `runtime_params` | `RuntimeParameters \| None` | `None` | 系統參數，自動注入到 `StrategyContext.params` |
 | `capability_requirements` | `list[CapabilityRequirement]` | `[]` | 能力需求列表，供 `preflight_check()` 驗證 |
 | `strict_capability_check` | `bool` | `False` | 啟用嚴格能力檢查（preflight 失敗時 raise `ConfigurationError`） |
+| `trigger_on_read_device_ids` | `list[str]` | `[]` | v0.8.0+：啟動時自動對這些 device_id 的 `EVENT_READ_COMPLETE` 事件綁定 executor 觸發 |
 
-> [!info] v0.6.0 新增
-> `capability_requirements`、`strict_capability_check`、`post_protection_processors`、`runtime_params` 為 v0.6.0 新增欄位。
+> [!info] 版本說明
+> - v0.6.0 新增：`capability_requirements`、`strict_capability_check`、`post_protection_processors`、`runtime_params`
+> - v0.8.0 新增：`trigger_on_read_device_ids`（宣告式 read-complete trigger 配置）
 
 ### SystemControllerConfig.builder()
 
@@ -101,6 +104,7 @@ config = (
 | `cascading(capacity_kva)` | 設定級聯策略最大視在功率 |
 | `require_capability(requirement)` | 新增能力需求（供 preflight 驗證） |
 | `strict_capability(enabled=True)` | 啟用嚴格能力檢查 |
+| `trigger_on_read_complete(device_id)` | v0.8.0+：宣告式 read-complete trigger（可多次呼叫多台設備） |
 | `build()` | 建構 `SystemControllerConfig` |
 
 ## API
@@ -117,6 +121,7 @@ config = (
 | `pop_override(name)` | 移除 override 模式 |
 | `register_event_override(override)` | 註冊事件驅動 override（見[[EventDrivenOverride]]） |
 | `trigger()` | 手動觸發策略執行 |
+| `attach_read_trigger(device_id)` | v0.8.0+：將指定設備的 `EVENT_READ_COMPLETE` 綁定為 executor 觸發，回傳 detacher callable |
 
 ### Preflight Check（v0.6.0 新增）
 
@@ -135,6 +140,48 @@ failures = controller.preflight_check()
 if failures:
     print("能力檢查未通過：", failures)
 ```
+
+### Event-Driven Trigger（v0.8.0 新增）
+
+`attach_read_trigger(device_id)` 將指定設備的 `EVENT_READ_COMPLETE` 事件綁定為 `StrategyExecutor.trigger()` 的呼叫源，達成「設備讀完即執行策略」的低延遲流程，避免時間錨式 PERIODIC 與 ReadScheduler 之間的 phase drift。
+
+```python
+def attach_read_trigger(self, device_id: str) -> Callable[[], None]
+```
+
+**行為**：
+- 每次 `device_id` 的 `EVENT_READ_COMPLETE` 觸發，自動呼叫 `executor.trigger()`
+- 重複 attach 同 device_id 拋 `ValueError`（fail-fast 冪等保護）
+- `device_id` 未在 registry 拋 `ValueError`
+- 回傳 wrapped detacher callable，呼叫即解除綁定
+
+**宣告式方式（建議）**：透過 Builder 或 Config 設定，`_on_start` 自動 attach，`_on_stop` 自動 detach：
+
+```python
+config = (
+    SystemControllerConfig.builder()
+    .trigger_on_read_complete("meter_01")   # 讀完即觸發策略
+    .trigger_on_read_complete("pcs_01")     # 可多台
+    .build()
+)
+
+# 或等效直接設定 config 欄位
+config = SystemControllerConfig(
+    trigger_on_read_device_ids=["meter_01", "pcs_01"],
+    ...
+)
+```
+
+**命令式方式（執行期動態）**：
+
+```python
+detacher = controller.attach_read_trigger("meter_01")
+# ... 使用一段時間後解除
+detacher()
+```
+
+> [!note] 搭配使用
+> 與 `ExecutionMode.TRIGGERED` 或 `HYBRID` 策略搭配使用。PERIODIC 模式搭配後策略雖仍按週期執行，但也可被提前觸發。
 
 ### 排程模式控制（v0.4.2 新增）
 

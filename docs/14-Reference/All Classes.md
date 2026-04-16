@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-16
-version: ">=0.7.3"
+updated: 2026-04-17
+version: ">=0.8.0"
 
 ---
 
@@ -108,6 +108,12 @@ SORT file.name ASC
 | [[DynamicSOCProtection]] | 動態 SOC 保護規則（v0.5.0） |
 | [[GridLimitProtection]] | 電網限制保護規則（v0.5.0） |
 | [[RampStopProtection]] | 斜率停機保護規則（v0.5.0） |
+
+**快速參考（v0.8.0 新增）：**
+
+| 名稱 | 說明 |
+|------|------|
+| [[Command\|NoChange]] | `Command.p_target` / `q_target` 的「此軸不變更」sentinel 類別（v0.8.0） |
 
 ### Manager
 

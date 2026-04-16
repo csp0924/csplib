@@ -6,6 +6,32 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-17
+
+### Added
+
+- **`NoChange` 型別、`NO_CHANGE` sentinel、`is_no_change()` TypeGuard** (WI-V080-004): 策略可對不需管控的軸回傳 `NO_CHANGE`（如 QV 策略只管 Q、FP 策略只管 P），`CommandRouter.route()` 偵測到 NO_CHANGE 時跳過對應軸的設備寫入（記錄 TRACE log）。`NO_CHANGE` 為全域單例，比較應使用 `value is NO_CHANGE`；`is_no_change()` TypeGuard 供型別安全分支使用。Hierarchical wire format（transport/status）：NO_CHANGE 與 JSON null 雙向 round-trip；GUI API（`modes.py`）：NO_CHANGE 軸在 JSON response 輸出 null。
+- **`Command.effective_p(fallback=0.0) -> float` / `effective_q(fallback=0.0) -> float`** (WI-V080-004): 輔助方法，將 NO_CHANGE 轉為具體浮點數，供級聯累加、積分補償器狀態更新等消費點使用，避免散落各處的 `is NO_CHANGE` 守衛。
+- **`Command.p_target` / `q_target` 型別擴寬為 `float | NoChange`** (WI-V080-004): 既有 `Command(p_target=0.0)` 建構完全不變；fallback 路徑 `Command(0.0, 0.0, is_fallback=True)` 刻意使用 float（安全停機語義，不保留舊值）。
+- **`ReadPoint.reject_non_finite: bool = False`** (WI-V080-001): 設為 `True` 時，`AsyncModbusDevice` 讀到 NaN/+Inf/-Inf 保留 `_latest_values[name]` 舊值、發 WARNING log、不觸發 `value_change` 事件、不將非有限值送進告警評估或 `EVENT_READ_COMPLETE` payload。預設 `False` 維持 IEEE 754 sentinel 行為（向後相容）。
+- **`ContextMapping.param_key: str | None = None`** (WI-V080-003): v0.8.0 新增第三種來源模式。從 `RuntimeParameters.get(param_key)` 直接注入 context 欄位，不需手動搬入 extra dict。與 `device_id` / `trait` 互斥（三擇一）；`transform` 與 `default` 在 param_key 模式下仍生效；`ContextBuilder` 若未提供 `runtime_params` 則 log warning 並回退至 `default`。`__post_init__` 驗證改為 `_validate_context_source`（三擇一錯誤訊息）。
+- **`SystemControllerConfigBuilder.map_context(..., param_key=...)` kwarg** (WI-V080-003): Builder 的 `map_context()` 接受 `param_key` 關鍵字參數，建立 `ContextMapping(param_key=...)` 實例。
+- **`SystemControllerConfig.trigger_on_read_device_ids: list[str]`** (WI-V080-005): 宣告式配置欄位，`SystemController._on_start` 自動對這些 device_id 呼叫 `attach_read_trigger()`，`_on_stop` 入口先 detach 再停 executor。
+- **`SystemController.attach_read_trigger(device_id) -> Callable[[], None]`** (WI-V080-005): 執行期 API，將指定設備的 `EVENT_READ_COMPLETE` 綁定為 `StrategyExecutor.trigger()` 的呼叫源。重複 attach 同 device_id 拋 `ValueError`（fail-fast 冪等保護）；未在 registry 的 device_id 拋 `ValueError`；回傳 wrapped detacher 供手動解除。
+- **`SystemControllerConfigBuilder.trigger_on_read_complete(device_id)`** (WI-V080-005): 對應 Builder 宣告式 API，鏈式呼叫將 device_id 加入 `trigger_on_read_device_ids`。
+
+### Changed
+
+- **`ExecutionConfig.interval_seconds: int → float`** (WI-V080-002): 型別放寬為 float，支援 sub-second 策略執行（如 DReg 0.3 s）。向後相容，既有 int 值可直接賦值。同步移除 `DroopStrategy` / `FFCalibrationStrategy` 中 `max(1, int(self._config.interval))` workaround，直接傳 float。
+- **`LoadSheddingConfig.evaluation_interval: int = 5 → float = 5.0`** (WI-V080-002): 型別隨 `interval_seconds` 統一改為 float。
+- **`PVSmoothStrategy.__init__(interval_seconds: int) → float`** (WI-V080-002): 型別統一改為 float。
+- **`StrategyExecutor.run()` PERIODIC/HYBRID 首次執行改為立即（work-first）** (WI-V080-006): 舊實作先等 `interval_seconds` 再執行第一次；新實作啟動後**立即**執行一次，再以 `next_tick_delay()` 絕對時間錨定排程後續週期。HYBRID 模式提前觸發後重設 anchor，下次 tick 從觸發點起算完整 interval；策略切換時重設 anchor + cycle counter。TRIGGERED 模式維持 v0.7.x 語義（不使用 anchor）。若依賴「啟動後先等一個 interval」的舊語義，需調整。
+- **`ContextMapping.__post_init__` 驗證函式更名為 `_validate_context_source`** (WI-V080-003): 驗證邏輯由二擇一（device_id / trait）擴充為三擇一（device_id / trait / param_key），錯誤訊息對應更新。
+
+### Fixed
+
+- **(WI-V080-006 / WI-TD-105) `StrategyExecutor` PERIODIC/HYBRID 週期漂移**: 舊實作以 `asyncio.wait(timeout=interval_seconds)` 相對等待，不計入 `_execute_strategy()` 耗時（典型 exec=50 ms、interval=0.3 s → 16.7% 漂移 / 小時 360 s 偏移）。新實作採用 `csp_lib.core._time_anchor.next_tick_delay()` 絕對時間錨定，與 CAN/PeriodicSender/Modbus read_loop 同一機制，10 個 cycle 總耗時 drift < 10%（tests 驗證）。
+
 ## [0.7.3] - 2026-04-16
 
 ### Added

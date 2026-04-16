@@ -109,13 +109,15 @@ class CascadingStrategy:
             # 執行此層策略，output 是此層的「貢獻量」
             layer_output = layer.execute(layer_context)
 
-            logger.trace(
-                f"Layer {i} ({layer}): contribution P={layer_output.p_target:.1f}, Q={layer_output.q_target:.1f}"
-            )
+            # 若某層輸出 NO_CHANGE，視為「此層不貢獻」（0.0）
+            layer_p = layer_output.effective_p(0.0)
+            layer_q = layer_output.effective_q(0.0)
+
+            logger.trace(f"Layer {i} ({layer}): contribution P={layer_p:.1f}, Q={layer_q:.1f}")
 
             # 加法式累積
-            total_p += layer_output.p_target
-            total_q += layer_output.q_target
+            total_p += layer_p
+            total_q += layer_q
 
         # 限幅：若 S > S_max，依 priority 保留一個軸，削減另一個
         total_s = math.hypot(total_p, total_q)

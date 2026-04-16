@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from csp_lib.controller.core import Command, ExecutionMode, Strategy, StrategyContext
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 
 if TYPE_CHECKING:
     from .compute_offloader import ComputeOffloader
@@ -129,15 +131,28 @@ class StrategyExecutor:
 
     async def run(self) -> None:
         """
-        主執行迴圈
+        主執行迴圈（v0.8.0：work-first + absolute time anchoring）
 
-        根據策略的 ExecutionConfig 決定執行方式。
+        根據策略的 ExecutionConfig 決定執行方式：
+
+        - ``TRIGGERED``：等待外部觸發 / 策略切換，不使用時間錨。
+        - ``PERIODIC`` / ``HYBRID``：**先執行再等待**（work-first），
+          以 monotonic anchor 計算下一個 tick delay，補償 execute 耗時。
+
+        重設 anchor 的情況：
+        - 策略切換（set_strategy）→ 清除 strategy_changed_event + anchor=now, n=0
+        - HYBRID 模式被提前觸發 → anchor=now, n=0
+        - ``next_tick_delay`` 偵測到嚴重落後（>= 一個週期）→ 其內部自動重設
+
         呼叫 stop() 可停止迴圈。
         """
 
         self._stop_event.clear()
         self._is_running = True
         logger.info("策略執行器已啟動")
+
+        anchor = time.monotonic()
+        n = 0
 
         try:
             while not self._stop_event.is_set():
@@ -147,18 +162,47 @@ class StrategyExecutor:
 
                 config = self._strategy.execution_config
 
-                # 根據執行模式決定等待方式
-                await self._wait_for_execution(config)
+                if config.mode == ExecutionMode.TRIGGERED:
+                    # 先 clear strategy_changed_event：忽略「進入迴圈前」的殘留設定
+                    # （與 v0.7.x 的 _wait_for_execution 首行 clear 行為等價）。
+                    self._strategy_changed_event.clear()
+                    # 等觸發（或等待中途的策略切換 / stop）
+                    await self._wait_triggered()
+                    if self._stop_event.is_set():
+                        break
+                    if self._strategy_changed_event.is_set():
+                        # 等待中發生策略切換 → 清除旗標、重設 anchor 後回到頂部
+                        self._strategy_changed_event.clear()
+                        anchor = time.monotonic()
+                        n = 0
+                        continue
+                    await self._execute_strategy()
+                    continue
 
+                # PERIODIC / HYBRID：work-first — 先執行再等 tick
+                # 進入前先清除 strategy_changed，避免首次 execute 後誤判為切換
+                self._strategy_changed_event.clear()
+                await self._execute_strategy()
                 if self._stop_event.is_set():
                     break
 
-                # 策略已切換，跳過執行，回到迴圈頂部重新讀取 config
+                # 計算下一個 tick 應睡多久（絕對時間錨定）
+                delay, anchor, n = next_tick_delay(anchor, n, float(config.interval_seconds))
+                triggered_early = await self._wait_periodic(
+                    delay, allow_early_trigger=(config.mode == ExecutionMode.HYBRID)
+                )
+                if self._stop_event.is_set():
+                    break
                 if self._strategy_changed_event.is_set():
+                    # 策略切換：清除旗標、重設 anchor + 計數
+                    self._strategy_changed_event.clear()
+                    anchor = time.monotonic()
+                    n = 0
                     continue
-
-                # 執行策略
-                await self._execute_strategy()
+                if triggered_early:
+                    # HYBRID 提前觸發：重設 anchor 避免連續 burst
+                    anchor = time.monotonic()
+                    n = 0
 
         except asyncio.CancelledError:
             logger.info("策略執行器被取消")
@@ -188,53 +232,66 @@ class StrategyExecutor:
 
         return await self._execute_strategy()
 
-    async def _wait_for_execution(self, config) -> None:
-        """根據執行模式等待執行時機"""
-        self._strategy_changed_event.clear()
+    async def _wait_triggered(self) -> None:
+        """TRIGGERED 模式：等待外部觸發或策略切換。
 
-        if config.mode == ExecutionMode.TRIGGERED:
-            # 等待觸發或策略切換
+        不涉及時間錨，單純阻塞等待 ``_trigger_event`` 或 ``_strategy_changed_event``。
+        任一發生即返回；``stop_event`` 亦會經由上層檢查中斷。
+        """
+        trigger_task = asyncio.ensure_future(self._trigger_event.wait())
+        changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
+        stop_task = asyncio.ensure_future(self._stop_event.wait())
+        done, pending = await asyncio.wait(
+            [trigger_task, changed_task, stop_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+        if trigger_task in done:
+            self._trigger_event.clear()
+
+    async def _wait_periodic(self, delay: float, *, allow_early_trigger: bool) -> bool:
+        """PERIODIC / HYBRID 模式：等待 delay 秒或被中斷。
+
+        Args:
+            delay: 下一個 tick 應睡的秒數（由 ``next_tick_delay`` 算出，可為 0）。
+            allow_early_trigger: True（HYBRID）允許 ``trigger()`` 提前喚醒；
+                False（PERIODIC）只能被 stop / strategy_changed 中斷。
+
+        Returns:
+            True 代表被提前觸發（HYBRID only）；False 代表正常超時或其他中斷。
+        """
+        if delay <= 0:
+            # 不 sleep，但讓出 event loop 一次
+            await asyncio.sleep(0)
+            return False
+
+        stop_task = asyncio.ensure_future(self._stop_event.wait())
+        changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
+        wait_set: list[asyncio.Task[bool]] = [stop_task, changed_task]
+        trigger_task: asyncio.Task[bool] | None = None
+        if allow_early_trigger:
             trigger_task = asyncio.ensure_future(self._trigger_event.wait())
-            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
-            done, pending = await asyncio.wait([trigger_task, changed_task], return_when=asyncio.FIRST_COMPLETED)
+            wait_set.append(trigger_task)
+
+        triggered_early = False
+        try:
+            done, pending = await asyncio.wait(
+                wait_set,
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=delay,
+            )
             for t in pending:
                 t.cancel()
-            if trigger_task in done:
+            if trigger_task is not None and trigger_task in done:
                 self._trigger_event.clear()
-            return
+                triggered_early = True
+                logger.debug("策略提前觸發執行")
+        except asyncio.TimeoutError:
+            for t in wait_set:
+                t.cancel()
 
-        if config.mode == ExecutionMode.PERIODIC:
-            # 固定週期等待，可被 stop() 或策略切換中斷
-            stop_task = asyncio.ensure_future(self._stop_event.wait())
-            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
-            try:
-                done, pending = await asyncio.wait(
-                    [stop_task, changed_task], return_when=asyncio.FIRST_COMPLETED, timeout=config.interval_seconds
-                )
-                for t in pending:
-                    t.cancel()
-            except asyncio.TimeoutError:
-                stop_task.cancel()
-                changed_task.cancel()
-            return
-
-        if config.mode == ExecutionMode.HYBRID:
-            # 週期等待，可被提前觸發或策略切換
-            trigger_task = asyncio.ensure_future(self._trigger_event.wait())
-            changed_task = asyncio.ensure_future(self._strategy_changed_event.wait())
-            try:
-                done, pending = await asyncio.wait(
-                    [trigger_task, changed_task], return_when=asyncio.FIRST_COMPLETED, timeout=config.interval_seconds
-                )
-                for t in pending:
-                    t.cancel()
-                if trigger_task in done:
-                    self._trigger_event.clear()
-                    logger.debug("策略提前觸發執行")
-            except asyncio.TimeoutError:
-                trigger_task.cancel()
-                changed_task.cancel()
-            return
+        return triggered_early
 
     async def _execute_strategy(self) -> Command:
         """執行當前策略"""

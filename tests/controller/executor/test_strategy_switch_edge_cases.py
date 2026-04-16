@@ -692,10 +692,17 @@ class TestEventStateConsistency:
 
     @pytest.mark.asyncio
     async def test_stale_trigger_after_triggered_to_periodic_no_extra_execution(self):
-        """After TRIGGERED->PERIODIC switch, a stale trigger_event.set() should NOT cause extra execution.
+        """v0.8.0：TRIGGERED->PERIODIC 切換後保證 work-first 首執且不會雙倍執行
 
-        The _strategy_changed_event causes the run loop to skip execution on the
-        iteration where the switch happens, so a leftover trigger should not leak through.
+        舊語義（v0.7.x）：切換到 PERIODIC 後要等一個 interval 才執行（wait-first），
+        若切換前有 stale trigger 殘留，策略切換 event 會讓迴圈 continue、跳過該輪
+        execute — 測試即斷言切換後短時間內 execute_count == 0。
+
+        新語義（v0.8.0+）：切換到 PERIODIC 後**刻意**立即執行一次（work-first），
+        舊的「等一個 interval」行為不再適用。此測試改驗：
+          1) 切換後很快看到第 1 次 execute（work-first 保證首執）
+          2) 期間 (遠小於 interval=10s) 內不會因 stale trigger 而雙倍執行
+        這是避免 stale trigger 在 PERIODIC 造成多餘 burst 的正向保證。
         """
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
@@ -705,23 +712,23 @@ class TestEventStateConsistency:
         task = await _run_executor_with_timeout(executor)
         await asyncio.sleep(0.1)
 
-        # Set the trigger event BEFORE switching strategy (simulates stale trigger)
+        # 在切換前埋一個 stale trigger（模擬 TRIGGERED 模式遺留的觸發旗標）
         executor._trigger_event.set()
 
-        # Switch to PERIODIC
+        # 切到長 interval（10s）PERIODIC — 正常 PERIODIC 節拍不會在測試期內再次觸發
         s2 = MockStrategy(
             return_command=Command(p_target=50.0), mode=ExecutionMode.PERIODIC, interval=10, name="periodic-slow"
         )
         await executor.set_strategy(s2)
 
-        # The long interval (10s) means we should see 0 executions in a short wait
-        # if the stale trigger doesn't leak through.
-        # But the _strategy_changed_event causes the loop to `continue`, skipping execution.
+        # work-first：切換後應很快（<<10s）看到第 1 次 execute
         await asyncio.sleep(0.3)
 
-        # With a 10s interval, the periodic strategy should not have executed yet
-        # (unless a stale trigger leaked through, which would be a bug).
-        assert s2.execute_count == 0, f"Stale trigger should not cause extra execution, but got {s2.execute_count}"
+        # 第 1 次 execute 來自 work-first 首執；不應 >= 2（stale trigger 不得導致雙倍執行）
+        assert s2.execute_count == 1, (
+            f"PERIODIC work-first should execute exactly once shortly after switch "
+            f"(interval=10s, so no 2nd tick), got {s2.execute_count}"
+        )
 
         await _stop_and_wait(executor, task)
 

@@ -53,9 +53,9 @@ class RampStopStrategy(Strategy):
         dt = (now - self._last_time) if self._last_time is not None else 0.0
         self._last_time = now
 
-        # 第一次執行：繼承上次功率
+        # 第一次執行：繼承上次功率（NO_CHANGE 降級為 0.0）
         if self._current_p == 0.0 and dt == 0.0:
-            self._current_p = context.last_command.p_target
+            self._current_p = context.last_command.effective_p(0.0)
             logger.info(f"RampStop: starting ramp from {self._current_p:.1f}kW")
 
         # 已到 0 → 維持

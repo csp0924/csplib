@@ -8,14 +8,17 @@
 from .calibration import FFCalibrationConfig, FFCalibrationStrategy
 from .compensator import PowerCompensator, PowerCompensatorConfig
 from .core import (
+    NO_CHANGE,
     Command,
     CommandProcessor,
     ConfigMixin,
     ExecutionConfig,
     ExecutionMode,
+    NoChange,
     Strategy,
     StrategyContext,
     SystemBase,
+    is_no_change,
 )
 from .discovery import ENTRY_POINT_GROUP, StrategyDescriptor, discover_strategies
 from .executor import ComputeOffloader, StrategyExecutor
@@ -89,6 +92,9 @@ __all__ = [
     "CommandProcessor",
     "SystemBase",
     "ConfigMixin",
+    "NoChange",
+    "NO_CHANGE",
+    "is_no_change",
     "StrategyContext",
     "ExecutionMode",
     "ExecutionConfig",

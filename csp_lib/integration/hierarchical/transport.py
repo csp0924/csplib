@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Any, Awaitable, Callable, Protocol, runtime_checkable
 
-from csp_lib.controller.core import Command
+from csp_lib.controller.core import NO_CHANGE, Command, NoChange, is_no_change
 
 
 class DispatchPriority(IntEnum):
@@ -56,13 +56,17 @@ class DispatchCommand:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """序列化為字典"""
+        """序列化為字典
+
+        v0.8.0：``NO_CHANGE`` sentinel 以 JSON ``null`` 表示，方便跨語言互通；
+        反序列化時（``from_dict``）``None`` 會還原為 ``NO_CHANGE``。
+        """
         return {
             "source_site_id": self.source_site_id,
             "target_site_id": self.target_site_id,
             "command": {
-                "p_target": self.command.p_target,
-                "q_target": self.command.q_target,
+                "p_target": None if is_no_change(self.command.p_target) else self.command.p_target,
+                "q_target": None if is_no_change(self.command.q_target) else self.command.q_target,
             },
             "priority": self.priority.value,
             "timestamp": self.timestamp.isoformat(),
@@ -71,15 +75,20 @@ class DispatchCommand:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DispatchCommand:
-        """從字典反序列化"""
+        """從字典反序列化
+
+        v0.8.0：``p_target`` / ``q_target`` 為 ``None`` 時還原為 ``NO_CHANGE``
+        sentinel，對應 ``to_dict`` 的 null 編碼。
+        """
         cmd_data = data.get("command", {})
+        p_raw = cmd_data.get("p_target", 0.0)
+        q_raw = cmd_data.get("q_target", 0.0)
+        p_target: float | NoChange = NO_CHANGE if p_raw is None else float(p_raw)
+        q_target: float | NoChange = NO_CHANGE if q_raw is None else float(q_raw)
         return cls(
             source_site_id=data["source_site_id"],
             target_site_id=data["target_site_id"],
-            command=Command(
-                p_target=float(cmd_data.get("p_target", 0.0)),
-                q_target=float(cmd_data.get("q_target", 0.0)),
-            ),
+            command=Command(p_target=p_target, q_target=q_target),
             priority=DispatchPriority(data.get("priority", DispatchPriority.NORMAL)),
             timestamp=datetime.fromisoformat(data["timestamp"]) if "timestamp" in data else datetime.now(timezone.utc),
             metadata=data.get("metadata", {}),

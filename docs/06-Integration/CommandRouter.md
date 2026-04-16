@@ -4,8 +4,9 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/command_router.py
-updated: 2026-04-04
-version: ">=0.4.2"
+created: 2026-02-17
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # CommandRouter
@@ -27,6 +28,7 @@ Command → 設備寫入路由器，隸屬於 [[_MOC Integration|Integration 模
 
 | 情境 | 處理方式 |
 |------|---------|
+| command 欄位值為 `NO_CHANGE` | TRACE log + 跳過該軸的所有設備寫入（v0.8.0） |
 | `transform` 例外 | log error + 跳過該映射 |
 | 單一設備寫入失敗 | log warning + 繼續寫入其他設備 |
 | 設備不存在或離線 | log warning + 跳過 |
@@ -99,6 +101,9 @@ await router.route(command)  # 同值廣播
 await router.route_per_device(command, per_device_commands)
 ```
 
+> [!note] v0.8.0 NO_CHANGE 支援
+> `route()` 與 `route_per_device()` 在讀取 Command 欄位後，若值為 `NO_CHANGE` sentinel，立即跳過該映射下的所有設備寫入並記錄 TRACE log。這讓 QV 策略（`p=NO_CHANGE`）或 FP 策略（`q=NO_CHANGE`）可正確與其他策略組合，不會將「跳過」誤傳為寫入 0。
+
 ## 相關頁面
 
 - [[CommandMapping]] — 明確映射定義
@@ -107,4 +112,5 @@ await router.route_per_device(command, per_device_commands)
 - [[PowerDistributor]] — 提供 per-device Command 給 `route_per_device()`
 - [[GridControlLoop]] — 使用 CommandRouter 作為 on_command 回呼
 - [[SystemController]] — 在 ProtectionGuard 之後使用 CommandRouter
+- [[Command]] — v0.8.0 起 p_target / q_target 支援 NO_CHANGE
 - [[CapabilityBinding Integration]] — 完整架構與流程圖

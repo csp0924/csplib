@@ -4,8 +4,9 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/context_builder.py
-updated: 2026-04-16
-version: ">=0.7.2"
+created: 2026-02-17
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # ContextBuilder
@@ -45,6 +46,7 @@ version: ">=0.7.2"
 2. 遍歷每個 [[ContextMapping]]：
    - **device_id 模式**：直接讀取單一設備的 `latest_values`
    - **trait 模式**：收集所有 responsive 設備的值，透過 [[AggregateFunc]] 聚合
+   - **param_key 模式**（v0.8.0+）：從 `runtime_params.get(param_key)` 讀值；若 `runtime_params` 未提供則 log warning 並回退至 `default`
 3. 遍歷每個 [[CapabilityContextMapping]]：
    - **device_id 模式**：`resolve_point()` → `latest_values`
    - **trait 模式**：過濾 responsive + `has_capability` → 聚合
