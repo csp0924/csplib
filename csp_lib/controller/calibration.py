@@ -274,16 +274,15 @@ class FFCalibrationStrategy(Strategy):
         """校準完成：寫入 FF Table"""
         self._state = _CalibrationState.DONE
 
-        # 寫入 compensator FF Table
         if self._compensator is not None and self._results:
             updated = 0
             for bin_idx, ff_ratio in self._results.items():
-                if hasattr(self._compensator, "_ff_table"):
-                    self._compensator._ff_table[bin_idx] = ff_ratio
+                try:
+                    self._compensator.update_ff_bin(bin_idx, ff_ratio, persist=False)
                     updated += 1
-            # 持久化
-            if hasattr(self._compensator, "_save_ff_table"):
-                self._compensator._save_ff_table()
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"FFCalibration: skip invalid bin[{bin_idx}]={ff_ratio}: {e}")
+            self._compensator.persist_ff_table()
             logger.info(f"FFCalibration: updated {updated} bins in compensator FF table")
 
         logger.info(f"FFCalibration complete: {len(self._results)} bins calibrated")

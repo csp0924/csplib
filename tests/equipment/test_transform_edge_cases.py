@@ -79,12 +79,10 @@ class TestInverseEdgeCases:
 
 
 class TestBitExtractEdgeCases:
-    def test_large_offset_returns_zero(self):
-        """Shifting past all bits should return 0"""
-        t = BitExtractTransform(bit_offset=64, bit_length=1)
-        # For a 16-bit value, shifting by 64 gives 0
-        result = t.apply(0xFFFF)
-        assert result is False  # bit_length=1 -> bool(0) = False
+    def test_large_offset_raises_valueerror(self):
+        """v0.7.3 BUG-009: bit_offset=64 + bit_length=1 = 65 超過上限 64，應 raise ValueError。"""
+        with pytest.raises(ValueError, match="超過可操作範圍上限"):
+            BitExtractTransform(bit_offset=64, bit_length=1)
 
     def test_negative_offset_raises(self):
         with pytest.raises(ValueError):

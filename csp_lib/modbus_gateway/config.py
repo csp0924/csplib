@@ -44,6 +44,12 @@ class GatewayRegisterDef:
         description: Human-readable description.
         byte_order: Per-register byte order override (None = use server default).
         register_order: Per-register register order override (None = use server default).
+        writable: Whether EMS is allowed to write this register via Modbus protocol.
+            The writable flag **only applies to HOLDING registers**. INPUT registers
+            cannot be written via Modbus protocol regardless of this flag.
+            Defaults to ``False`` (secure-by-default): EMS writes are rejected with
+            :class:`RegisterNotWritableError` until the register owner explicitly
+            opts in by setting ``writable=True``.
     """
 
     name: str
@@ -56,6 +62,7 @@ class GatewayRegisterDef:
     description: str = ""
     byte_order: ByteOrder | None = None
     register_order: RegisterOrder | None = None
+    writable: bool = False
 
     def __post_init__(self) -> None:
         if self.address < 0:
@@ -103,7 +110,7 @@ class GatewayServerConfig:
         watchdog: Communication watchdog configuration.
     """
 
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 502
     unit_id: int = 1
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN

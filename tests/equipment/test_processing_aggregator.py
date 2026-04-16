@@ -111,6 +111,26 @@ class TestCoilToBitmaskAggregator:
         # 偶數位 = True: 0b0101010101010101 = 0x5555
         assert result["error_register"] == 0x5555
 
+    # ── v0.7.3 BUG-010: coil_names 自動轉為 tuple ──
+
+    def test_coil_names_is_tuple_after_construction(self):
+        """傳入 list 時，__post_init__ 應自動轉為 tuple。"""
+        aggregator = CoilToBitmaskAggregator(
+            output_name="mask",
+            coil_names=["a", "b", "c"],  # 傳入 list
+        )
+        assert isinstance(aggregator.coil_names, tuple)
+        assert aggregator.coil_names == ("a", "b", "c")
+
+    def test_coil_names_tuple_input_preserved(self):
+        """傳入 tuple 時不應改變。"""
+        aggregator = CoilToBitmaskAggregator(
+            output_name="mask",
+            coil_names=("x", "y"),
+        )
+        assert isinstance(aggregator.coil_names, tuple)
+        assert aggregator.coil_names == ("x", "y")
+
 
 # ======================== ComputedValueAggregator Tests ========================
 

@@ -274,4 +274,5 @@ class StrategyExecutor:
                 f"last_command={self._last_command}, "
                 f"error={e!r}"
             )
-            return self._last_command
+            # 不更新 self._last_command，保持上次正常命令供下輪 context.last_command 使用
+            return Command(p_target=0.0, q_target=0.0, is_fallback=True)

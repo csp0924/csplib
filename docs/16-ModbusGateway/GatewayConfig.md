@@ -4,8 +4,8 @@ tags:
   - layer/modbus-gateway
   - status/complete
 source: csp_lib/modbus_gateway/config.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # GatewayConfig
@@ -52,6 +52,7 @@ class GatewayRegisterDef:
     description: str = ""
     byte_order: ByteOrder | None = None
     register_order: RegisterOrder | None = None
+    writable: bool = False          # v0.7.3 SEC-006
 ```
 
 ### 欄位說明
@@ -68,6 +69,11 @@ class GatewayRegisterDef:
 | `description` | `str` | `""` | 人類可讀描述 |
 | `byte_order` | `ByteOrder \| None` | `None` | 覆寫伺服器預設 byte order |
 | `register_order` | `RegisterOrder \| None` | `None` | 覆寫伺服器預設 register order |
+| `writable` | `bool` | `False` | EMS 是否可寫入此暫存器（v0.7.3 SEC-006）。僅對 HOLDING register 有效；INPUT register 在 Modbus 協定層本身即為唯讀 |
+
+> [!warning] v0.7.3 行為變更 (SEC-006)
+> `writable` 預設為 `False`。升級前所有 HOLDING register 隱式可寫，升級後必須明確設 `writable=True` 才允許 EMS 寫入。
+> 未設 `writable=True` 的 register 在 EMS 嘗試寫入時會收到 `RegisterNotWritableError`。
 
 ### 驗證規則
 
@@ -80,7 +86,7 @@ class GatewayRegisterDef:
 from csp_lib.modbus import UInt16, Int32, Float32
 from csp_lib.modbus_gateway import GatewayRegisterDef, RegisterType
 
-# Holding Register — EMS 可寫入的有功功率指令
+# Holding Register — 明確 opt-in 允許 EMS 寫入的有功功率指令（v0.7.3 需加 writable=True）
 p_cmd = GatewayRegisterDef(
     name="p_command",
     address=0,
@@ -88,9 +94,19 @@ p_cmd = GatewayRegisterDef(
     register_type=RegisterType.HOLDING,
     unit="kW",
     description="Active power setpoint",
+    writable=True,   # v0.7.3+ 必填，否則 EMS 寫入將被拒絕
 )
 
-# Input Register — EMS 唯讀的電池 SOC
+# Holding Register — 不可被 EMS 寫入（預設行為，如版本號暫存器）
+version_reg = GatewayRegisterDef(
+    name="fw_version",
+    address=10,
+    data_type=UInt16(),
+    register_type=RegisterType.HOLDING,
+    # writable=False (預設)
+)
+
+# Input Register — EMS 唯讀的電池 SOC（INPUT 本身即為唯讀，writable 無作用）
 soc = GatewayRegisterDef(
     name="soc",
     address=100,
@@ -167,7 +183,7 @@ Gateway 伺服器頂層組態。
 ```python
 @dataclass(frozen=True, slots=True)
 class GatewayServerConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"   # v0.7.3 SEC-011：從 "0.0.0.0" 改為僅本機
     port: int = 502
     unit_id: int = 1
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
@@ -178,13 +194,19 @@ class GatewayServerConfig:
 
 | 欄位 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
-| `host` | `str` | `"0.0.0.0"` | 綁定 IP 位址 |
+| `host` | `str` | `"127.0.0.1"` | 綁定 IP 位址（v0.7.3 前預設為 `"0.0.0.0"`）。使用 `"0.0.0.0"` 時啟動記錄 WARNING |
 | `port` | `int` | `502` | TCP 端口（0-65535） |
 | `unit_id` | `int` | `1` | Modbus slave/unit ID（1-247） |
 | `byte_order` | `ByteOrder` | `BIG_ENDIAN` | 預設 byte order |
 | `register_order` | `RegisterOrder` | `HIGH_FIRST` | 預設 register order（多暫存器型別） |
 | `register_space_size` | `int` | `10000` | 暫存器位址空間大小 |
 | `watchdog` | `WatchdogConfig` | `WatchdogConfig()` | 看門狗組態 |
+
+> [!warning] v0.7.3 行為變更 (SEC-011)
+> `host` 預設從 `"0.0.0.0"` 改為 `"127.0.0.1"`。需要讓外部 EMS 連線的部署必須明確設定：
+> ```python
+> GatewayServerConfig(host="0.0.0.0", port=502)   # 或指定特定介面 IP
+> ```
 
 ### 驗證規則
 
@@ -254,6 +276,7 @@ rule.apply("power", 600)   # (600, True)   — rejected
 | `GatewayError` | `Exception` | Gateway 模組基礎例外 |
 | `RegisterConflictError` | `GatewayError` | 暫存器位址空間重疊（含 `name_a`, `name_b`, `overlap_start`, `overlap_end`） |
 | `WriteRejectedError` | `GatewayError` | 寫入被驗證鏈拒絕（含 `address`, `reason`） |
+| `RegisterNotWritableError` | `WriteRejectedError` | EMS 嘗試寫入 `writable=False` 的 HOLDING register（v0.7.3 SEC-006，含 `register_name`, `address`） |
 
 ---
 

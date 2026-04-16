@@ -17,7 +17,7 @@ from typing import Any
 from csp_lib.core import get_logger
 from csp_lib.modbus import ModbusCodec
 from csp_lib.modbus_gateway.config import RegisterType
-from csp_lib.modbus_gateway.errors import WriteRejectedError
+from csp_lib.modbus_gateway.errors import RegisterNotWritableError, WriteRejectedError
 
 logger = get_logger(__name__)
 
@@ -99,6 +99,12 @@ class WritePipeline:
 
             # Read old value
             old_value = self._register_map.get_value(reg_def.name)
+
+            # 0. Writable gate — secure-by-default; evaluated before validator chain
+            if not reg_def.writable:
+                err: WriteRejectedError = RegisterNotWritableError(reg_def.name, reg_def.address)
+                logger.warning(str(err))
+                continue
 
             # 1. Validator chain
             rejected = False

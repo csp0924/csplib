@@ -70,6 +70,7 @@ class StatusReport:
                 "last_command": {
                     "p_target": self.status.last_command.p_target,
                     "q_target": self.status.last_command.q_target,
+                    "is_fallback": self.status.last_command.is_fallback,
                 },
                 "active_overrides": list(self.status.active_overrides),
                 "base_modes": list(self.status.base_modes),
@@ -93,6 +94,7 @@ class StatusReport:
                 last_command=Command(
                     p_target=float(cmd_data.get("p_target", 0.0)),
                     q_target=float(cmd_data.get("q_target", 0.0)),
+                    is_fallback=bool(cmd_data.get("is_fallback", False)),
                 ),
                 active_overrides=tuple(status_data.get("active_overrides", [])),
                 base_modes=tuple(status_data.get("base_modes", [])),

@@ -8,9 +8,11 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Callable
 
 from csp_lib.core import AsyncLifecycleMixin, HealthCheckable, HealthReport, HealthStatus, get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.equipment.alarm.definition import AlarmLevel
 from csp_lib.equipment.alarm.state import AlarmEvent, AlarmEventType
 from csp_lib.manager.alarm.schema import AlarmRecord, AlarmType
@@ -103,7 +105,12 @@ class SystemMonitor(AsyncLifecycleMixin):
         logger.info("系統監控器已停止")
 
     async def _run_loop(self) -> None:
-        """定期執行收集 → 評估 → 發布"""
+        """定期執行收集 → 評估 → 發布。
+
+        採用絕對時間錨定（work-first）避免時序漂移。
+        """
+        anchor = time.monotonic()
+        n = 0
         while self._running:
             try:
                 await self._tick()
@@ -112,8 +119,9 @@ class SystemMonitor(AsyncLifecycleMixin):
             except Exception:
                 logger.opt(exception=True).error("系統監控迴圈異常")
 
+            delay, anchor, n = next_tick_delay(anchor, n, self._config.interval_seconds)
             try:
-                await asyncio.sleep(self._config.interval_seconds)
+                await asyncio.sleep(delay)
             except asyncio.CancelledError:
                 raise
 

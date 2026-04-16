@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, ClassVar
 
@@ -402,12 +403,17 @@ class SinkManager:
     ) -> None:
         """背景輪詢遠端等級來源。
 
+        採用絕對時間錨定（work-first）避免時序漂移。
+
         Args:
             source: 遠端等級來源實例。
             interval: 輪詢間隔秒數。
         """
+        from csp_lib.core._time_anchor import next_tick_delay
+
+        anchor = time.monotonic()
+        n = 0
         while True:
-            await asyncio.sleep(interval)
             try:
                 levels = await source.fetch_levels()
                 self._apply_remote_levels(levels)
@@ -415,6 +421,8 @@ class SinkManager:
                 raise
             except Exception:  # noqa: BLE001
                 pass  # 輪詢失敗不應中斷
+            delay, anchor, n = next_tick_delay(anchor, n, interval)
+            await asyncio.sleep(delay)
 
     # ---- 便利方法 ----
 

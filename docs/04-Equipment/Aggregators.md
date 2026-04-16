@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/processing/aggregator.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # Aggregators
@@ -33,15 +33,18 @@ version: ">=0.4.2"
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
 | `output_name` | `str` | (必填) | 輸出值的名稱 |
-| `coil_names` | `list[str]` | (必填) | coil 點位名稱列表（按位元順序，bit 0 在前） |
+| `coil_names` | `tuple[str, ...]` | (必填) | coil 點位名稱（按位元順序，bit 0 在前）；傳入 `list[str]` 時自動轉換 |
 | `remove_source` | `bool` | `True` | 是否移除來源點位 |
+
+> [!note] v0.7.3 BUG-010
+> `coil_names` 型別從 `list[str]` 改為 `tuple[str, ...]`，防止外部修改影響行為。`__post_init__` 自動將傳入的 list 轉換為 tuple，向後相容。
 
 ```python
 from csp_lib.equipment.processing import CoilToBitmaskAggregator
 
 aggregator = CoilToBitmaskAggregator(
     output_name="error1",
-    coil_names=[f"error_{i}" for i in range(2501, 2517)],
+    coil_names=[f"error_{i}" for i in range(2501, 2517)],  # list 自動轉 tuple
 )
 # error_2501 -> bit 0, error_2502 -> bit 1, ...
 ```
