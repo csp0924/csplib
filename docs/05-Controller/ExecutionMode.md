@@ -5,7 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/core/execution.py
 created: 2026-02-17
-updated: 2026-04-04
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # ExecutionMode
@@ -46,7 +47,10 @@ updated: 2026-04-04
 | 屬性 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
 | `mode` | `ExecutionMode` | (必填) | 執行模式 |
-| `interval_seconds` | `int` | `1` | 週期秒數 (適用於 PERIODIC 和 HYBRID) |
+| `interval_seconds` | `float` | `1` | 週期秒數（v0.8.0 起改為 float，支援 sub-second 如 0.3 s；適用於 PERIODIC 和 HYBRID） |
+
+> [!note] v0.8.0 型別變更
+> `interval_seconds` 由 `int` 改為 `float`，向後相容（既有 int 值可直接賦值）。現可傳入 `0.3` 等小數值支援高頻策略（如 DReg）。
 
 > [!warning] PERIODIC 與 HYBRID 模式下 `interval_seconds` 必須大於 0，否則在 `__post_init__` 中拋出 `ValueError`。
 
@@ -58,6 +62,9 @@ from csp_lib.controller import ExecutionConfig, ExecutionMode
 config = ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=1)
 config = ExecutionConfig(mode=ExecutionMode.TRIGGERED)  # interval_seconds 不影響
 config = ExecutionConfig(mode=ExecutionMode.HYBRID, interval_seconds=5)
+
+# v0.8.0+ 支援 sub-second（DReg 0.3s 需求）
+config_fast = ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=0.3)
 ```
 
 ## 相關連結

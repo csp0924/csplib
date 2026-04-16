@@ -160,13 +160,14 @@ class LoadSheddingConfig(ConfigMixin):
 
     Attributes:
         stages: 卸載階段列表
-        evaluation_interval: 評估週期（秒）
+        evaluation_interval: 評估週期（秒）。v0.8.0 起型別由 ``int`` 擴寬為 ``float``
+            以支援次秒級評估（例如 0.5 秒），既有整數字面值仍相容。
         restore_delay: 恢復延遲（秒，防止頻繁切換）
         auto_restore_on_deactivate: 策略停用時是否自動恢復所有負載
     """
 
     stages: list[ShedStage] = field(default_factory=list)
-    evaluation_interval: int = 5
+    evaluation_interval: float = 5.0
     restore_delay: float = 60.0
     auto_restore_on_deactivate: bool = True
 

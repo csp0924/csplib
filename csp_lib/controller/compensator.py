@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from csp_lib.controller.core import Command, StrategyContext
+from csp_lib.controller.core import Command, StrategyContext, is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core._numeric import clamp, is_non_finite_float
 
@@ -297,10 +297,19 @@ class PowerCompensator:
         SEC-013a L4 防禦：measurement 為非有限值（NaN/Inf）時整體 bypass —
         不更新 _integral / _last_output / _filtered_error / FF table，
         避免 NaN 污染狀態後永久黏住。
+
+        ``command.p_target`` 為 NO_CHANGE sentinel 時整體 bypass 補償邏輯並原封回傳，
+        避免把 sentinel 餵進 FF 表或積分器。
         """
         if not self._enabled:
             return command
 
+        # NO_CHANGE：策略不變更 P 軸，補償器亦不介入
+        if is_no_change(command.p_target):
+            return command
+
+        # TypeGuard 收斂後 p_target 為 float
+        p_setpoint: float = command.p_target
         measurement_key = self._config.measurement_key
         measurement = context.extra.get(measurement_key)
         if measurement is None:
@@ -317,7 +326,7 @@ class PowerCompensator:
         dt = float(context.extra.get("dt", 0.3))
 
         compensated_p = self.compensate(
-            setpoint=command.p_target,
+            setpoint=p_setpoint,
             measurement=float(measurement),
             dt=dt,
         )

@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/load_shedding.py
 created: 2026-03-06
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # LoadSheddingStrategy
@@ -169,7 +169,7 @@ from csp_lib.controller.strategies.load_shedding import LoadSheddingConfig
 @dataclass
 class LoadSheddingConfig(ConfigMixin):
     stages: list[ShedStage] = field(default_factory=list)
-    evaluation_interval: int = 5       # 評估週期（秒）
+    evaluation_interval: float = 5.0    # 評估週期（秒，v0.8.0 改為 float）
     restore_delay: float = 60.0        # 恢復延遲（秒）
     auto_restore_on_deactivate: bool = True  # 停用時自動恢復所有負載
 ```
@@ -177,7 +177,7 @@ class LoadSheddingConfig(ConfigMixin):
 | 欄位 | 預設值 | 說明 |
 |------|--------|------|
 | `stages` | `[]` | 卸載階段列表（按 priority 排序） |
-| `evaluation_interval` | `5` | 條件評估週期（秒），等於 `ExecutionConfig.interval_seconds` |
+| `evaluation_interval` | `5.0` | 條件評估週期（秒，v0.8.0 型別由 `int` 改為 `float`），等於 `ExecutionConfig.interval_seconds` |
 | `restore_delay` | `60.0` | 條件滿足恢復後，額外等待此秒數再執行 `restore()`（防止頻繁切換） |
 | `auto_restore_on_deactivate` | `True` | 策略 `on_deactivate()` 時是否自動恢復所有已卸載迴路 |
 

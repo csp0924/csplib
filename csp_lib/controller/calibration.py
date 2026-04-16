@@ -121,7 +121,7 @@ class FFCalibrationStrategy(Strategy):
 
     @property
     def execution_config(self) -> ExecutionConfig:
-        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=max(1, int(self._config.interval)))
+        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=self._config.interval)
 
     def execute(self, context: StrategyContext) -> Command:
         """狀態機：IDLE → STEPPING → DONE"""

@@ -22,11 +22,13 @@ class TestContextMapping:
         assert m.device_id is None
 
     def test_both_raises(self):
-        with pytest.raises(ValueError, match="Cannot set both"):
+        """v0.8.0：ContextMapping 改用三擇一驗證（device_id/trait/param_key），錯誤訊息變更"""
+        with pytest.raises(ValueError, match="Cannot set more than one of device_id / trait / param_key"):
             ContextMapping(point_name="soc", context_field="soc", device_id="d1", trait="t1")
 
     def test_neither_raises(self):
-        with pytest.raises(ValueError, match="Must set either"):
+        """v0.8.0：ContextMapping 錯誤訊息改為三擇一版本"""
+        with pytest.raises(ValueError, match="Must set exactly one of device_id / trait / param_key"):
             ContextMapping(point_name="soc", context_field="soc")
 
     def test_frozen(self):
