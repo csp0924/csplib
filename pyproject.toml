@@ -10,36 +10,36 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
-    "loguru>=0.7.0",
+    "loguru>=0.7.0,<0.8",
 ]
 
 [project.optional-dependencies]
 mongo = [
-    "motor>=3.0.0",
+    "motor>=3.0.0,<4.0",
 ]
 redis = [
-    "redis>=5.0.0",
+    "redis>=5.0.0,<8.0",
 ]
 modbus = [
-    "pymodbus>=3.0.0",
+    "pymodbus>=3.0.0,<3.13",
 ]
 can = [
-    "python-can>=4.0",
+    "python-can>=4.0,<5.0",
 ]
 monitor = [
-    "psutil>=5.9.0",
+    "psutil>=5.9.0,<8.0",
 ]
 cluster = [
-    "etcetra>=0.1.0",
-    "grpcio>=1.64.0",
-    "grpcio-tools>=1.64.0",
-    "protobuf>=4.25.3",
+    "etcetra>=0.1.0,<0.2",
+    "grpcio>=1.64.0,<2.0",
+    "grpcio-tools>=1.64.0,<2.0",
+    "protobuf>=4.25.3,<5.0",
 ]
 gui = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.30.0",
-    "pyyaml>=6.0",
-    "python-multipart"
+    "fastapi>=0.115.0,<0.136",
+    "uvicorn[standard]>=0.30.0,<0.42",
+    "pyyaml>=6.0,<7.0",
+    "python-multipart>=0.0.20,<1.0",
 ]
 all = [
     "csp0924_lib[mongo,redis,modbus,can,monitor,gui]",
@@ -67,24 +67,24 @@ include-package-data = false
 # =============== Development Dependencies ===============
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=6.0.0",
-    "pytest-xdist>=3.5.0",
-    "build>=1.4.0",
-    "mypy>=1.19.1",
-    "ruff>=0.11.0",
-    "pre-commit>=4.0.0",
-    "httpx>=0.27.0",
+    "pytest>=9.0.2,<10.0",
+    "pytest-asyncio>=1.3.0,<2.0",
+    "pytest-cov>=6.0.0,<8.0",
+    "pytest-xdist>=3.5.0,<4.0",
+    "build>=1.4.0,<2.0",
+    "mypy>=1.19.1,<2.0",
+    "ruff>=0.11.0,<0.16",
+    "pre-commit>=4.0.0,<5.0",
+    "httpx>=0.27.0,<0.29",
     "tzdata>=2024.1",
 ]
 
 # =============== UV Overrides ===============
 [tool.uv]
 override-dependencies = [
-    "grpcio>=1.64.0",
-    "grpcio-tools>=1.64.0",
-    "protobuf>=4.25.3",
+    "grpcio>=1.64.0,<2.0",
+    "grpcio-tools>=1.64.0,<2.0",
+    "protobuf>=4.25.3,<5.0",
 ]
 
 # =============== Ruff (Linting + Formatting) ===============
