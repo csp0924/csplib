@@ -35,6 +35,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
+from csp_lib.core._numeric import is_non_finite_float
 
 logger = get_logger(__name__)
 
@@ -292,6 +293,10 @@ class PowerCompensator:
 
         從 context.extra 讀取量測值，計算補償後的功率指令。
         若補償器停用或無量測值，直接回傳原始 command。
+
+        SEC-013a L4 防禦：measurement 為非有限值（NaN/Inf）時整體 bypass —
+        不更新 _integral / _last_output / _filtered_error / FF table，
+        避免 NaN 污染狀態後永久黏住。
         """
         if not self._enabled:
             return command
@@ -299,6 +304,13 @@ class PowerCompensator:
         measurement_key = self._config.measurement_key
         measurement = context.extra.get(measurement_key)
         if measurement is None:
+            return command
+
+        # SEC-013a L4：非有限 measurement 整體 bypass（比 EMA update 更前置）
+        if is_non_finite_float(measurement):
+            logger.debug(
+                f"PowerCompensator: non-finite measurement {measurement!r}, bypass compensate to avoid state poisoning"
+            )
             return command
 
         # 計算 dt（從 context.extra 取得，或預設 0.3s）

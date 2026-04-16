@@ -74,8 +74,8 @@ class TestGroupReaderEdgeCases:
         assert result["b"] == 100
 
     @pytest.mark.asyncio
-    async def test_read_many_gather_one_failure_propagates(self):
-        """When one group fails in parallel mode, the error propagates"""
+    async def test_read_many_partial_failure_keeps_successful_group(self):
+        """並行模式下單一 group 失敗應只 log，不影響其他 group 的成功結果（SEC-016 修法）"""
         client = AsyncMock()
         call_count = 0
 
@@ -92,5 +92,7 @@ class TestGroupReaderEdgeCases:
         g1 = _make_group(0, 1, (p1,))
         g2 = _make_group(10, 1, (p2,))
         reader = GroupReader(client, max_concurrent_reads=3)
-        with pytest.raises(Exception, match="read failed"):
-            await reader.read_many([g1, g2])
+        # SEC-016：partial failure 不再 raise；成功的 group 結果保留
+        result = await reader.read_many([g1, g2])
+        assert "a" in result
+        assert result["a"] == 100

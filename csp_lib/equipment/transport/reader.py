@@ -9,11 +9,14 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any, Sequence
 
+from csp_lib.core import get_logger
 from csp_lib.core.errors import CommunicationError, ConfigurationError
 from csp_lib.modbus.enums import FunctionCode
 from csp_lib.modbus.exceptions import ModbusError
 
 from .base import ReadGroup
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from csp_lib.modbus import AsyncModbusClientBase
@@ -113,12 +116,24 @@ class GroupReader:
             return result
 
         # 並行讀取（TCP）
+        # SEC-016：使用 return_exceptions=True 避免單一 group 失敗讓整批結果丟失。
+        # - 成功：merge 進 merged dict
+        # - CancelledError：必須正常傳播（否則 lifecycle 停機會卡住）
+        # - 其他 Exception：log warning 不中斷其他 group 的結果
         tasks = [self.read(group) for group in groups]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: dict[str, Any] = {}
-        for data in results:
-            merged.update(data)
+        for group, outcome in zip(groups, results, strict=True):
+            if isinstance(outcome, asyncio.CancelledError):
+                raise outcome
+            if isinstance(outcome, BaseException):
+                logger.warning(
+                    f"GroupReader.read_many: group read failed "
+                    f"(fc={group.function_code}, addr={group.start_address}, count={group.count}): {outcome}"
+                )
+                continue
+            merged.update(outcome)
         return merged
 
     async def _read_from_device(self, group: ReadGroup) -> list[int] | list[bool]:
