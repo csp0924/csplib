@@ -197,6 +197,74 @@ class TestEnginePowerSums:
         """查詢未知功率加總應回傳 0"""
         assert engine.get_power_sum("nonexistent") == 0.0
 
+    # --- BUG-005: NaN / Infinity 應被過濾 ---
+    #
+    # 現象：process_read 只用 isinstance(value, (int, float)) 判斷是否為數值，
+    # 但 float("nan") 和 float("inf") 也是 float instance。一旦進入 power sum，
+    # sum 的結果會被 NaN / Inf 永久污染，後續任何加總都會壞掉。
+    # 修復後預期：math.isfinite() 過濾，跳過 NaN / Inf 讀取。
+
+    def test_power_sum_filters_nan(self, engine: StatisticsEngine):
+        """
+        BUG-005：NaN 讀取不應寫入 power sum
+        修復前：NaN 寫入後 get_power_sum() 變為 NaN（污染）
+        修復後：NaN 被跳過，保持 0.0
+        """
+        engine.process_read(
+            "pcs_01",
+            {"active_power": float("nan")},
+            datetime(2025, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
+        )
+        result = engine.get_power_sum("p_total_pcs")
+        # 修復後：NaN 被過濾，仍為初始 0.0
+        assert result == pytest.approx(0.0), f"NaN 污染了 power_sum: {result}"
+
+    def test_power_sum_filters_positive_infinity(self, engine: StatisticsEngine):
+        """
+        BUG-005：+Inf 讀取不應寫入 power sum
+        修復前：Inf 寫入後 get_power_sum() 變為 Inf
+        修復後：Inf 被跳過，保持 0.0
+        """
+        engine.process_read(
+            "pcs_01",
+            {"active_power": float("inf")},
+            datetime(2025, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
+        )
+        result = engine.get_power_sum("p_total_pcs")
+        assert result == pytest.approx(0.0), f"+Inf 污染了 power_sum: {result}"
+
+    def test_power_sum_filters_negative_infinity(self, engine: StatisticsEngine):
+        """BUG-005：-Inf 讀取不應寫入 power sum"""
+        engine.process_read(
+            "pcs_01",
+            {"active_power": float("-inf")},
+            datetime(2025, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
+        )
+        result = engine.get_power_sum("p_total_pcs")
+        assert result == pytest.approx(0.0), f"-Inf 污染了 power_sum: {result}"
+
+    def test_power_sum_nan_does_not_overwrite_previous_value(self, engine: StatisticsEngine):
+        """
+        BUG-005：NaN 讀取不得覆寫先前的有效值
+        場景：先餵一個正常值 100，再餵 NaN，get_power_sum 應仍為 100
+        """
+        # 先餵正常值
+        engine.process_read(
+            "pcs_01",
+            {"active_power": 100.0},
+            datetime(2025, 1, 1, 10, 2, 0, tzinfo=timezone.utc),
+        )
+        assert engine.get_power_sum("p_total_pcs") == pytest.approx(100.0)
+
+        # 再餵 NaN
+        engine.process_read(
+            "pcs_01",
+            {"active_power": float("nan")},
+            datetime(2025, 1, 1, 10, 3, 0, tzinfo=timezone.utc),
+        )
+        result = engine.get_power_sum("p_total_pcs")
+        assert result == pytest.approx(100.0), f"NaN 覆寫了先前值：{result}"
+
 
 class TestEnginePowerSumRecords:
     """功率加總記錄建立測試"""

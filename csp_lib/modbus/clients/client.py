@@ -82,6 +82,9 @@ class PymodbusTcpClient(AsyncModbusClientBase):
     def __init__(self, config: ModbusTcpConfig) -> None:
         self._config = config
         self._client: AsyncModbusTcpClient | None = None
+        # BUG-006：防止連續/併發 connect() 重複呼叫底層
+        self._resources_acquired = False
+        self._connect_lock = asyncio.Lock()
 
     def _get_client(self) -> AsyncModbusTcpClient:
         """取得或建立 pymodbus 客戶端"""
@@ -99,20 +102,29 @@ class PymodbusTcpClient(AsyncModbusClientBase):
 
     async def connect(self) -> None:
         """建立 TCP 連線"""
-        client = self._get_client()
-        if not client.connected:
-            logger.info(f"Connecting to {self._config.host}:{self._config.port}...")
-            connected = await client.connect()
-            if not connected:
-                logger.warning(f"Connection failed: {self._config.host}:{self._config.port}")
-                raise ModbusError(f"無法連線到 {self._config.host}:{self._config.port}")
-            logger.info(f"Connected to {self._config.host}:{self._config.port}")
+        # BUG-006：用 lock + flag 保證連續/併發 connect() 只呼叫底層一次
+        async with self._connect_lock:
+            if self._resources_acquired:
+                return  # 本實例已連線過，避免重複呼叫底層
+
+            client = self._get_client()
+            if not client.connected:
+                logger.info(f"Connecting to {self._config.host}:{self._config.port}...")
+                connected = await client.connect()
+                if not connected:
+                    logger.warning(f"Connection failed: {self._config.host}:{self._config.port}")
+                    raise ModbusError(f"無法連線到 {self._config.host}:{self._config.port}")
+                logger.info(f"Connected to {self._config.host}:{self._config.port}")
+
+            self._resources_acquired = True
 
     async def disconnect(self) -> None:
         """斷開 TCP 連線"""
         if self._client is not None:
             self._client.close()
             logger.info(f"Disconnected from {self._config.host}:{self._config.port}")
+        # BUG-006：重置 flag，使得 disconnect 後仍可再次 connect
+        self._resources_acquired = False
 
     async def is_connected(self) -> bool:
         """檢查連線狀態"""
