@@ -30,7 +30,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev
+        run: uv sync --group dev
 
       - name: Run Ruff (lint)
         run: uv run ruff check .
@@ -78,7 +78,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --frozen --group dev --all-extras
+        run: uv sync --group dev --all-extras
 
       - name: Run tests with coverage
         run: uv run pytest tests/ -v -n auto --cov=csp_lib --cov-report=xml --cov-report=term
