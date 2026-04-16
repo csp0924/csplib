@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 
 class TransformStep(Protocol):
@@ -187,11 +187,20 @@ class BitExtractTransform:
     bit_offset: int
     bit_length: int = 1
 
+    # 最大可操作位元上限：對應 4 個 16-bit register 的組合
+    _MAX_BIT_WIDTH: ClassVar[int] = 64
+
     def __post_init__(self) -> None:
         if self.bit_offset < 0:
             raise ValueError(f"bit_offset 必須 >= 0，收到: {self.bit_offset}")
         if self.bit_length < 1:
             raise ValueError(f"bit_length 必須 >= 1，收到: {self.bit_length}")
+        total = self.bit_offset + self.bit_length
+        if total > self._MAX_BIT_WIDTH:
+            raise ValueError(
+                f"bit_offset({self.bit_offset}) + bit_length({self.bit_length}) = {total} "
+                f"超過可操作範圍上限 {self._MAX_BIT_WIDTH}"
+            )
 
     @property
     def mask(self) -> int:

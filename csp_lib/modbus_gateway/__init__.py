@@ -43,6 +43,7 @@ from .config import (
 from .errors import (
     GatewayError,
     RegisterConflictError,
+    RegisterNotWritableError,
     WriteRejectedError,
 )
 from .hooks import CallbackHook, RedisPublishHook, StatePersistHook
@@ -62,6 +63,7 @@ __all__ = [
     # Errors
     "GatewayError",
     "RegisterConflictError",
+    "RegisterNotWritableError",
     "WriteRejectedError",
     # Config
     "RegisterType",

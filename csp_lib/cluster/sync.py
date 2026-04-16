@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.core._numeric import safe_float
 
 from .config import ClusterConfig
 
@@ -290,6 +291,25 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             except asyncio.TimeoutError:
                 pass
 
+    @staticmethod
+    def _parse_json_field(field: str, raw: Any) -> Any | None:
+        """Best-effort JSON 解析；失敗時 log warning 並回傳 None。"""
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.warning(f"ClusterStateSubscriber: {field} JSON 解析失敗 {e!r}, raw={raw!r}")
+            return None
+
+    @staticmethod
+    def _parse_float_field(field: str, raw: Any, default: float) -> float:
+        """Best-effort float 轉換；非法值 log warning 並回傳 ``default``。"""
+        result = safe_float(raw, None)
+        if result is None:
+            if raw is not None:
+                logger.warning(f"ClusterStateSubscriber: {field} 解析失敗, raw={raw!r}")
+            return default
+        return result
+
     async def _poll_all(self) -> None:
         """讀取所有叢集狀態"""
         snap = ClusterSnapshot()
@@ -297,31 +317,27 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
         # Leader identity
         leader_raw = await self._redis.get(self._config.redis_key("leader"))
         if leader_raw is not None:
-            try:
-                leader_data = json.loads(leader_raw)
+            leader_data = self._parse_json_field("leader", leader_raw)
+            if isinstance(leader_data, dict):
                 snap.leader_id = leader_data.get("instance_id")
                 snap.elected_at = leader_data.get("elected_at")
-            except (json.JSONDecodeError, TypeError):
-                pass
 
         # Mode state
         mode_data = await self._redis.hgetall(self._config.redis_key("mode_state"))
         if mode_data:
             raw_base = mode_data.get("base_modes")
             if isinstance(raw_base, str):
-                try:
-                    snap.base_modes = json.loads(raw_base)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                parsed = self._parse_json_field("base_modes", raw_base)
+                if parsed is not None:
+                    snap.base_modes = parsed
             elif isinstance(raw_base, list):
                 snap.base_modes = raw_base
 
             raw_overrides = mode_data.get("overrides")
             if isinstance(raw_overrides, str):
-                try:
-                    snap.override_names = json.loads(raw_overrides)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                parsed = self._parse_json_field("overrides", raw_overrides)
+                if parsed is not None:
+                    snap.override_names = parsed
             elif isinstance(raw_overrides, list):
                 snap.override_names = raw_overrides
 
@@ -333,10 +349,9 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
         if prot_data:
             raw_rules = prot_data.get("triggered_rules")
             if isinstance(raw_rules, str):
-                try:
-                    snap.triggered_rules = json.loads(raw_rules)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                parsed = self._parse_json_field("triggered_rules", raw_rules)
+                if parsed is not None:
+                    snap.triggered_rules = parsed
             elif isinstance(raw_rules, list):
                 snap.triggered_rules = raw_rules
 
@@ -344,26 +359,16 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             if isinstance(raw_modified, bool):
                 snap.protection_was_modified = raw_modified
             elif isinstance(raw_modified, str):
-                try:
-                    snap.protection_was_modified = json.loads(raw_modified)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+                parsed = self._parse_json_field("was_modified", raw_modified)
+                if parsed is not None:
+                    snap.protection_was_modified = parsed
 
         # Last command
         cmd_data = await self._redis.hgetall(self._config.redis_key("last_command"))
         if cmd_data:
-            try:
-                snap.p_target = float(cmd_data.get("p_target", 0.0))
-            except (ValueError, TypeError):
-                pass
-            try:
-                snap.q_target = float(cmd_data.get("q_target", 0.0))
-            except (ValueError, TypeError):
-                pass
-            try:
-                snap.command_timestamp = float(cmd_data.get("timestamp", 0.0))
-            except (ValueError, TypeError):
-                pass
+            snap.p_target = self._parse_float_field("p_target", cmd_data.get("p_target"), 0.0)
+            snap.q_target = self._parse_float_field("q_target", cmd_data.get("q_target"), 0.0)
+            snap.command_timestamp = self._parse_float_field("command_timestamp", cmd_data.get("timestamp"), 0.0)
 
         # Auto stop
         auto_stop_raw = await self._redis.get(self._config.redis_key("auto_stop_active"))

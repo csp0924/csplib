@@ -41,6 +41,8 @@ def _server_config(port: int = _PORT) -> GatewayServerConfig:
 
 
 def _hr_reg(name: str, address: int, data_type=None, **kw) -> GatewayRegisterDef:
+    # v0.7.3 SEC-006: 預設 writable=True 供整合測試的寫入功能驗證
+    kw.setdefault("writable", True)
     return GatewayRegisterDef(
         name=name,
         address=address,

@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-05
-version: ">=0.7.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 
 ---
 
@@ -476,6 +476,7 @@ from csp_lib.modbus_gateway import (
     GatewayError,
     RegisterConflictError,
     WriteRejectedError,
+    RegisterNotWritableError,          # v0.7.3 SEC-006
     # Config
     RegisterType,
     GatewayRegisterDef,

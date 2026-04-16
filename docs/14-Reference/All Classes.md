@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-05
-version: ">=0.7.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 
 ---
 
@@ -180,6 +180,7 @@ SORT file.name ASC
 | [[StatePersistHook]] | 狀態持久化鉤子 |
 | [[RedisSubscriptionSource]] | Redis 訂閱資料來源 |
 | [[PollingCallbackSource]] | 輪詢回呼資料來源 |
+| [[GatewayConfig\|RegisterNotWritableError]] | EMS 寫入 writable=False register 時拋出（v0.7.3） |
 
 ### Modbus Server（v0.5.2）
 

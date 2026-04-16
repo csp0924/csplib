@@ -15,6 +15,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.modbus_gateway.config import WatchdogConfig
 
 logger = get_logger(__name__)
@@ -118,10 +119,14 @@ class CommunicationWatchdog:
         logger.info("Watchdog stopped")
 
     async def _check_loop(self) -> None:
-        """Internal periodic check loop."""
+        """Internal periodic check loop.
+
+        採用絕對時間錨定（work-first）避免時序漂移。
+        """
+        anchor = time.monotonic()
+        n = 0
         try:
             while True:
-                await asyncio.sleep(self._config.check_interval)
                 elapsed = self._clock() - self._last_comm
 
                 if elapsed > self._config.timeout_seconds and not self._timed_out:
@@ -141,6 +146,9 @@ class CommunicationWatchdog:
                             await cb()
                         except Exception:
                             logger.opt(exception=True).warning("Watchdog recover callback failed")
+
+                delay, anchor, n = next_tick_delay(anchor, n, self._config.check_interval)
+                await asyncio.sleep(delay)
         except asyncio.CancelledError:
             pass
 

@@ -166,15 +166,28 @@ class TestFFCalibrationStrategy:
 
     @pytest.mark.asyncio
     async def test_deactivate_during_stepping_does_not_write_ff(self):
-        """Interrupting calibration should NOT update compensator."""
+        """校準中途中斷不應更新 compensator。"""
 
         class FakeCompensator:
+            """模擬 PowerCompensator 的 public API（v0.7.3 BUG-007）"""
+
             def __init__(self):
                 self._ff_table = {1: 1.0}
-                self.saved = False
+                self.update_calls: list[tuple[int, float, bool]] = []
+                self.persist_calls: int = 0
 
+            def update_ff_bin(self, bin_idx, ff_ratio, *, persist=False):
+                self.update_calls.append((bin_idx, ff_ratio, persist))
+                self._ff_table[bin_idx] = ff_ratio
+                if persist:
+                    self.persist_calls += 1
+
+            def persist_ff_table(self):
+                self.persist_calls += 1
+
+            # 保留舊 API 供 _finish() 當前實作使用（相容過渡期）
             def _save_ff_table(self):
-                self.saved = True
+                self.persist_calls += 1
 
         comp = FakeCompensator()
         cal = FFCalibrationStrategy(
@@ -185,23 +198,36 @@ class TestFFCalibrationStrategy:
         await cal.on_activate()
         assert cal.state == "stepping"
 
-        # Interrupt before completion
+        # 中途中斷
         await cal.on_deactivate()
         assert cal.state == "idle"
-        assert comp._ff_table[1] == 1.0  # unchanged
-        assert not comp.saved
+        assert comp._ff_table[1] == 1.0  # 未被更新
+        assert comp.persist_calls == 0
 
     @pytest.mark.asyncio
     async def test_compensator_ff_table_updated_on_completion(self):
-        """Completed calibration writes FF table to compensator."""
+        """校準完成後寫入 compensator FF table。"""
 
         class FakeCompensator:
+            """模擬 PowerCompensator 的 public API（v0.7.3 BUG-007）"""
+
             def __init__(self):
                 self._ff_table = {1: 1.0}
-                self.saved = False
+                self.update_calls: list[tuple[int, float, bool]] = []
+                self.persist_calls: int = 0
 
+            def update_ff_bin(self, bin_idx, ff_ratio, *, persist=False):
+                self.update_calls.append((bin_idx, ff_ratio, persist))
+                self._ff_table[bin_idx] = ff_ratio
+                if persist:
+                    self.persist_calls += 1
+
+            def persist_ff_table(self):
+                self.persist_calls += 1
+
+            # 保留舊 API 供 _finish() 當前實作使用（相容過渡期）
             def _save_ff_table(self):
-                self.saved = True
+                self.persist_calls += 1
 
         comp = FakeCompensator()
         cal = FFCalibrationStrategy(
@@ -220,8 +246,8 @@ class TestFFCalibrationStrategy:
         ctx = _make_context(measurement=990.0)
         cal.execute(ctx)  # 1 cycle → DONE
 
-        assert comp._ff_table[1] != 1.0  # updated
-        assert comp.saved
+        assert comp._ff_table[1] != 1.0  # 已更新
+        assert comp.persist_calls >= 1
 
     @pytest.mark.asyncio
     async def test_settle_wait_skips_cycles(self):

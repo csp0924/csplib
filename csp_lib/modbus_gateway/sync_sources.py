@@ -88,6 +88,16 @@ class RedisSubscriptionSource:
             except Exception:
                 pass
 
+    async def _dispatch(self, name: str, value: Any) -> None:
+        """單次 register 寫入；未知 register / HOLDING 拒絕均不中斷呼叫端 loop。"""
+        assert self._update_cb is not None
+        try:
+            await self._update_cb(name, value)
+        except KeyError:
+            logger.debug(f"RedisSync: unknown register '{name}', skipping")
+        except PermissionError as e:
+            logger.warning(f"RedisSync: rejected write — {e}")
+
     async def _handle_message(self, data: Any) -> None:
         if self._update_cb is None:
             return
@@ -99,31 +109,20 @@ class RedisSubscriptionSource:
             if isinstance(payload, dict) and "register" in payload and "value" in payload:
                 # Single: {"register": "soc", "value": 75.5}
                 # 優先匹配，避免被 batch_mode shorthand 吞掉
-                name = payload["register"]
-                value = payload["value"]
-                try:
-                    await self._update_cb(name, value)
-                except KeyError:
-                    logger.debug(f"RedisSync: unknown register '{name}', skipping")
+                await self._dispatch(payload["register"], payload["value"])
             elif isinstance(payload, list):
                 # Batch: [{"register": "soc", "value": 75.5}, ...]
                 for item in payload:
                     name = item.get("register")
                     value = item.get("value")
                     if name is not None and value is not None:
-                        try:
-                            await self._update_cb(name, value)
-                        except KeyError:
-                            logger.debug(f"RedisSync: unknown register '{name}', skipping")
+                        await self._dispatch(name, value)
             elif self._batch_mode and isinstance(payload, dict):
                 # Key-value shorthand: {"soc": 75.5, "soh": 98.0}
                 for name, value in payload.items():
-                    try:
-                        await self._update_cb(name, value)
-                    except KeyError:
-                        logger.debug(f"RedisSync: unknown register '{name}', skipping")
+                    await self._dispatch(name, value)
 
-        except (json.JSONDecodeError, TypeError, KeyError):
+        except (json.JSONDecodeError, TypeError):
             logger.opt(exception=True).warning(f"RedisSync: invalid message on {self._channel}")
 
 
@@ -165,6 +164,16 @@ class PollingCallbackSource:
                 pass
         logger.info("PollingCallbackSource stopped")
 
+    async def _dispatch(self, name: str, value: Any) -> None:
+        """單次 register 寫入；未知 register / HOLDING 拒絕均不中斷 poll loop。"""
+        assert self._update_cb is not None
+        try:
+            await self._update_cb(name, value)
+        except KeyError:
+            logger.debug(f"PollingSync: unknown register '{name}', skipping")
+        except PermissionError as e:
+            logger.warning(f"PollingSync: rejected write — {e}")
+
     async def _poll_loop(self) -> None:
         try:
             while True:
@@ -173,10 +182,7 @@ class PollingCallbackSource:
                     if self._update_cb and values:
                         for name, value in values.items():
                             if value is not None:
-                                try:
-                                    await self._update_cb(name, value)
-                                except KeyError:
-                                    logger.debug(f"PollingSync: unknown register '{name}', skipping")
+                                await self._dispatch(name, value)
                 except Exception:
                     logger.opt(exception=True).warning("PollingCallbackSource: callback error")
                 await asyncio.sleep(self._interval)

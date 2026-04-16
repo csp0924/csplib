@@ -4,8 +4,8 @@ tags:
   - layer/modbus-gateway
   - status/complete
 source: csp_lib/modbus_gateway/validators.py, csp_lib/modbus_gateway/pipeline.py, csp_lib/modbus_gateway/hooks.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # WriteValidation
@@ -24,17 +24,22 @@ version: ">=0.5.0"
 EMS 原始寫入 (raw registers)
   │
   ├─ 1. 解碼 raw registers → physical value
-  ├─ 2. WriteValidator chain — 全部 accept 才繼續
-  ├─ 3. WriteRule clamp/reject — 範圍限制
-  ├─ 4. 更新 GatewayRegisterMap
-  └─ 5. 收集變更 → dispatch WriteHook
+  ├─ 2. writable gate — reg_def.writable=False 時 RegisterNotWritableError + skip（v0.7.3）
+  ├─ 3. WriteValidator chain — 全部 accept 才繼續
+  ├─ 4. WriteRule clamp/reject — 範圍限制
+  ├─ 5. 更新 GatewayRegisterMap
+  └─ 6. 收集變更 → dispatch WriteHook
 ```
+
+> [!note] v0.7.3 SEC-006
+> writable gate（步驟 2）在 validator chain 之前插入，`writable=False` 的 register 直接被 skip 並記錄 WARNING，不會進入後續驗證步驟。
 
 ### `process_write(address, values)` 流程
 
 1. 透過 [[RegisterMap|GatewayRegisterMap]] 的 `find_affected_registers()` 找出受影響的暫存器
 2. 對每個受影響暫存器：
    - 從 raw values 提取對應 slice 並解碼為物理值
+   - **檢查 `reg_def.writable`**（v0.7.3）— `False` 時記錄 WARNING 並 skip，不進入驗證鏈
    - 依序執行所有 `WriteValidator.validate()` — 任一拒絕即跳過此暫存器
    - 執行對應 `WriteRule.apply()` — 可 clamp 或 reject
    - 更新 RegisterMap

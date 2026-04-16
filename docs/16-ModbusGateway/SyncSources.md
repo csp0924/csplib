@@ -4,8 +4,8 @@ tags:
   - layer/modbus-gateway
   - status/complete
 source: csp_lib/modbus_gateway/sync_sources.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # SyncSources
@@ -33,6 +33,12 @@ class DataSyncSource(Protocol):
 `UpdateRegisterCallback` 型別：`Callable[[str, Any], Awaitable[None]]`
 
 當 [[ModbusGatewayServer]] 啟動時，會對每個 DataSyncSource 呼叫 `start(callback)`，將內部的 `_update_register_callback` 注入。DataSyncSource 使用此 callback 更新暫存器值。
+
+> [!warning] v0.7.3 SEC-018：DataSyncSource 限制寫入 INPUT registers
+> `_update_register_callback` 從 v0.7.3 起對 HOLDING register 寫入會拋出 `PermissionError`。
+> Sync sources 只能更新 INPUT registers（設備狀態回報用），HOLDING registers（EMS 指令用）的值應透過 `server.set_register()` 或 EMS 寫入流程管理。
+>
+> **遷移**：若原本用 `PollingCallbackSource` / `RedisSubscriptionSource` 回傳包含 HOLDING register 名稱的 dict，需移除該 key，並改用 `server.set_register()` 初始化 HOLDING register 初始值。
 
 來源：`csp_lib/modbus_gateway/protocol.py`
 

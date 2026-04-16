@@ -6,6 +6,74 @@
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-04-16
+
+### Added
+
+- **`PowerCompensator.update_ff_bin(bin_idx, ff_ratio, *, persist=False)`** (BUG-007): Public API to update a single FF table bin with validation chain (clamp to `[ff_min, ff_max]`, rejects NaN/Inf/negative, raises `TypeError`/`ValueError` for invalid inputs). Replaces direct `_ff_table` access anti-pattern. Optionally persists after update.
+- **`PowerCompensator.persist_ff_table()`** (BUG-007): Public API to persist the current FF table via the configured `FFTableRepository`. No-op if no repository is configured; preserves existing log-swallow semantics.
+- **`Command.is_fallback: bool = False`** (BUG-011): New field on the `Command` frozen dataclass. `StrategyExecutor` sets `is_fallback=True` on the zero-command returned when strategy execution raises an exception, allowing callers (monitoring, cluster status) to distinguish a normal zero-command from an error fallback. `with_p()` / `with_q()` propagate this flag automatically via `dataclasses.replace`.
+- **`GatewayRegisterDef.writable: bool = False`** (SEC-006): Per-register EMS write permission flag. `WritePipeline` checks this before the validator chain; registers with `writable=False` raise `RegisterNotWritableError` and are skipped. Defaults to `False` (secure-by-default). Only applies to HOLDING registers — INPUT registers are always read-only at the protocol level.
+- **`RegisterNotWritableError(WriteRejectedError)`** (SEC-006): New exception raised when EMS attempts to write a HOLDING register whose `writable` flag is `False`. Carries `register_name` and `address` attributes. Exported from `csp_lib.modbus_gateway`.
+
+### Fixed
+
+- **`FFCalibrationStrategy._finish()` private API access** (BUG-007): Refactored to call `compensator.update_ff_bin()` and `compensator.persist_ff_table()` instead of directly accessing `_ff_table` and `_save_ff_table`. No behavioral change.
+- **`ClusterStateSubscriber` silent JSON parse failure** (BUG-008): `except (json.JSONDecodeError, TypeError): pass` blocks replaced with `logger.warning(...)`. Corrupt Redis data is now surfaced in logs instead of silently ignored.
+- **`BitExtractTransform.__post_init__()` missing upper bound validation** (BUG-009): Added `bit_offset + bit_length <= 64` check; raises `ValueError` for out-of-range bit fields instead of silently returning 0.
+- **`CoilToBitmaskAggregator.coil_names` mutable list** (BUG-010): Field type changed from `list[str]` to `tuple[str, ...]`; `__post_init__` automatically converts a plain list to tuple, preventing external mutation.
+- **`StrategyExecutor` exception fallback reuses last command** (BUG-011): On strategy execution exception, the executor now returns `Command(p_target=0.0, q_target=0.0, is_fallback=True)` instead of `self._last_command`. `_last_command` is not updated on the fallback path, so the next cycle's `context.last_command` remains the last successfully computed command.
+- **`SinkManager._poll_remote_level` timing drift** (WI-TD-104): Replaced fixed `asyncio.sleep(poll_interval)` with `next_tick_delay` absolute time anchoring, eliminating cumulative drift from HTTP/Redis request latency.
+- **`DeviceGroup._sequential_loop` timing drift** (WI-TD-106): Replaced fixed per-step sleep with `next_tick_delay` anchoring; device group step intervals now compensate for `read_once` execution time.
+- **`CommunicationWatchdog._check_loop` timing drift** (WI-TD-107): Fixed-sleep replaced with `next_tick_delay`; 24-hour drift at 1 s interval reduced from ~432 s to negligible.
+- **`SystemMonitor._run_loop` timing drift** (WI-TD-108): Fixed-sleep replaced with `next_tick_delay`; metrics collection + Redis publish latency (100–500 ms) no longer accumulates as drift.
+
+### Changed
+
+- **`ModbusGatewayServer` sync source HOLDING register write banned** (SEC-018): `_update_register_callback` now raises `PermissionError` if a sync source attempts to write a HOLDING register. Sync sources (e.g. `RedisSubscriptionSource`, `PollingCallbackSource`) are restricted to INPUT registers only. Attempting to write a HOLDING register logs an error and raises to prevent a poisoned Redis channel from injecting arbitrary setpoints.
+- **`examples/11_modbus_gateway.py`**: Three HOLDING registers (`p_command`, `q_command`, `mode`) updated with `writable=True` to reflect the new SEC-006 default.
+
+### Refactored (internal)
+
+- **`ClusterStateSubscriber._poll_all` 去重**：5 個重複的 `try/except json.loads` 區塊與 3 個 `try/except float()` 區塊抽出為 `_parse_json_field` / `_parse_float_field` 兩個 static helpers；float 解析改用 `csp_lib.core._numeric.safe_float`，減少 ~20 行樣板。
+- **`PowerCompensator._learn_if_steady` / `_learn_from_saturation` clamp 統一**：將 `max(lo, min(hi, x))` 模式改為既有 `csp_lib.core._numeric.clamp()`，與新公開的 `update_ff_bin()` 保持一致。
+- **`PowerCompensator.update_ff_bin` 清理**：移除 `ff_ratio is None` 的不可達檢查（型別標註已排除 `None`）。
+- **`RedisSubscriptionSource._handle_message` 與 `PollingCallbackSource._poll_loop` 去重**：三個 single/list/kv 分支共用的 `try/except KeyError/PermissionError` 抽出為 `_dispatch(name, value)` helper；未知 register 與 HOLDING 拒絕的處理邏輯統一。
+- **`DeviceGroup._sequential_loop` catch-up 路徑 yield**：`next_tick_delay` 回傳 `delay==0`（嚴重漂移重設）時顯式 `await asyncio.sleep(0)`，確保 `_stop_event.set()` 在每個 tick 邊界都能被 scheduler 感知。
+
+### Security
+
+- **(SEC-006) `GatewayRegisterDef.writable` defaults to `False`**: All HOLDING registers are now write-protected by default. EMS can only write registers explicitly marked `writable=True`. See migration note below.
+- **(SEC-011) `GatewayServerConfig.host` defaults to `"127.0.0.1"`**: Gateway no longer binds to all interfaces by default. Deployments that need external EMS access must explicitly set `host="0.0.0.0"` or a specific interface address. A `WARNING` is logged whenever `host="0.0.0.0"` is used at runtime.
+- **(SEC-018) Sync sources cannot write HOLDING registers**: Prevents a compromised Redis channel or polling callback from overwriting EMS-controlled setpoint registers via the gateway's sync source path.
+
+#### ⚠️ Behavior Changes (Migration Required)
+
+**GatewayRegisterDef.writable defaults to False (SEC-006)**
+Previously, every HOLDING register was implicitly writable by EMS. Starting in v0.7.3, you MUST explicitly set `writable=True` on registers intended for EMS write access.
+
+```python
+# Before v0.7.3 — HOLDING register was writable by default
+GatewayRegisterDef("p_command", 0, Int32(), RegisterType.HOLDING)
+
+# v0.7.3+ — must opt in
+GatewayRegisterDef("p_command", 0, Int32(), RegisterType.HOLDING, writable=True)
+```
+
+**GatewayServerConfig.host defaults to "127.0.0.1" (SEC-011)**
+Previously defaulted to `"0.0.0.0"` (all interfaces). If your gateway needs to accept connections from other hosts, explicitly set `host="0.0.0.0"` or a specific interface address.
+
+```python
+# Before v0.7.3 — bound to all interfaces implicitly
+GatewayServerConfig(port=502)
+
+# v0.7.3+ — must opt in for external access
+GatewayServerConfig(host="0.0.0.0", port=502)
+```
+
+**Sync sources restricted to INPUT registers (SEC-018)**
+If you previously used `PollingCallbackSource` or `RedisSubscriptionSource` to push values into HOLDING registers, those writes will now raise `PermissionError`. Move HOLDING register updates to `server.set_register()` or the write pipeline.
+
 ## [0.7.2] - 2026-04-16
 
 ### Added
