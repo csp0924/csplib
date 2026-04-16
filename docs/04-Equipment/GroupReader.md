@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/transport/reader.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # GroupReader
@@ -64,6 +64,13 @@ data = await reader.read_many(groups)
 ```
 
 ---
+
+> [!note] v0.7.2 並行讀取 partial failure 修復（SEC-016）
+> `read_many()` 並行模式（`max_concurrent_reads > 1`）改用 `asyncio.gather(..., return_exceptions=True)` 並逐結果檢查。
+> - 單一群組讀取失敗（`Exception`）：記錄 warning 並跳過，其他成功結果正常回傳
+> - `BaseException`（`CancelledError` / `SystemExit` / `KeyboardInterrupt`）：正常 re-raise，不被吞掉
+>
+> 修復前：任何群組失敗都使整批 `latest_values` 不更新，控制策略被迫基於陳舊資料決策。
 
 ## 相關頁面
 

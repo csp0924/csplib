@@ -5,7 +5,8 @@ tags:
   - status/complete
 source: csp_lib/equipment/device/can_device.py
 created: 2026-03-06
-updated: 2026-03-06
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # AsyncCANDevice
@@ -104,7 +105,7 @@ CAN RX 每次收到訊框（可達 ~100Hz）都直接發射事件，會壓垮下
 
 ### 解法
 
-`_snapshot_loop` 按 `config.read_interval` 週期執行，與 Modbus `AsyncModbusDevice._read_loop` 對齊：
+`_snapshot_loop` 按 `config.read_interval` 週期執行，與 Modbus `AsyncModbusDevice._read_loop` 對齊（v0.7.2 起使用絕對時間錨定，詳見下方說明）：
 
 ```
 每個 read_interval:
@@ -124,6 +125,9 @@ CAN:     RX callback (每次收到訊框)    → VALUE_CHANGE only
 > [!important] 事件語意差異
 > - **`VALUE_CHANGE`**：由 RX 回調即時發射，僅在值實際變化時觸發
 > - **`READ_COMPLETE`**：由 snapshot loop 週期性發射，包含完整快照，頻率 = `1 / read_interval`
+
+> [!note] v0.7.2 絕對時間錨定（WI-TD-101）
+> `_snapshot_loop` 改採 work-first 絕對時間錨定（`next_tick_delay()`），sleep delay 補償 work 耗時，消除累積時序漂移。落後超過一個 interval 時自動重設 anchor，避免 burst catch-up。修復前 interval=0.1s, work=0.02s 情境下 1 小時可漂移 720s。
 
 ---
 

@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/system/dynamic_protection.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # DynamicSOCProtection
@@ -63,8 +63,13 @@ version: ">=0.5.0"
 
 | 鍵 | 型別 | 預設值 | 說明 |
 |----|------|--------|------|
-| `soc_max`（可自訂） | `float` | `95.0` | SOC 上限 (%) |
-| `soc_min`（可自訂） | `float` | `5.0` | SOC 下限 (%) |
+| `soc_max`（可自訂） | `float` | `95.0` | SOC 上限 (%)，自動 clamp 至 `[0, 100]` |
+| `soc_min`（可自訂） | `float` | `5.0` | SOC 下限 (%)，自動 clamp 至 `[0, 100]` |
+
+> [!note] v0.7.2 值域保護
+> `_resolve_limits()` 在使用前對 `soc_max` / `soc_min` 執行兩層防禦：
+> 1. **NaN/Inf 過濾**（SEC-013a）：非有限值直接使用預設值，避免 `<` 比較永遠 False 而無聲繞過保護
+> 2. **值域 clamp**（SEC-004）：clamp 至 `[0, 100]`，防止 EMS 寫入 `soc_max=200` 導致上限保護永不觸發
 
 ## Quick Example
 
@@ -84,6 +89,12 @@ soc_protection = DynamicSOCProtection(config)
 # 註冊至 ProtectionGuard
 guard = ProtectionGuard(rules=[soc_protection])
 ```
+
+> [!warning] v0.7.2 行為變更（BUG-003）
+> `soc_max < soc_min` 的反轉配置現在會直接拋出 `ValueError`（原本靜默運作但會同時禁止充放電，導致 BESS 癱瘓）。請在系統啟動前確認 SOC 上下限配置正確。
+
+> [!note] v0.7.2 NaN/Inf fail-safe（SEC-013a）
+> context 中 SOC 值為非有限 float（NaN/Inf）時，保護規則不強制觸發，也不重置，而是 passthrough 沿用上次的 `_is_triggered` 狀態，避免感測器短暫異常導致誤停機。
 
 ## 相關連結
 

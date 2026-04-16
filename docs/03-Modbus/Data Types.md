@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/modbus/types/
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.0
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # Data Types
@@ -93,6 +93,9 @@ from csp_lib.modbus import DynamicUInt
 uint48 = DynamicUInt(48)
 print(uint48.register_count)  # 3
 ```
+
+> [!note] v0.7.2 LOW_FIRST register order 修復（BUG-001）
+> `assemble_from_registers()` / `split_to_registers()` 的 fallback 路徑（register_count ≠ 2/4）原本遺漏了 `LOW_FIRST` reverse 步驟，導致 `DynamicInt(96)` 等大型資料型別在 `RegisterOrder.LOW_FIRST` 設定下解碼錯誤。v0.7.2 統一所有長度走相同的 reverse 邏輯，解碼結果與預期一致。
 
 ### 字串型別
 
