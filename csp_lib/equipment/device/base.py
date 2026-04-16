@@ -689,13 +689,20 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         return raw_values
 
     async def _read_loop(self) -> None:
-        """讀取循環（含自動重連）"""
+        """讀取循環（含自動重連）。
+
+        採用絕對時間錨定（absolute time anchoring）避免時序漂移：
+        - 正常讀取：以 ``next_time`` 追蹤下一個 tick 目標，sleep delay 補償 read 耗時。
+        - 慢 iteration 後：若錯過至少一個完整 tick 週期，跳到下一個 tick 而非
+          補償累積漂移（`next_time = now + interval`）。
+        - 重連成功：重設 ``next_time`` 避免 burst catch-up（斷線期間的 tick 全部跳過）。
+        """
         interval = self._config.read_interval
         reconnect_interval = self._config.reconnect_interval
 
-        while not self._stop_event.is_set():
-            start_time = time.monotonic()
+        next_time = time.monotonic() + interval
 
+        while not self._stop_event.is_set():
             # 未連線時嘗試重連
             if not self._client_connected:
                 try:
@@ -705,6 +712,8 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
                         self._device_responsive = True
                         self._consecutive_failures = 0
                     await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
+                    # 重連成功後重設 anchor，避免 burst catch-up
+                    next_time = time.monotonic() + interval
                 except DeviceConnectionError:
                     # 重連失敗，等待後重試
                     await asyncio.sleep(reconnect_interval)
@@ -720,9 +729,19 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
             except Exception as e:
                 logger.warning(f"[{self._config.device_id}] Read loop error: {e}")
 
-            elapsed = time.monotonic() - start_time
-            sleep_time = max(0, interval - elapsed)
-            await asyncio.sleep(sleep_time)
+            # 計算到下一個 tick 的剩餘秒數
+            remaining = next_time - time.monotonic()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+                next_time += interval
+            elif remaining <= -interval:
+                # 落後超過一個週期，跳到下一個 tick 不補償累積漂移
+                next_time = time.monotonic() + interval
+                await asyncio.sleep(0)
+            else:
+                # 輕微落後，不睡但讓出 event loop，推進 tick
+                await asyncio.sleep(0)
+                next_time += interval
 
     async def _handle_read_failure(self, error_msg: str) -> None:
         """處理讀取失敗：累加計數 + 記錄失敗時間 + 發送錯誤事件"""

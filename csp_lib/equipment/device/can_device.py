@@ -447,9 +447,18 @@ class AsyncCANDevice(AlarmMixin):
     # =============== Snapshot Loop ===============
 
     async def _snapshot_loop(self) -> None:
-        """週期性發射 READ_COMPLETE + 告警評估 + RX timeout 檢查"""
+        """週期性發射 READ_COMPLETE + 告警評估 + RX timeout 檢查。
+
+        採用絕對時間錨定（absolute time anchoring）避免時序漂移：
+        anchor 為 loop 起點，第 N 次 tick 的目標時間 = anchor + N × interval。
+        採「先做再等」work-first 語義，sleep delay 自動補償 work 耗時。
+        若落後超過一個 interval，重設 anchor 避免 burst catch-up。
+        """
+        interval = self._config.read_interval
+        # 錨定到 loop 起點（work-first 語義）
+        anchor = time.monotonic()
+        n = 0
         while True:
-            await asyncio.sleep(self._config.read_interval)
             values = self._latest_values.copy()
 
             self._emitter.emit(
@@ -463,6 +472,20 @@ class AsyncCANDevice(AlarmMixin):
 
             await self._evaluate_alarm(values)
             self._check_rx_timeout()
+
+            n += 1
+            next_time = anchor + n * interval
+            remaining = next_time - time.monotonic()
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            elif remaining <= -interval:
+                # 落後超過一個週期，重設 anchor 避免 burst catch-up
+                anchor = time.monotonic()
+                n = 0
+                await asyncio.sleep(0)
+            else:
+                # 輕微落後（<interval），讓出 event loop 但不睡
+                await asyncio.sleep(0)
 
     def _check_rx_timeout(self) -> None:
         """檢查 RX 是否超時，若超時則標記為無回應"""

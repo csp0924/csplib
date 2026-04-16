@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Awaitable, Callable
 
@@ -106,18 +107,41 @@ class PeriodicSendScheduler:
         await self._send_callback(can_id, data)
 
     async def _send_loop(self, can_id: int, interval: float) -> None:
-        """單一 CAN ID 的發送循環"""
+        """單一 CAN ID 的發送循環。
+
+        採用絕對時間錨定（absolute time anchoring）避免時序漂移：
+        anchor 為 loop 起點，第 N 次 tick 目標 = anchor + N × interval。
+        採「先做再等」work-first 語義，sleep delay 補償 send_callback 耗時。
+        exception 路徑保持固定 interval 避免緊迴圈，並重新錨定。
+        """
+        anchor = time.monotonic()
+        n = 0
         while self._running:
             try:
                 if can_id not in self._paused:
                     data = self._frame_buffer.get_frame(can_id)
                     await self._send_callback(can_id, data)
-                await asyncio.sleep(interval)
+                n += 1
+                next_time = anchor + n * interval
+                remaining = next_time - time.monotonic()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                elif remaining <= -interval:
+                    # 落後超過一個週期，重設 anchor 避免 burst catch-up
+                    anchor = time.monotonic()
+                    n = 0
+                    await asyncio.sleep(0)
+                else:
+                    # 輕微落後（<interval），讓出 event loop 但不睡
+                    await asyncio.sleep(0)
             except asyncio.CancelledError:
                 break
             except Exception:
                 logger.opt(exception=True).warning("定期發送失敗: can_id=0x{:03X}", can_id)
+                # 錯誤後保持 fixed interval 避免緊迴圈，並重新錨定
                 await asyncio.sleep(interval)
+                anchor = time.monotonic()
+                n = 0
 
 
 __all__ = [
