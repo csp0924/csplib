@@ -27,6 +27,7 @@ from csp_lib.manager.base import DeviceEventSubscriber
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
     from csp_lib.manager.base import BatchUploader
+    from csp_lib.mongo.local_buffer import LocalBufferedUploader
 
 logger = get_logger(__name__)
 
@@ -95,15 +96,24 @@ class DataUploadManager(DeviceEventSubscriber):
         ```
     """
 
-    def __init__(self, uploader: BatchUploader) -> None:
+    def __init__(
+        self,
+        uploader: BatchUploader,
+        *,
+        buffered_uploader: LocalBufferedUploader | None = None,
+    ) -> None:
         """
         初始化資料上傳管理器
 
         Args:
             uploader: 批次上傳器實例（實作 BatchUploader Protocol）
+            buffered_uploader: 選擇性的 ``LocalBufferedUploader``。若提供，
+                所有 enqueue 會改走本地 buffer，避免下游 MongoDB 故障時
+                資料遺失。
         """
         super().__init__()
-        self._uploader = uploader
+        # 優先使用 buffered_uploader 以啟用 local buffer fail-safe
+        self._uploader: BatchUploader = buffered_uploader if buffered_uploader is not None else uploader
         self._device_collection: dict[str, str] = {}  # device_id -> collection_name
         self._last_values: dict[str, dict[str, Any]] = {}  # device_id -> last values
         self._save_intervals: dict[str, float] = {}  # device_id -> save_interval (seconds)

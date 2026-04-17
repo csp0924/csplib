@@ -3,7 +3,7 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-17
+updated: 2026-04-18
 version: ">=0.8.2"
 
 ---
@@ -422,8 +422,51 @@ from csp_lib.mongo import (
     MongoBatchUploader,
     UploaderConfig,
     WriteResult,
+    # 本地緩衝（v0.8.2）
+    LocalBufferedUploader,
+    LocalBufferConfig,
+    LocalBufferStore,          # v0.8.2 — backend-agnostic Protocol（@runtime_checkable）
+    BufferedRow,               # v0.8.2 — fetch_pending 回傳的 frozen dataclass
+    SqliteBufferStore,         # v0.8.2 — aiosqlite 實作，需 csp_lib[local-buffer]
+    MongoBufferStore,          # v0.8.2 — 本地 mongod 實作，已含於 csp_lib[mongo]
 )
 ```
+
+### 本地緩衝（Local Buffer，v0.8.2）
+
+`LocalBufferedUploader` 本身只需 `csp_lib[mongo]`；backend 視部署場景選擇：
+
+```bash
+uv pip install 'csp0924_lib[mongo]'               # MongoBufferStore（本地 mongod backend）
+uv pip install 'csp0924_lib[local-buffer]'        # SqliteBufferStore（aiosqlite）
+uv pip install 'csp0924_lib[mongo,local-buffer]'  # 兩種 backend 都可用
+```
+
+```python
+# 完整用法（SqliteBufferStore backend）
+from csp_lib.mongo import (
+    LocalBufferedUploader,     # v0.8.2 — 本地緩衝 + 背景 replay
+    LocalBufferConfig,         # v0.8.2 — replay / cleanup 行為配置（不含 db_path）
+    LocalBufferStore,          # v0.8.2 — @runtime_checkable Protocol
+    BufferedRow,               # v0.8.2 — 單筆資料快照 frozen dataclass
+    SqliteBufferStore,         # v0.8.2 — aiosqlite WAL 實作，需 csp_lib[local-buffer]
+    MongoBufferStore,          # v0.8.2 — 本地 mongod 實作，已含於 csp_lib[mongo]
+)
+
+# 或從子模組 import（等價）
+from csp_lib.mongo.local_buffer import (
+    LocalBufferedUploader,
+    LocalBufferConfig,
+    LocalBufferStore,
+    BufferedRow,
+    SqliteBufferStore,
+    MongoBufferStore,          # v0.8.2
+)
+```
+
+> [!note] v0.8.2 extras 異動
+> `[mongo]` 已瘦身為純 `motor>=3.3.0`；`aiosqlite` 移至獨立 `[local-buffer]` extra。
+> 詳見 [[LocalBufferedUploader#安裝需求]]。
 
 ---
 

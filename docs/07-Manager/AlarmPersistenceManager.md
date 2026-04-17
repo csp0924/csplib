@@ -4,7 +4,9 @@ tags:
   - layer/manager
   - status/complete
 source: csp_lib/manager/alarm/persistence.py
-updated: 2026-04-04
+created: 2026-02-17
+updated: 2026-04-18
+version: ">=0.8.2"
 ---
 
 # AlarmPersistenceManager
@@ -67,15 +69,20 @@ updated: 2026-04-04
 | `repository` | `AlarmRepository` | 告警資料存取層（遵循 AlarmRepository Protocol） |
 | `dispatcher` | `NotificationSender \| None` | 通知分發器（可選），用於告警觸發/解除時發送通知 |
 | `config` | `AlarmPersistenceConfig \| None` | 告警持久化配置（可選，預設使用 `AlarmPersistenceConfig()`） |
+| `buffered_uploader` | `LocalBufferedUploader \| None` | 選擇性 SQLite 緩衝層（keyword-only，v0.8.2 新增）。提供時，告警建立/解除成功後額外以 `write_immediate` 寫一份不可變歷史記錄到 `config.history_collection`；寫入失敗僅 log warning，不影響主流程 |
+
+> [!note] v0.8.2：告警歷史不遺失
+> 注入 `buffered_uploader` 後，每次告警建立或解除，都會在 repository 操作成功後，額外呼叫 `buffered_uploader.write_immediate(history_collection, ...)` 寫一份快照。即使 MongoDB 斷線，此紀錄也會先落地 SQLite，背景 replay 後再寫入 MongoDB。
 
 ### AlarmPersistenceConfig
 
-`@dataclass(frozen=True)` 配置。
+`@dataclass(frozen=True, slots=True)` 配置。
 
 | 欄位 | 型別 | 預設 | 說明 |
 |------|------|------|------|
 | `disconnect_code` | `str` | `"DISCONNECT"` | 斷線告警的固定代碼 |
 | `disconnect_name` | `str` | `"設備斷線"` | 斷線告警的顯示名稱 |
+| `history_collection` | `str` | `"alarm_history"` | 告警歷史記錄 collection 名稱（v0.8.2 新增）；`__post_init__` 驗證非空字串 |
 
 ## 訂閱的事件
 
@@ -106,8 +113,49 @@ manager.subscribe(device)
 manager.unsubscribe(device)
 ```
 
+## Common Patterns
+
+### 啟用告警歷史不遺失（v0.8.2）
+
+WAN/MongoDB 不穩定時，注入 `LocalBufferedUploader` 確保告警歷史記錄不遺失：
+
+```python
+from csp_lib.manager.alarm import AlarmPersistenceManager, MongoAlarmRepository, AlarmPersistenceConfig
+from csp_lib.mongo import MongoBatchUploader
+from csp_lib.mongo.local_buffer import LocalBufferedUploader, LocalBufferConfig
+
+mongo_uploader = MongoBatchUploader(db=mongo_db).start()
+buffer_cfg = LocalBufferConfig(db_path="./alarm_buffer.db")
+local = LocalBufferedUploader(downstream=mongo_uploader, config=buffer_cfg)
+
+repo = MongoAlarmRepository(db)
+await repo.ensure_indexes()
+
+# 啟動 local buffer 後再建立 manager
+async with local:
+    config = AlarmPersistenceConfig(
+        history_collection="alarm_history",  # 預設值，可自訂
+    )
+    manager = AlarmPersistenceManager(
+        repository=repo,
+        config=config,
+        buffered_uploader=local,  # keyword-only
+    )
+    manager.subscribe(device)
+
+    # 每次告警建立/解除，history_collection 都會有一份副本
+```
+
+## Gotchas / Tips
+
+- `buffered_uploader` 必須在 `AlarmPersistenceManager` 使用期間保持啟動狀態（`async with local`）；停止後寫入會因 SQLite 連線關閉而失敗並 log warning
+- `history_collection` 記錄的是**事件快照**（triggered/resolved），不是告警的最新狀態；查最新狀態應用 `repository`
+- 告警歷史 collection 建議搭配 `ensure_indexes()` 建立 `_idempotency_key` 唯一稀疏索引，確保 replay 冪等
+
 ## 相關頁面
 
 - [[DeviceEventSubscriber]] — 基底類別
+- [[LocalBufferedUploader]] — SQLite WAL 本地緩衝層（v0.8.2）
+- [[MongoBatchUploader]] — 底層 MongoDB 上傳器
 - [[UnifiedDeviceManager]] — 自動串接告警管理器
 - [[_MOC Storage]] — 告警資料最終儲存至 MongoDB

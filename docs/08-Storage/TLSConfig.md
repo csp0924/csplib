@@ -2,10 +2,10 @@
 tags:
   - type/config
   - layer/storage
-  - status/complete
+  - status/stale
 source: csp_lib/redis/client.py
 updated: 2026-04-04
-version: 0.6.0
+version: ">=0.6.0"
 ---
 
 # TLSConfig

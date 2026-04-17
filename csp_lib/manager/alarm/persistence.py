@@ -33,6 +33,7 @@ from .repository import AlarmRepository
 from .schema import AlarmRecord, AlarmType
 
 if TYPE_CHECKING:
+    from csp_lib.mongo.local_buffer import LocalBufferedUploader
     from csp_lib.notification import NotificationSender
 
 logger = get_logger(__name__)
@@ -67,6 +68,8 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         repository: AlarmRepository,
         dispatcher: NotificationSender | None = None,
         config: AlarmPersistenceConfig | None = None,
+        *,
+        buffered_uploader: LocalBufferedUploader | None = None,
     ) -> None:
         """
         初始化告警持久化管理器
@@ -75,11 +78,15 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             repository: 告警資料存取層（遵循 AlarmRepository Protocol）
             dispatcher: 通知分發器（可選），用於告警觸發/解除時發送通知
             config: 告警持久化配置（可選，預設使用 AlarmPersistenceConfig()）
+            buffered_uploader: 選擇性的 ``LocalBufferedUploader``。若提供，
+                告警建立/解除成功後會額外寫入 ``history_collection`` 一份
+                不可變歷史記錄，確保即使 MongoDB 斷線也不遺失。
         """
         super().__init__()
         self._repository = repository
         self._dispatcher = dispatcher
         self._config = config or AlarmPersistenceConfig()
+        self._buffered_uploader = buffered_uploader
 
     # ================ 訂閱管理 ================
 
@@ -173,6 +180,8 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         建立告警記錄
 
         透過 repository 寫入告警記錄。若為新告警則記錄 log 並發送通知。
+        當 ``buffered_uploader`` 注入時，額外寫入 history collection
+        作為不可變歷史存檔。
 
         Args:
             record: 告警記錄
@@ -181,12 +190,19 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         if is_new:
             logger.info(f"告警持久化管理器已新增告警: {record.alarm_key}")
             await self._notify(record, _NotifyEvent.TRIGGERED)
+            doc = record.to_document()
+            doc["event"] = _NotifyEvent.TRIGGERED.value
+            if record.timestamp is not None:
+                doc["event_time"] = record.timestamp
+            await self._emit_history(record.alarm_key, doc)
 
     async def _resolve_alarm(self, alarm_key: str, resolved_at: datetime) -> None:
         """
         解除告警記錄
 
         透過 repository 更新告警狀態為已解除。若成功則記錄 log 並發送通知。
+        當 ``buffered_uploader`` 注入時，額外寫入 history collection 的
+        「resolved」事件記錄。
 
         Args:
             alarm_key: 告警唯一鍵
@@ -196,6 +212,34 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         if success:
             logger.info(f"告警持久化管理器已解除告警: {alarm_key}")
             await self._notify_resolved(alarm_key, resolved_at)
+            # alarm_key 格式："<device_id>:<alarm_type>:<alarm_code>"；
+            # 解除事件不一定有 record，故手動組一份最小 doc
+            device_id = alarm_key.split(":", 1)[0] or alarm_key
+            doc: dict[str, object] = {
+                "alarm_key": alarm_key,
+                "device_id": device_id,
+                "event": _NotifyEvent.RESOLVED.value,
+                "event_time": resolved_at,
+                "resolved_timestamp": resolved_at,
+            }
+            await self._emit_history(alarm_key, doc)
+
+    async def _emit_history(self, alarm_key: str, doc: dict[str, object]) -> None:
+        """
+        將一份已組好的 history doc 透過 ``buffered_uploader`` 寫出
+
+        失敗僅記 log，不影響主流程。
+
+        Args:
+            alarm_key: 用於 log 追蹤的告警 key
+            doc: 已準備好的 history document
+        """
+        if self._buffered_uploader is None:
+            return
+        try:
+            await self._buffered_uploader.write_immediate(self._config.history_collection, doc)
+        except Exception as e:
+            logger.warning(f"告警 history buffer 寫入失敗（{alarm_key}）: {e}")
 
     async def _notify(self, record: AlarmRecord, event: _NotifyEvent) -> None:
         """發送告警通知（非阻塞，失敗僅記 log）"""

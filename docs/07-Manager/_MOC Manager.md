@@ -3,7 +3,8 @@ tags:
   - type/moc
   - layer/manager
   - status/complete
-updated: 2026-04-04
+updated: 2026-04-18
+version: ">=0.8.2"
 ---
 
 # Manager 模組總覽
@@ -32,8 +33,8 @@ Manager 模組建構在 [[_MOC Equipment|Equipment]] 與 [[_MOC Integration|Inte
 
 | 頁面 | 類型 | 說明 |
 |------|------|------|
-| [[AlarmPersistenceManager]] | class | 告警持久化（MongoDB + Redis pub/sub） |
-| [[DataUploadManager]] | class | 批次資料上傳至 MongoDB |
+| [[AlarmPersistenceManager]] | class | 告警持久化（MongoDB + 可選告警歷史不遺失，v0.8.2 新增 `buffered_uploader`） |
+| [[DataUploadManager]] | class | 批次資料上傳至 MongoDB（v0.8.2 新增 `buffered_uploader` opt-in） |
 | [[WriteCommandManager]] | class | 外部命令路由（Redis → 設備寫入） |
 | [[StateSyncManager]] | class | Redis 即時狀態同步 |
 
