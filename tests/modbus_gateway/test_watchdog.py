@@ -1,13 +1,40 @@
-"""Tests for CommunicationWatchdog -- timeout detection and callbacks."""
+"""Tests for CommunicationWatchdog -- timeout detection and callbacks.
+
+時序敏感測試改用 fake ``asyncio.sleep``（僅 yield event loop，不實際等待）以消除
+OS scheduler 精度與 CPU 負載對測試穩定性的影響。僅 patch ``watchdog`` 模組內的
+``asyncio.sleep``，不影響 ``wait_for_condition`` 等 helper 的真實等待。
+"""
 
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from csp_lib.modbus_gateway.config import WatchdogConfig
 from csp_lib.modbus_gateway.watchdog import CommunicationWatchdog
 from tests.helpers import wait_for_condition
+
+# Module-load 時保存真正的 asyncio.sleep reference。
+# patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", ...) 實際上會修改
+# asyncio module singleton 的 sleep attribute（全域生效），若 fake 內部再呼叫
+# asyncio.sleep 會遞迴撞自己。因此必須在 patch 發生前抓取原始函式。
+_REAL_SLEEP = asyncio.sleep
+
+
+async def _yield_sleep(delay: float) -> None:
+    """Fake ``asyncio.sleep`` — 只 yield event loop 不實際等待。
+
+    用於 patch ``csp_lib.modbus_gateway.watchdog.asyncio.sleep``，讓 ``_check_loop``
+    每 iteration 只 yield 一次而非睡 ``check_interval``，消除 Windows scheduler 精度
+    造成的 flaky。
+    """
+    await _REAL_SLEEP(0)
+
+
+async def _advance_check_loops(n: int = 5) -> None:
+    """讓出 event loop ``n`` 次，確保 watchdog ``_check_loop`` 至少跑 ``n`` 輪。"""
+    for _ in range(n):
+        await _REAL_SLEEP(0)
 
 
 class TestWatchdogProperties:
@@ -79,13 +106,14 @@ class TestWatchdogTimeout:
         )
         cb = AsyncMock()
         wd.on_timeout(cb)
-        await wd.start()
-        try:
-            t[0] = 115.0  # 15s elapsed > 10s timeout
-            await wait_for_condition(lambda: cb.called, message="timeout callback should fire")
-            assert wd.is_timed_out is True
-        finally:
-            await wd.stop()
+        with patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", _yield_sleep):
+            await wd.start()
+            try:
+                t[0] = 115.0  # 15s elapsed > 10s timeout
+                await wait_for_condition(lambda: cb.called, message="timeout callback should fire")
+                assert wd.is_timed_out is True
+            finally:
+                await wd.stop()
 
     @pytest.mark.asyncio
     async def test_no_timeout_when_touched(self):
@@ -97,17 +125,18 @@ class TestWatchdogTimeout:
         )
         cb = AsyncMock()
         wd.on_timeout(cb)
-        await wd.start()
-        try:
-            t[0] = 105.0
-            wd.touch()  # resets last_comm to 105
-            t[0] = 110.0  # only 5s elapsed, < 10s timeout
-            # 必要的短等待：測試「不觸發」需讓 check loop 至少跑一輪（check_interval=0.01s）
-            await asyncio.sleep(0.02)
-            cb.assert_not_called()
-            assert wd.is_timed_out is False
-        finally:
-            await wd.stop()
+        with patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", _yield_sleep):
+            await wd.start()
+            try:
+                t[0] = 105.0
+                wd.touch()  # resets last_comm to 105
+                t[0] = 110.0  # only 5s elapsed, < 10s timeout
+                # 讓 check loop 跑幾輪，確認「不觸發」語意（check_interval 已 patch 為 yield）
+                await _advance_check_loops(10)
+                cb.assert_not_called()
+                assert wd.is_timed_out is False
+            finally:
+                await wd.stop()
 
 
 class TestWatchdogRecovery:
@@ -123,19 +152,20 @@ class TestWatchdogRecovery:
         recover_cb = AsyncMock()
         wd.on_timeout(timeout_cb)
         wd.on_recover(recover_cb)
-        await wd.start()
-        try:
-            # Trigger timeout
-            t[0] = 115.0
-            await wait_for_condition(lambda: wd.is_timed_out, message="watchdog should timeout")
+        with patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", _yield_sleep):
+            await wd.start()
+            try:
+                # Trigger timeout
+                t[0] = 115.0
+                await wait_for_condition(lambda: wd.is_timed_out, message="watchdog should timeout")
 
-            # Touch to recover
-            wd.touch()  # last_comm = 115
-            t[0] = 116.0  # elapsed = 1s < 10s
-            await wait_for_condition(lambda: recover_cb.called, message="recover callback should fire")
-            assert wd.is_timed_out is False
-        finally:
-            await wd.stop()
+                # Touch to recover
+                wd.touch()  # last_comm = 115
+                t[0] = 116.0  # elapsed = 1s < 10s
+                await wait_for_condition(lambda: recover_cb.called, message="recover callback should fire")
+                assert wd.is_timed_out is False
+            finally:
+                await wd.stop()
 
 
 class TestWatchdogCallbackExceptions:
@@ -149,11 +179,12 @@ class TestWatchdogCallbackExceptions:
         )
         bad_cb = AsyncMock(side_effect=RuntimeError("boom"))
         wd.on_timeout(bad_cb)
-        await wd.start()
-        try:
-            t[0] = 115.0
-            await wait_for_condition(lambda: bad_cb.called, message="timeout callback should fire")
-            assert wd._task is not None
-            assert not wd._task.done()
-        finally:
-            await wd.stop()
+        with patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", _yield_sleep):
+            await wd.start()
+            try:
+                t[0] = 115.0
+                await wait_for_condition(lambda: bad_cb.called, message="timeout callback should fire")
+                assert wd._task is not None
+                assert not wd._task.done()
+            finally:
+                await wd.stop()
