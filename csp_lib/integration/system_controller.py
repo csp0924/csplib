@@ -631,7 +631,9 @@ class SystemController(AsyncLifecycleMixin):
                 await self._heartbeat.start()
             self._run_task = asyncio.create_task(self._executor.run())
             logger.info("SystemController started.")
-        except BaseException:
+        except Exception:
+            # 僅處理 Exception：CancelledError/KeyboardInterrupt/SystemExit 不做 rollback
+            # （中止訊號下繼續 await 另一個 coroutine 會再拋 CancelledError，遮蔽原例外）。
             logger.opt(exception=True).warning("SystemController._on_start failed; rolling back partial startup.")
             try:
                 await self._on_stop()
