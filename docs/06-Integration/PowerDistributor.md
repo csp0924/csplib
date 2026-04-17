@@ -6,8 +6,8 @@ tags:
   - status/complete
 source: csp_lib/integration/distributor.py
 created: 2026-03-06
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # PowerDistributor
@@ -129,7 +129,7 @@ distributor = ProportionalDistributor(rated_key="rated_p")
 
 ### `SOCBalancingDistributor`
 
-> [!info] v0.4.2 新增
+> [!info] v0.4.2 新增 | v0.8.2 新增 `soc_source` 參數
 
 在按額定容量比例分配的基礎上，根據各設備 SOC 偏差**調整 P 分配權重**，Q 仍按額定容量比例分配。適合電池儲能系統（BESS）。
 
@@ -155,6 +155,13 @@ distributor = SOCBalancingDistributor(
 )
 ```
 
+**型別別名（v0.8.2）**
+
+```python
+SOCSource = Callable[[DeviceSnapshot], float | None]
+# 回傳 None 代表此來源無法提供，退回內建 capability 讀取路徑
+```
+
 | 建構參數 | 型別 | 預設 | 說明 |
 |----------|------|------|------|
 | `rated_key` | `str` | `"rated_p"` | metadata 中額定功率的 key 名稱 |
@@ -163,6 +170,33 @@ distributor = SOCBalancingDistributor(
 | `gain` | `float` | `2.0` | SOC 偏差增益係數（越大偏差影響越顯著） |
 | `per_device_max_p` | `float \| None` | `None` | 單台設備最大有功功率限制 (kW)，`None` 表示不限制 |
 | `per_device_max_q` | `float \| None` | `None` | 單台設備最大無功功率限制 (kVar)，`None` 表示不限制 |
+| `soc_source` | `SOCSource \| None` | `None` | 自訂 SOC 取值函式（v0.8.2），`None` 時走原 capability 路徑 |
+
+#### 自訂 SOC 來源（v0.8.2）
+
+`soc_source` 適用於 SOC 不在 capability slot 的場景（如 SOC 在 `latest_values` 或外部快取）。
+
+```python
+from csp_lib.integration.distributor import SOCBalancingDistributor, DeviceSnapshot
+
+def soc_from_latest(snapshot: DeviceSnapshot) -> float | None:
+    """從 latest_values 讀取 SOC（而非 capability slot）"""
+    return snapshot.latest_values.get("battery_soc")
+
+distributor = SOCBalancingDistributor(
+    rated_key="rated_p",
+    gain=2.0,
+    soc_source=soc_from_latest,   # v0.8.2
+)
+```
+
+> [!warning] 例外不攔截
+> `soc_source` 拋出的例外**不會被攔截**，直接傳播給 `distribute()` 呼叫方。
+> 這是刻意設計：分配決策必須基於明確成功取得的狀態，silent corruption 遠比例外更危險。
+
+**SOC 讀取優先順序**：
+1. 若提供 `soc_source`，優先呼叫。回傳非 `None` 值則直接使用。
+2. `soc_source` 回傳 `None` 時，退回預設 capability 讀取路徑（`capabilities[soc_capability][soc_slot]`）。
 
 #### 硬體限幅與溢出轉移
 

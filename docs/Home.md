@@ -1,7 +1,7 @@
 ---
 tags: [type/reference, status/complete]
 updated: 2026-04-17
-version: ">=0.8.1"
+version: ">=0.8.2"
 ---
 # CSP Library 知識庫
 
@@ -37,6 +37,7 @@ version: ">=0.8.1"
 
 附加模組: Mongo · Redis · Cluster · Monitor · Notification
          Modbus Server · Modbus Gateway · GUI · Statistics · gRPC
+         Alarm（v0.8.2）
 ```
 
 ## 模組導覽
@@ -64,6 +65,7 @@ version: ">=0.8.1"
 | 🧪 | [[_MOC Modbus Server]] | 模擬測試伺服器 |
 | 🔌 | [[_MOC Modbus Gateway]] | Modbus TCP Gateway（EMS/SCADA 整合） |
 | 📈 | [[_MOC Statistics]] | 統計引擎與追蹤器 |
+| 🔔 | [[_MOC Alarm]] | In-process 告警聚合與 Redis 橋接（v0.8.2） |
 
 ### 使用資源
 
@@ -89,5 +91,5 @@ version: ">=0.8.1"
 - **作者**: Cheng Sin Pang (鄭善淜)
 - **聯絡**: donaldpang123@gmail.com
 - **Python**: 3.13+
-- **目前版本**: 0.8.1
+- **目前版本**: 0.8.2
 - **授權**: Apache-2.0

@@ -4,8 +4,9 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/strategies/droop_strategy.py
-updated: 2026-04-06
-version: ">=0.7.1"
+created: 2026-02-17
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # DroopStrategy
@@ -71,11 +72,41 @@ total       = clamp(total, -rated_power, rated_power)
 | 模式 | `PERIODIC` |
 | 週期 | `max(1, int(config.interval))` 秒 |
 
+## 動態參數化（v0.8.2）
+
+透過注入 `params: RuntimeParameters` 與 `param_keys` 映射，EMS 可在執行期即時覆蓋配置欄位，不需重建 strategy 實例。
+
+### 建構參數（v0.8.2 新增）
+
+| 參數 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `params` | `RuntimeParameters \| None` | `None` | 執行期參數容器；None 時等同舊版行為 |
+| `param_keys` | `Mapping[str, str] \| None` | `None` | `{config 欄位名: runtime key}` 映射；僅列需動態化欄位，未列者 fallback config |
+| `droop_scale` | `float` | `1.0` | droop 欄位倍率（例：EMS 傳百分比 5.0 → `droop_scale=0.01` → droop=0.05） |
+| `enabled_key` | `str \| None` | `None` | `params[enabled_key]` falsy → 跳過 droop 計算，僅輸出 `schedule_p` |
+| `schedule_p_key` | `str \| None` | `None` | `params[schedule_p_key]` 提供排程 P (kW)，優先於 `context.extra["schedule_p"]` |
+
+> [!note] 對稱性驗證
+> `params` 與 `param_keys` 必須同時提供或同時省略；不對稱時建構期拋 `ValueError`。
+
+### 可動態化的欄位
+
+`param_keys` 可對應 `DroopConfig` 的全部 5 個浮點欄位：`f_base`、`droop`、`deadband`、`rated_power`、`max_droop_power`。
+
+### update_config()
+
+```python
+strategy.update_config(new_config)
+```
+
+熱更新配置並重建 resolver，保留已注入的 `params` 與 `droop_scale` 設定。
+
 ## Quick Example
 
 ```python
 from csp_lib.controller.strategies import DroopStrategy, DroopConfig
 
+# 靜態配置（原有用法，不受 v0.8.2 影響）
 config = DroopConfig(
     f_base=60.0,
     droop=0.05,        # 5% 下垂係數
@@ -84,8 +115,25 @@ config = DroopConfig(
 )
 strategy = DroopStrategy(config)
 
-# 註冊至 ModeManager
-controller.register_mode("droop", strategy, ModePriority.NORMAL)
+# 動態配置（v0.8.2）：EMS 透過 RuntimeParameters 即時調整
+from csp_lib.core import RuntimeParameters
+
+params = RuntimeParameters()
+params.set("droop_pct", 5.0)      # EMS 端傳入百分比
+params.set("droop_enabled", True)
+
+dynamic_strategy = DroopStrategy(
+    config,
+    params=params,
+    param_keys={"droop": "droop_pct"},  # droop 欄位 ← params["droop_pct"]
+    droop_scale=0.01,                    # 5.0 × 0.01 = 0.05
+    enabled_key="droop_enabled",
+    schedule_p_key="schedule_p",
+)
+
+# EMS 即時調整：下次 execute() 自動反映新值（不需重建 strategy）
+params.set("droop_pct", 3.0)  # droop 變為 0.03
+params.set("droop_enabled", False)  # 暫停 droop，僅輸出 schedule_p
 ```
 
 ## 相關連結

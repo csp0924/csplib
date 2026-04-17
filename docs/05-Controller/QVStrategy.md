@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/qv_strategy.py
 created: 2026-02-17
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # QVStrategy
@@ -59,11 +59,26 @@ else:
     Q = 0  (死區)
 ```
 
+## 動態參數化（v0.8.2）
+
+注入 `params` 與 `param_keys` 後，每次 `execute()` 即時從 `RuntimeParameters` 讀取配置欄位。
+
+### 建構參數（v0.8.2 新增）
+
+| 參數 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `params` | `RuntimeParameters \| None` | `None` | 執行期參數容器 |
+| `param_keys` | `Mapping[str, str] \| None` | `None` | `{config 欄位名: runtime key}` 映射 |
+| `enabled_key` | `str \| None` | `None` | falsy → 立即輸出 `Command(0, 0)`，停止 Q 輸出 |
+
+`param_keys` 可對應 `QVConfig` 所有欄位：`nominal_voltage`、`v_set`、`droop`、`v_deadband`、`q_max_ratio`。
+
 ## 程式碼範例
 
 ```python
 from csp_lib.controller import QVStrategy, QVConfig
 
+# 靜態配置（原有用法）
 strategy = QVStrategy(QVConfig(
     nominal_voltage=380,
     v_set=100,     # Target voltage (%)
@@ -72,6 +87,23 @@ strategy = QVStrategy(QVConfig(
     q_max_ratio=0.5,
 ))
 # Reads voltage from context.extra["voltage"]
+```
+
+```python
+# 動態配置（v0.8.2）
+from csp_lib.core import RuntimeParameters
+
+params = RuntimeParameters()
+params.set("qv_enabled", True)
+params.set("qv_droop", 5.0)
+
+strategy = QVStrategy(
+    QVConfig(nominal_voltage=380),
+    params=params,
+    param_keys={"droop": "qv_droop"},
+    enabled_key="qv_enabled",
+)
+# EMS 停用 QV：params.set("qv_enabled", False)
 ```
 
 ## 資料來源

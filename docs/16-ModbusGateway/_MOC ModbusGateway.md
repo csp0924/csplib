@@ -29,7 +29,8 @@ ModbusGatewayServer (AsyncLifecycleMixin, pymodbus TCP)
   │     └── WriteHook dispatch (事件鉤子)
   ├── DataSyncSource ─── 外部資料同步
   │     ├── RedisSubscriptionSource
-  │     └── PollingCallbackSource
+  │     ├── PollingCallbackSource
+  │     └── RegistryAggregatingSource (v0.8.2)
   └── CommunicationWatchdog ─── 通訊看門狗
 ```
 
@@ -61,6 +62,7 @@ ModbusGatewayServer (AsyncLifecycleMixin, pymodbus TCP)
 | 頁面 | 說明 |
 |------|------|
 | [[SyncSources]] | 外部資料來源同步：`RedisSubscriptionSource`, `PollingCallbackSource` |
+| [[RegistryAggregatingSource]] | DeviceRegistry 聚合同步：按 trait 輪詢設備，聚合 latest_values 寫入 register（v0.8.2） |
 
 ---
 

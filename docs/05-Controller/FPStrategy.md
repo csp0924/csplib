@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/strategies/fp_strategy.py
 created: 2026-02-17
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # FPStrategy
@@ -69,11 +69,26 @@ P(%)
        f1  f2 f3 f4 f5  f6
 ```
 
+## 動態參數化（v0.8.2）
+
+注入 `params` 與 `param_keys` 後，每次 `execute()` 即時讀取頻率-功率曲線控制點。
+
+### 建構參數（v0.8.2 新增）
+
+| 參數 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `params` | `RuntimeParameters \| None` | `None` | 執行期參數容器 |
+| `param_keys` | `Mapping[str, str] \| None` | `None` | `{config 欄位名: runtime key}` 映射 |
+| `enabled_key` | `str \| None` | `None` | falsy → 立即輸出 `Command(0, 0)`，停止 P 輸出 |
+
+`param_keys` 可對應 `FPConfig` 所有欄位：`f_base`、`f1~f6`、`p1~p6`。
+
 ## 程式碼範例
 
 ```python
 from csp_lib.controller import FPStrategy, FPConfig
 
+# 靜態配置（原有用法）
 strategy = FPStrategy(FPConfig(
     f_base=60.0,
     f1=-0.5, f2=-0.25, f3=-0.02, f4=0.02, f5=0.25, f6=0.5,
@@ -81,6 +96,24 @@ strategy = FPStrategy(FPConfig(
 ))
 # Reads frequency from context.extra["frequency"]
 # Outputs power percentage, converted to kW via system_base
+```
+
+```python
+# 動態配置（v0.8.2）：EMS 動態調整死區邊界
+from csp_lib.core import RuntimeParameters
+
+params = RuntimeParameters()
+params.set("afc_enabled", True)
+params.set("afc_f3", -0.02)     # 死區下限
+params.set("afc_f4", 0.02)      # 死區上限
+
+strategy = FPStrategy(
+    FPConfig(f_base=60.0),
+    params=params,
+    param_keys={"f3": "afc_f3", "f4": "afc_f4"},
+    enabled_key="afc_enabled",
+)
+# EMS 拓寬死區：params.set("afc_f3", -0.05); params.set("afc_f4", 0.05)
 ```
 
 ## 資料來源
