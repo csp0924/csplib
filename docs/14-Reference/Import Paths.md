@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-17
-version: ">=0.8.0"
+version: ">=0.8.1"
 
 ---
 
@@ -356,6 +356,17 @@ from csp_lib.integration import (
     DeviceDataFeed,
     # 心跳服務（v0.4.2）
     HeartbeatService,
+    # 心跳配置與 Protocol（v0.8.1）
+    HeartbeatConfig,                          # v0.8.1 — 結構化心跳配置
+    HeartbeatValueGenerator,                  # v0.8.1 — 值產生器 Protocol
+    ToggleGenerator,                          # v0.8.1
+    IncrementGenerator,                       # v0.8.1
+    ConstantGenerator,                        # v0.8.1
+    HeartbeatTarget,                          # v0.8.1 — 寫入目標 Protocol
+    DeviceHeartbeatTarget,                    # v0.8.1
+    # 命令刷新（v0.8.1）
+    CommandRefreshService,                    # v0.8.1 — reconciler 服務
+    CommandRefreshConfig,                     # v0.8.1 — reconciler 配置
     # 功率分配器（v0.4.2）
     DeviceSnapshot,
     PowerDistributor,
@@ -504,6 +515,8 @@ from csp_lib.modbus_gateway import (
     # Sync Sources
     RedisSubscriptionSource,
     PollingCallbackSource,
+    # HeartbeatTarget 實作（v0.8.1）
+    GatewayRegisterHeartbeatTarget,    # v0.8.1 — 對 ModbusGatewayServer register 寫心跳值
 )
 ```
 

@@ -46,6 +46,7 @@ from .errors import (
     RegisterNotWritableError,
     WriteRejectedError,
 )
+from .heartbeat_target import GatewayRegisterHeartbeatTarget
 from .hooks import CallbackHook, RedisPublishHook, StatePersistHook
 from .protocol import (
     DataSyncSource,
@@ -90,4 +91,6 @@ __all__ = [
     # Sync Sources
     "RedisSubscriptionSource",
     "PollingCallbackSource",
+    # Heartbeat target
+    "GatewayRegisterHeartbeatTarget",
 ]

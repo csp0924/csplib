@@ -21,6 +21,13 @@ from csp_lib.core import get_logger
 from csp_lib.core.errors import DeviceError
 from csp_lib.equipment.device.capability import HEARTBEAT
 
+from .heartbeat_generators import (
+    ConstantGenerator,
+    HeartbeatValueGenerator,
+    IncrementGenerator,
+    ToggleGenerator,
+)
+from .heartbeat_targets import HeartbeatTarget
 from .schema import HeartbeatMapping, HeartbeatMode
 
 if TYPE_CHECKING:
@@ -61,6 +68,8 @@ class HeartbeatService:
         mode: HeartbeatMode = HeartbeatMode.TOGGLE,
         constant_value: int = 1,
         increment_max: int = 65535,
+        *,
+        targets: list[HeartbeatTarget] | None = None,
     ) -> None:
         """
         初始化心跳服務
@@ -73,6 +82,9 @@ class HeartbeatService:
             mode: 能力發現模式使用的心跳值模式
             constant_value: CONSTANT 模式的固定值
             increment_max: INCREMENT 模式的最大計數值
+            targets: 獨立於 ``mappings`` 的 ``HeartbeatTarget`` 列表
+                （例如 Modbus Gateway register target）。每個 target 預設
+                以共用的 ToggleGenerator 產生值。
         """
         self._registry = registry
         self._mappings = mappings or []
@@ -81,11 +93,22 @@ class HeartbeatService:
         self._cap_mode = mode
         self._cap_constant_value = constant_value
         self._cap_increment_max = increment_max
+        self._targets: list[HeartbeatTarget] = list(targets) if targets else []
 
+        # 三組 per-path 狀態：
+        #   _counters              — legacy device/trait mapping 的計數器
+        #   _mapping_generator_cache — target-bound mapping 未指定 value_generator
+        #                             時，依 mode 建立並 cache 的 generator；
+        #                             不 cache 會每 tick 重建導致 TOGGLE 永遠回 1
+        #   _targets_generator     — 獨立 targets 共用的 ToggleGenerator，
+        #                             以 target.identity 作 key 隔離狀態
         self._counters: dict[str, int] = {}
         self._paused = False
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+        self._targets_generator: HeartbeatValueGenerator = ToggleGenerator()
+        # key 用 id(mapping)：frozen dataclass 生命週期綁在 self._mappings，id 穩定
+        self._mapping_generator_cache: dict[int, HeartbeatValueGenerator] = {}
 
     @property
     def is_running(self) -> bool:
@@ -128,8 +151,11 @@ class HeartbeatService:
             logger.info("HeartbeatService resumed.")
 
     def reset_counters(self) -> None:
-        """重置所有心跳計數器"""
+        """重置所有心跳計數器（legacy counters + generator cache + targets generator）"""
         self._counters.clear()
+        for generator in self._mapping_generator_cache.values():
+            generator.reset()
+        self._targets_generator.reset()
 
     async def _run(self) -> None:
         """心跳主迴圈"""
@@ -145,8 +171,16 @@ class HeartbeatService:
 
     async def _send_heartbeats(self) -> None:
         """對所有設備寫入心跳值"""
-        # 1. 明確映射
+        # 1. 明確映射（mappings）
         for mapping in self._mappings:
+            # 1a. target 路徑：用 generator + target.write 直接寫入
+            if mapping.target is not None:
+                generator = self._resolve_generator(mapping)
+                value = generator.next(mapping.target.identity)
+                await mapping.target.write(value)
+                continue
+
+            # 1b. Legacy 路徑：以 device_id / trait + point_name 組合計算值並寫入
             value = self._next_value_for_mapping(mapping)
 
             if mapping.device_id is not None:
@@ -158,13 +192,50 @@ class HeartbeatService:
                 for device in devices:
                     await self._safe_write(device, mapping.point_name, value)
 
-        # 2. 能力發現
+        # 2. 獨立 targets：不經 registry / mapping，直接寫入
+        for target in self._targets:
+            value = self._targets_generator.next(target.identity)
+            await target.write(value)
+
+        # 3. 能力發現
         if self._use_capability:
             devices = self._registry.get_responsive_devices_with_capability(HEARTBEAT)
             for device in devices:
                 point_name = device.resolve_point(HEARTBEAT, "heartbeat")
                 value = self._next_value_for_device(device.device_id)
                 await self._safe_write(device, point_name, value)
+
+    def _resolve_generator(self, mapping: HeartbeatMapping) -> HeartbeatValueGenerator:
+        """取得 mapping 對應的 value generator（per-mapping cache）
+
+        - 若 ``mapping.value_generator`` 已設 → 直接用。
+        - 否則依 ``mapping.mode`` / ``constant_value`` / ``increment_max``
+          建立對應 generator（legacy 相容），並 cache 於
+          ``self._mapping_generator_cache`` 供後續 tick 重用。
+
+        Note:
+            此方法目前僅用於 ``mapping.target`` 路徑；legacy device/trait 路徑
+            仍走 ``_next_value_for_mapping`` 使用 self._counters 以保持行為
+            完全一致（舊版測試依賴 _counters 結構）。
+        """
+        if mapping.value_generator is not None:
+            return mapping.value_generator
+
+        cache_key = id(mapping)
+        cached = self._mapping_generator_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        mode = mapping.mode
+        generator: HeartbeatValueGenerator
+        if mode == HeartbeatMode.TOGGLE:
+            generator = ToggleGenerator()
+        elif mode == HeartbeatMode.INCREMENT:
+            generator = IncrementGenerator(max_value=mapping.increment_max)
+        else:
+            generator = ConstantGenerator(value=mapping.constant_value)
+        self._mapping_generator_cache[cache_key] = generator
+        return generator
 
     def _next_value_for_mapping(self, mapping: HeartbeatMapping) -> int:
         """依據 mapping 模式計算下一個心跳值"""
