@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/executor/strategy_executor.py
 created: 2026-02-17
-updated: 2026-04-16
-version: ">=0.7.3"
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # StrategyExecutor
@@ -18,11 +18,15 @@ version: ">=0.7.3"
 ## 概述
 
 StrategyExecutor 根據策略的 [[ExecutionMode|ExecutionConfig]] 決定執行方式：
-- **PERIODIC**: 固定週期，使用 `asyncio.wait_for` 搭配 stop_event 實現可中斷等待
+- **PERIODIC**: 固定週期，v0.8.0 起使用 `next_tick_delay()` 絕對時間錨定（work-first：啟動後立即執行第一次）
 - **TRIGGERED**: 使用 `asyncio.Event` 等待外部觸發
-- **HYBRID**: 週期執行，但可被 `trigger()` 提前觸發
+- **HYBRID**: 週期執行，但可被 `trigger()` 提前觸發；提前觸發後重設 anchor，下次 tick 從觸發點起算完整 interval
 
 每次執行前會透過 `context_provider` 取得基礎上下文，再以 `dataclasses.replace()` 注入 `last_command` 與 `current_time`。
+
+> [!warning] v0.8.0 行為變更（PERIODIC / HYBRID）
+> v0.8.0 前：啟動後先等待一個 `interval_seconds`，再執行第一次策略。
+> v0.8.0 起：**立即執行**第一次策略（work-first），再按 `next_tick_delay()` 排程後續週期。若上層測試或整合邏輯依賴「啟動後先等 N 秒」的舊語義，需調整。TRIGGERED 模式不受影響。
 
 ## 建構參數
 
@@ -76,7 +80,9 @@ command = await executor.execute_once()
 ```
 run()
  └─ while not stop_event:
-      ├─ wait_for_execution(config)       # 根據 mode 等待
+      ├─ [PERIODIC/HYBRID] 首次立即執行（work-first，v0.8.0）
+      │   之後 next_tick_delay(interval) 絕對時間錨定等待
+      ├─ [TRIGGERED] asyncio.Event 等待 trigger()
       ├─ context_provider()               # 取得上下文
       ├─ replace(last_command, time)      # 注入不可變副本
       ├─ strategy.execute(context)        # 執行策略
@@ -102,10 +108,17 @@ run()
 > 升級後回傳明確的零命令 + `is_fallback=True`。
 > 若上層程式碼依賴異常後仍沿用上次命令的行為，需評估影響。
 
+### 週期漂移修復（v0.8.0）
+
+v0.8.0 前，PERIODIC/HYBRID 以 `asyncio.wait(timeout=interval)` 相對等待，不扣除 `_execute_strategy()` 耗時，導致高頻策略（如 DReg 0.3 s）發生明顯漂移（50 ms exec → 16.7% 漂移）。
+
+v0.8.0 起改用 `csp_lib.core._time_anchor.next_tick_delay()` 絕對時間錨定，與 CAN/PeriodicSender/Modbus read_loop 採相同機制。10 個 cycle 總耗時 drift < 10%（tests 驗證）。
+
 ## 相關連結
 
 - [[Strategy]] — 被管理的策略基礎類別
 - [[StrategyContext]] — 注入策略的上下文
-- [[Command]] — 策略輸出
-- [[ExecutionMode]] — 決定等待方式
+- [[Command]] — 策略輸出（v0.8.0 起支援 NO_CHANGE）
+- [[ExecutionMode]] — 決定等待方式（interval_seconds v0.8.0 改為 float）
 - [[ModeManager]] — 透過 on_strategy_change 回呼與 Executor 協作
+- [[SystemController]] — `attach_read_trigger()` 綁定 EVENT_READ_COMPLETE → `trigger()`

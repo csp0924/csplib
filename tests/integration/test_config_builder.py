@@ -70,15 +70,15 @@ class TestBuilderMutualExclusion:
     """Context/Command mappings require exactly one of device_id or trait."""
 
     def test_map_context_both_device_and_trait_raises(self):
-        """Providing both device_id and trait should raise ValueError."""
+        """v0.8.0：ContextMapping 改用三擇一驗證（device_id/trait/param_key），錯誤訊息更新"""
         builder = SystemControllerConfig.builder()
-        with pytest.raises(ValueError, match="Cannot set both"):
+        with pytest.raises(ValueError, match="Cannot set more than one of device_id / trait / param_key"):
             builder.map_context(point_name="soc", target="soc", device_id="BMS1", trait="bms")
 
     def test_map_context_neither_device_nor_trait_raises(self):
-        """Providing neither device_id nor trait should raise ValueError."""
+        """v0.8.0：ContextMapping 三擇一 — 全部未提供時錯誤訊息更新"""
         builder = SystemControllerConfig.builder()
-        with pytest.raises(ValueError, match="Must set either"):
+        with pytest.raises(ValueError, match="Must set exactly one of device_id / trait / param_key"):
             builder.map_context(point_name="soc", target="soc")
 
     def test_map_command_both_device_and_trait_raises(self):

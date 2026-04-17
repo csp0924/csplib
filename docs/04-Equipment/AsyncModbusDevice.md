@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/base.py
-updated: 2026-04-16
-version: ">=0.7.2"
+updated: 2026-04-17
+version: ">=0.8.0"
 ---
 
 # AsyncModbusDevice
@@ -123,6 +123,21 @@ elif result.status == WriteStatus.VERIFICATION_FAILED:
 
 > [!note] 停用點位保護
 > 對已停用（`disable_point()`）的點位執行寫入操作將被拒絕，`WriteStatus` 會回傳 `VALIDATION_FAILED`。
+
+### NaN/Inf 拒絕（reject_non_finite，v0.8.0）
+
+`ReadPoint.reject_non_finite = True` 時，`AsyncModbusDevice` 在讀到非有限 float（NaN / +Inf / -Inf）時：
+
+1. **保留** `latest_values[point_name]` 舊值
+2. **發 WARNING log**（含 device_id、point 名稱、非法值）
+3. **不觸發** `value_change` 事件
+4. **不送入** 告警評估，`read_once()` 回傳 `effective_values`（reject 的值替換為舊值）
+
+> [!tip] 使用場景
+> 設定在「物理量有界」的 point（SOC、電壓、電流），防止通訊瞬態的 NaN/Inf 污染保護邏輯。
+> 電表 fault code 以 NaN 表達不同 fault 情況時，**不應啟用**此選項（NaN 是合法語義）。
+> 
+> 詳見 [[ReadPoint]] — `reject_non_finite` 欄位說明。
 
 ### ACTIONS 高階動作
 

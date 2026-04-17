@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from csp_lib.controller.core import Command, StrategyContext
+from csp_lib.controller.core import Command, StrategyContext, is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core._numeric import clamp, is_non_finite_float
 
@@ -117,6 +117,11 @@ class DynamicSOCProtection(ProtectionRule):
             self._is_triggered = False
             return command
 
+        # NO_CHANGE：策略不變更 P 軸，SOC 保護不介入
+        if is_no_change(command.p_target):
+            self._is_triggered = False
+            return command
+
         # SEC-013a L4：soc 為非有限 float（NaN/Inf）視同資料不可用，
         # 沿用上次 is_triggered 值並 passthrough command。
         # 不強制觸發保護（避免通訊瞬態 NaN 造成功率閃爍），
@@ -125,7 +130,7 @@ class DynamicSOCProtection(ProtectionRule):
             return command
 
         soc_max, soc_min, wb = self._resolve_limits()
-        p = command.p_target
+        p: float = command.p_target
 
         # SOC 過高：禁止充電
         if soc >= soc_max:
@@ -206,6 +211,11 @@ class GridLimitProtection(ProtectionRule):
         return self._is_triggered
 
     def evaluate(self, command: Command, context: StrategyContext) -> Command:
+        # NO_CHANGE：策略不變更 P 軸，功率限制不介入
+        if is_no_change(command.p_target):
+            self._is_triggered = False
+            return command
+
         pct_raw = self._params.get(self._limit_key, 100)
 
         # SEC-013a L4：grid_limit_pct 為非有限 float → 視同資料不可用，
@@ -219,7 +229,7 @@ class GridLimitProtection(ProtectionRule):
         # 上越界（pct=250 讓 max_p 超過額定）或下越界（pct=-50 讓放電變充電）。
         pct = clamp(pct, 0.0, 100.0)
         max_p = self._rated * pct / 100.0
-        p = command.p_target
+        p: float = command.p_target
 
         if p > max_p:
             self._is_triggered = True
@@ -300,8 +310,8 @@ class RampStopProtection(ProtectionRule):
 
         self._is_triggered = True
 
-        # 以上次保護後的 P 為起點斜坡降至 0
-        current_p = context.last_command.p_target
+        # 以上次保護後的 P 為起點斜坡降至 0（NO_CHANGE 降級為 0.0）
+        current_p = context.last_command.effective_p(0.0)
         ramp_rate = float(self._params.get(self._ramp_rate_key, self._default_ramp_rate))
         ramp_step = ramp_rate / 100.0 * self._rated * self._interval
 

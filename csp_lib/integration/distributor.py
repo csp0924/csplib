@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from csp_lib.controller.core import Command
+from csp_lib.controller.core import NO_CHANGE, Command, NoChange, is_no_change
 from csp_lib.core import get_logger
 
 logger = get_logger(__name__)
@@ -98,8 +98,9 @@ class EqualDistributor:
         n = len(devices)
         if n == 0:
             return {}
-        p_each = command.p_target / n
-        q_each = command.q_target / n
+        # NO_CHANGE 軸不切分，per-device 保留 sentinel
+        p_each: float | NoChange = NO_CHANGE if is_no_change(command.p_target) else command.p_target / n
+        q_each: float | NoChange = NO_CHANGE if is_no_change(command.q_target) else command.q_target / n
         return {d.device_id: Command(p_target=p_each, q_target=q_each) for d in devices}
 
 
@@ -130,13 +131,18 @@ class ProportionalDistributor:
             logger.warning(f"Total rated '{self._rated_key}' is 0, falling back to equal distribution.")
             return EqualDistributor().distribute(command, devices)
 
+        # NO_CHANGE 軸不切分，per-device 保留 sentinel
+        p_no_change = is_no_change(command.p_target)
+        q_no_change = is_no_change(command.q_target)
+        p_val_base = command.effective_p(0.0)
+        q_val_base = command.effective_q(0.0)
+
         result: dict[str, Command] = {}
         for d in devices:
             ratio = d.metadata.get(self._rated_key, 0.0) / total_rated
-            result[d.device_id] = Command(
-                p_target=command.p_target * ratio,
-                q_target=command.q_target * ratio,
-            )
+            p_val: float | NoChange = NO_CHANGE if p_no_change else p_val_base * ratio
+            q_val: float | NoChange = NO_CHANGE if q_no_change else q_val_base * ratio
+            result[d.device_id] = Command(p_target=p_val, q_target=q_val)
         return result
 
 
@@ -187,6 +193,17 @@ class SOCBalancingDistributor:
         if n == 0:
             return {}
 
+        # NO_CHANGE 軸不切分，保留 sentinel 給每台設備
+        p_no_change = is_no_change(command.p_target)
+        q_no_change = is_no_change(command.q_target)
+        # 守衛後的 float 值（NO_CHANGE 軸以 0.0 占位，僅供 float 運算不輸出）
+        p_base = command.effective_p(0.0)
+        q_base = command.effective_q(0.0)
+
+        # 若兩軸皆 NO_CHANGE，所有設備皆 NO_CHANGE（快速路徑）
+        if p_no_change and q_no_change:
+            return {d.device_id: Command(p_target=NO_CHANGE, q_target=NO_CHANGE) for d in devices}
+
         # 收集 SOC 和額定值
         socs: list[float | None] = []
         rateds: list[float] = []
@@ -207,8 +224,19 @@ class SOCBalancingDistributor:
             return ProportionalDistributor(self._rated_key).distribute(command, devices)
         avg_soc = sum(valid_socs) / len(valid_socs)
 
-        # 計算 P 分配權重
-        is_discharging = command.p_target > 0
+        # 若 P 為 NO_CHANGE → 不計算 P 權重；僅分 Q
+        if p_no_change:
+            result: dict[str, Command] = {}
+            for i, d in enumerate(devices):
+                q_ratio = rateds[i] / total_rated
+                q_val: float | NoChange = NO_CHANGE if q_no_change else q_base * q_ratio
+                result[d.device_id] = Command(p_target=NO_CHANGE, q_target=q_val)
+            if self._per_device_max_q is not None:
+                result = self._apply_clamp_and_overflow(result, "q_target", self._per_device_max_q)
+            return result
+
+        # 計算 P 分配權重（以下 p_target 已非 NO_CHANGE，用 p_base 計算）
+        is_discharging = p_base > 0
         p_weights: list[float] = []
         for i, _d in enumerate(devices):
             rated = rateds[i]
@@ -231,19 +259,20 @@ class SOCBalancingDistributor:
             return ProportionalDistributor(self._rated_key).distribute(command, devices)
 
         # P 按 SOC 平衡權重分配，Q 按額定比例分配
-        result: dict[str, Command] = {}
+        result = {}
         for i, d in enumerate(devices):
             p_ratio = p_weights[i] / total_p_weight
             q_ratio = rateds[i] / total_rated
+            q_val2: float | NoChange = NO_CHANGE if q_no_change else q_base * q_ratio
             result[d.device_id] = Command(
-                p_target=command.p_target * p_ratio,
-                q_target=command.q_target * q_ratio,
+                p_target=p_base * p_ratio,
+                q_target=q_val2,
             )
 
         # 硬體限幅 + 溢出轉移
         if self._per_device_max_p is not None:
             result = self._apply_clamp_and_overflow(result, "p_target", self._per_device_max_p)
-        if self._per_device_max_q is not None:
+        if self._per_device_max_q is not None and not q_no_change:
             result = self._apply_clamp_and_overflow(result, "q_target", self._per_device_max_q)
 
         return result

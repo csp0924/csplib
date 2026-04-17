@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13%2B-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.7.3-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](CHANGELOG.md)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/csp0924-lib?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/csp0924-lib)
 
 CSP Common Library 是一個模組化的 Python 工具集，專為**能源管理系統**與**工業設備通訊**設計。
@@ -19,6 +19,10 @@ CSP Common Library 是一個模組化的 Python 工具集，專為**能源管理
 - **Modbus TCP Gateway**：宣告式暫存器映射、寫入驗證、資料同步，對接 EMS/SCADA
 - **韌性機制**：CircuitBreaker（指數退避 + jitter）+ RetryPolicy
 - **Event-driven**：設備事件系統 + WeakRef 自動清理
+- **精度控制**：`ExecutionConfig.interval_seconds` 支援 float（sub-second 策略如 DReg 0.3 s）；`StrategyExecutor` work-first + 絕對時間錨定漂移補償（v0.8.0）
+- **NO_CHANGE sentinel**：`Command.p_target / q_target` 支援 `NO_CHANGE`，策略可宣告「此軸不變更」，`CommandRouter` 跳過對應軸寫入，多策略 cascade 正確組合（v0.8.0）
+- **Event-driven Trigger**：`SystemController.attach_read_trigger(device_id)` 綁定設備讀完即觸發策略，搭配 TRIGGERED/HYBRID 模式消除 phase drift（v0.8.0）
+- **ContextMapping param_key**：直接從 `RuntimeParameters` 注入 context 欄位，不需手動搬入 extra（v0.8.0）
 - **Fluent Builder**：`SystemControllerConfig.builder()` 鏈式配置
 - **按需安裝**：Optional dependencies 避免引入不必要的套件
 
@@ -171,7 +175,7 @@ uv run mypy csp_lib/
   author = {Cheng Sin Pang (鄭善淜)},
   year = {2024},
   url = {https://github.com/csp0924/csp_lib},
-  version = {0.7.3},
+  version = {0.8.0},
   license = {Apache-2.0}
 }
 ```

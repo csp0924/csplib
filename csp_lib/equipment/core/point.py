@@ -82,11 +82,20 @@ class ReadPoint(PointDefinition):
             - "": 參與自動合併邏輯
             - str: 只與相同 read_group 名稱的點位合併
         metadata: 點位元資料（可選）
+        reject_non_finite: v0.8.0+ 新增。當為 ``True`` 時，若本次讀取值為
+            非有限 float（NaN / +Inf / -Inf），設備會：
+              - 保留 ``_latest_values`` 中的舊值（不覆寫）
+              - log WARNING
+              - **不**發 ``value_change`` 事件
+              - **不**將該非有限值餵給 ``_evaluate_alarm`` 或 ``EVENT_READ_COMPLETE``
+            用於防禦通訊瞬態讓上層保護/策略看到 NaN 造成比較恆 False 被無聲繞過。
+            預設 ``False``（維持 v0.7.x 既有行為 — 非有限值直接寫入 latest）。
     """
 
     pipeline: ProcessingPipeline | None = None
     read_group: str = ""
     metadata: PointMetadata | None = None
+    reject_non_finite: bool = False
 
     def __post_init__(self) -> None:
         if self.function_code is None:

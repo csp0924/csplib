@@ -42,6 +42,7 @@ from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core.errors import ConfigurationError
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.core.runtime_params import RuntimeParameters
+from csp_lib.equipment.device import EVENT_READ_COMPLETE
 
 from .command_router import CommandRouter
 from .context_builder import ContextBuilder
@@ -127,6 +128,12 @@ class SystemControllerConfig:
     runtime_params: RuntimeParameters | None = None  # 自動注入到 StrategyContext.params
     capability_requirements: list[CapabilityRequirement] = field(default_factory=list)
     strict_capability_check: bool = False
+    trigger_on_read_device_ids: list[str] = field(default_factory=list)
+    """v0.8.0+：啟動時自動對這些 device_id 註冊 EVENT_READ_COMPLETE 觸發 executor。
+
+    配合 TRIGGERED / HYBRID 策略使用：設備一讀完就立刻觸發策略執行，
+    避免時間錨式 PERIODIC 與 ReadScheduler 之間的 phase drift。
+    """
 
     @classmethod
     def builder(cls) -> "SystemControllerConfigBuilder":
@@ -181,6 +188,7 @@ class SystemControllerConfigBuilder:
         self._runtime_params: RuntimeParameters | None = None
         self._capability_requirements: list[CapabilityRequirement] = []
         self._strict_capability_check: bool = False
+        self._trigger_on_read_device_ids: list[str] = []
 
     # ─────────────── 系統基準 ───────────────
 
@@ -198,18 +206,21 @@ class SystemControllerConfigBuilder:
         *,
         device_id: str | None = None,
         trait: str | None = None,
+        param_key: str | None = None,
         aggregate: Any = None,
         default: Any = None,
         transform: Callable | None = None,
     ) -> "SystemControllerConfigBuilder":
         """
-        新增 context mapping（設備讀值 → StrategyContext）
+        新增 context mapping（設備讀值 / RuntimeParameters → StrategyContext）
 
         Args:
-            point_name: 設備點位名稱
+            point_name: 設備點位名稱（param_key 模式下不會被用到，但為相容仍需提供）
             target: context 欄位（如 "soc", "extra.frequency"）
-            device_id: 指定設備（與 trait 二擇一）
-            trait: 設備群組（與 device_id 二擇一）
+            device_id: 指定設備（與 trait / param_key 三擇一）
+            trait: 設備群組（與 device_id / param_key 三擇一）
+            param_key: v0.8.0+ 新增。從 RuntimeParameters 讀值的 key
+                （與 device_id / trait 三擇一）
             aggregate: 多設備聚合函式（trait 模式用）
             default: 無值時的預設
             transform: 值轉換函式
@@ -219,6 +230,8 @@ class SystemControllerConfigBuilder:
             kwargs["device_id"] = device_id
         if trait is not None:
             kwargs["trait"] = trait
+        if param_key is not None:
+            kwargs["param_key"] = param_key
         if aggregate is not None:
             kwargs["aggregate"] = aggregate
         if default is not None:
@@ -360,6 +373,25 @@ class SystemControllerConfigBuilder:
         self._strict_capability_check = enabled
         return self
 
+    # ─────────────── Read-Complete Trigger ───────────────
+
+    def trigger_on_read_complete(self, device_id: str) -> "SystemControllerConfigBuilder":
+        """v0.8.0+：啟動時自動對 ``device_id`` 的 ``EVENT_READ_COMPLETE`` 事件
+        註冊 executor 觸發。
+
+        配合 TRIGGERED / HYBRID 策略使用，達成「設備讀完即觸發策略」的低延遲流程，
+        避免時間錨式 PERIODIC 與 ReadScheduler 之間的 phase drift。
+
+        可多次呼叫新增多台設備；重複的 device_id 在 build 時不過濾，但 attach 階段
+        會 fail-fast 拋 ``ValueError``。
+
+        Args:
+            device_id: 要監聽的設備 ID（需於 ``SystemController`` 啟動時
+                已註冊到 ``DeviceRegistry``）。
+        """
+        self._trigger_on_read_device_ids.append(device_id)
+        return self
+
     # ─────────────── Build ───────────────
 
     def build(self) -> "SystemControllerConfig":
@@ -390,6 +422,7 @@ class SystemControllerConfigBuilder:
             runtime_params=self._runtime_params,
             capability_requirements=self._capability_requirements,
             strict_capability_check=self._strict_capability_check,
+            trigger_on_read_device_ids=self._trigger_on_read_device_ids,
         )
 
 
@@ -492,6 +525,10 @@ class SystemController(AsyncLifecycleMixin):
 
         # 背景任務
         self._run_task: asyncio.Task[None] | None = None
+
+        # Read-complete auto-trigger 狀態追蹤
+        self._read_trigger_devices: set[str] = set()
+        self._auto_trigger_detachers: list[Callable[[], None]] = []
 
         # 註冊自動停機模式（通過 EventDrivenOverride 機制）
         if config.auto_stop_on_alarm:
@@ -607,14 +644,51 @@ class SystemController(AsyncLifecycleMixin):
         """手動觸發策略執行"""
         self._executor.trigger()
 
+    def attach_read_trigger(self, device_id: str) -> Callable[[], None]:
+        """v0.8.0+：將指定設備的 ``EVENT_READ_COMPLETE`` 綁定為 executor 的觸發源。
+
+        每次該設備完成一輪讀取就呼叫 ``self._executor.trigger()``，達成
+        「讀完即執行策略」。適用於 TRIGGERED / HYBRID 模式策略，避免時間錨式
+        PERIODIC 與 ReadScheduler 之間的 phase drift。
+
+        Args:
+            device_id: 要綁定的設備 ID（必須已註冊於 DeviceRegistry）。
+
+        Returns:
+            detacher callable — 呼叫即解除綁定。``_on_stop`` 會自動呼叫所有自動
+            attach 產生的 detacher，應用端通常不需手動呼叫。
+
+        Raises:
+            ValueError: 設備未註冊於 registry；或該 device_id 已經被 attach
+                （重複 attach fail-fast，避免重複觸發）。
+        """
+        device = self._registry.get_device(device_id)
+        if device is None:
+            raise ValueError(f"Device '{device_id}' not found in registry")
+        if device_id in self._read_trigger_devices:
+            raise ValueError(f"Read trigger already attached for device '{device_id}'")
+
+        async def _on_read_complete(_payload: Any) -> None:
+            self._executor.trigger()
+
+        base_detacher = device.on(EVENT_READ_COMPLETE, _on_read_complete)
+        self._read_trigger_devices.add(device_id)
+
+        def _wrapped_detacher() -> None:
+            self._read_trigger_devices.discard(device_id)
+            base_detacher()
+
+        logger.debug(f"Read-complete trigger attached for device '{device_id}'")
+        return _wrapped_detacher
+
     # ---- 生命週期 ----
 
     async def _on_start(self) -> None:
         """啟動系統控制器
 
         中途失敗時呼叫 ``_on_stop()`` 清理已啟動的元件（data_feed、heartbeat、
-        _run_task），再 re-raise。避免 PEP 492 ``async with`` 模式下 ``__aenter__``
-        拋異常後 ``__aexit__`` 不會被呼叫所導致的資源洩漏。
+        _run_task、auto_trigger_detachers），再 re-raise。避免 PEP 492 ``async with``
+        模式下 ``__aenter__`` 拋異常後 ``__aexit__`` 不會被呼叫所導致的資源洩漏。
         """
         try:
             # Preflight: 驗證能力需求
@@ -630,6 +704,27 @@ class SystemController(AsyncLifecycleMixin):
                 self._validate_heartbeat_points()
                 await self._heartbeat.start()
             self._run_task = asyncio.create_task(self._executor.run())
+
+            # 依配置 auto-attach read-complete 觸發。ValueError（如設備不存在）僅警告；
+            # 其他例外回滾已 attach 的 detacher 避免孤兒 handler，再 re-raise。
+            for device_id in self._config.trigger_on_read_device_ids:
+                try:
+                    detacher = self.attach_read_trigger(device_id)
+                    self._auto_trigger_detachers.append(detacher)
+                except ValueError as exc:
+                    logger.warning(f"Failed to auto-attach read trigger for '{device_id}': {exc}")
+                except Exception:
+                    logger.opt(exception=True).error(
+                        f"Unexpected error attaching read trigger for '{device_id}'; rolling back partial attaches"
+                    )
+                    for already_attached in self._auto_trigger_detachers:
+                        try:
+                            already_attached()
+                        except Exception:
+                            logger.opt(exception=True).warning("Rollback detacher raised")
+                    self._auto_trigger_detachers.clear()
+                    raise
+
             logger.info("SystemController started.")
         except Exception:
             # 僅處理 Exception：CancelledError/KeyboardInterrupt/SystemExit 不做 rollback
@@ -643,6 +738,14 @@ class SystemController(AsyncLifecycleMixin):
 
     async def _on_stop(self) -> None:
         """停止系統控制器"""
+        # 先 detach read-complete trigger，避免停機過程再觸發 executor
+        for detacher in self._auto_trigger_detachers:
+            try:
+                detacher()
+            except Exception:
+                logger.opt(exception=True).warning("Read trigger detacher raised")
+        self._auto_trigger_detachers.clear()
+
         try:
             self._executor.stop()
             if self._run_task is not None:

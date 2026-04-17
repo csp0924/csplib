@@ -7,9 +7,22 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from csp_lib.controller.core import is_no_change
 from csp_lib.integration import SystemController
 
 from ..dependencies import get_system_controller
+
+
+def _serialize_target(value: Any) -> float | None:
+    """將 ``Command`` 目標值（float 或 ``NO_CHANGE``）序列化為 JSON 相容型別。
+
+    v0.8.0 起 ``Command.p_target`` / ``q_target`` 可能為 ``NO_CHANGE`` sentinel，
+    JSON 無法直接表示；此處將其轉為 ``null`` 以便前端判斷「此軸不變更」。
+    """
+    if is_no_change(value):
+        return None
+    return float(value)
+
 
 router = APIRouter(tags=["modes"])
 
@@ -166,11 +179,11 @@ def get_protection_status(
         "was_modified": result.was_modified,
         "triggered_rules": result.triggered_rules,
         "original_command": {
-            "p_target": result.original_command.p_target,
-            "q_target": result.original_command.q_target,
+            "p_target": _serialize_target(result.original_command.p_target),
+            "q_target": _serialize_target(result.original_command.q_target),
         },
         "protected_command": {
-            "p_target": result.protected_command.p_target,
-            "q_target": result.protected_command.q_target,
+            "p_target": _serialize_target(result.protected_command.p_target),
+            "q_target": _serialize_target(result.protected_command.q_target),
         },
     }

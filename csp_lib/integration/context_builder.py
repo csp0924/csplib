@@ -121,12 +121,14 @@ class ContextBuilder:
         """
         解析單一映射的值
 
-        流程：
-        1. 依 device_id 或 trait 模式取得原始值
-        2. 原始值為 None → 回傳 mapping.default
+        流程（param_key / device_id / trait 三擇一）：
+        1. 依模式取得原始值
+        2. 原始值為 None → 回傳 ``mapping.default``
         3. 套用 transform（若有），例外時回傳 default 並 log warning
         """
-        if mapping.device_id is not None:
+        if mapping.param_key is not None:
+            raw = self._read_param(mapping)
+        elif mapping.device_id is not None:
             raw = self._read_single_device(mapping)
         else:
             raw = self._read_trait_aggregate(mapping)
@@ -140,7 +142,12 @@ class ContextBuilder:
             try:
                 raw = mapping.transform(raw)
             except Exception as e:
-                source = mapping.device_id or f"trait:{mapping.trait}"
+                if mapping.device_id is not None:
+                    source = mapping.device_id
+                elif mapping.trait is not None:
+                    source = f"trait:{mapping.trait}"
+                else:
+                    source = f"param:{mapping.param_key}"
                 transform_name = getattr(mapping.transform, "__name__", str(mapping.transform))
                 logger.warning(
                     f"Transform failed: {source}.{mapping.point_name} → {mapping.context_field} "
@@ -149,6 +156,23 @@ class ContextBuilder:
                 return mapping.default
 
         return raw
+
+    def _read_param(self, mapping: ContextMapping) -> Any:
+        """param_key 模式：從 ``RuntimeParameters`` 讀取值。
+
+        ``runtime_params`` 未設定時 log warning 並回傳 None（上層會轉為
+        ``mapping.default``）。參數取得失敗（key 不存在）時由
+        ``RuntimeParameters.get`` 回傳 None。
+        """
+        if self._runtime_params is None:
+            logger.warning(
+                f"ContextMapping param_key='{mapping.param_key}' configured but runtime_params is None; "
+                f"falling back to default for '{mapping.context_field}'"
+            )
+            return None
+        # ContextMapping.__post_init__ 已保證 param_key 三擇一；此分支必非 None
+        assert mapping.param_key is not None
+        return self._runtime_params.get(mapping.param_key)
 
     def _read_single_device(self, mapping: ContextMapping) -> Any:
         """device_id 模式：讀取單一設備的點位值"""

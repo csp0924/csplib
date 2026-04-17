@@ -385,14 +385,24 @@ class TestDroopStrategy:
         assert strategy.execution_config.mode == ExecutionMode.PERIODIC
 
     def test_execution_config_interval_min_1(self):
-        """interval < 1 時, ExecutionConfig.interval_seconds 最小為 1"""
+        """v0.8.0：ExecutionConfig.interval_seconds 已為 float，次秒級 interval 直接傳遞
+
+        舊語義（v0.7.x 以前）：``max(1, int(0.3)) == 1`` workaround，
+        將次秒級 interval 強制 clamp 為 1 秒整。
+        新語義（v0.8.0+）：``interval_seconds`` 型別為 float，支援 < 1 的值。
+        """
         strategy = DroopStrategy(DroopConfig(interval=0.3))
-        assert strategy.execution_config.interval_seconds == 1
+        # interval=0.3 現在直接傳遞，不再被 clamp 到 1
+        assert strategy.execution_config.interval_seconds == pytest.approx(0.3)
 
     def test_execution_config_interval_from_config(self):
-        """interval >= 1 時應使用 int 截斷"""
+        """v0.8.0：interval 直接取 config.interval，不再 int 截斷
+
+        舊語義：``int(5.7) == 5``（會截掉小數）。
+        新語義：float-native，``5.7`` 原值傳遞。
+        """
         strategy = DroopStrategy(DroopConfig(interval=5.7))
-        assert strategy.execution_config.interval_seconds == 5
+        assert strategy.execution_config.interval_seconds == pytest.approx(5.7)
 
     # --------------- lifecycle ---------------
 
