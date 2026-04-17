@@ -122,8 +122,9 @@ class CommunicationWatchdog:
         """Internal periodic check loop.
 
         採用絕對時間錨定（work-first）避免時序漂移。
+        ``anchor`` 走 ``self._clock`` 以與其他 loop 操作一致（支援注入時鐘）。
         """
-        anchor = time.monotonic()
+        anchor = self._clock()
         n = 0
         try:
             while True:

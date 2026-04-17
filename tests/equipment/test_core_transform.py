@@ -336,9 +336,10 @@ class TestBitExtractTransform:
         with pytest.raises(ValueError, match="超過可操作範圍上限"):
             BitExtractTransform(bit_offset=0, bit_length=65)
 
-    def test_16bit_boundary_offset_15_length_2_raises(self):
-        """模擬 16-bit register 場景：offset=15, length=2 → 超過 64-bit 上限？不是，
-        但 15+2=17 仍在 64 以內，所以合法。真正不合法的是接近 64 的情況。"""
+    def test_16bit_boundary_offset_15_length_2_ok(self):
+        """模擬 16-bit register 場景：offset=15, length=2 → 15+2=17 < 64，合法。
+
+        真正不合法的是接近 64 的情況（見 ``test_large_offset_with_length_exceeds_max``）。"""
         # 15+2=17 < 64 → OK
         t = BitExtractTransform(bit_offset=15, bit_length=2)
         assert t.bit_offset == 15

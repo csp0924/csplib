@@ -302,7 +302,17 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
 
     @staticmethod
     def _parse_float_field(field: str, raw: Any, default: float) -> float:
-        """Best-effort float 轉換；非法值 log warning 並回傳 ``default``。"""
+        """Best-effort float 轉換；非法值 log warning 並回傳 ``default``。
+
+        Publisher 端透過 ``json.dumps`` 寫入，Redis ``hgetall`` 讀回可能是 ``str``（decode_responses=True）
+        或 ``bytes``（原生模式），需先轉為 float 再由 ``safe_float`` 做 finite 檢查。
+        """
+        if isinstance(raw, (bytes, str)):
+            try:
+                raw = float(raw)
+            except (ValueError, TypeError):
+                logger.warning(f"ClusterStateSubscriber: {field} 解析失敗, raw={raw!r}")
+                return default
         result = safe_float(raw, None)
         if result is None:
             if raw is not None:

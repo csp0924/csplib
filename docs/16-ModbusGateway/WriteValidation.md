@@ -24,7 +24,7 @@ version: ">=0.7.3"
 EMS 原始寫入 (raw registers)
   │
   ├─ 1. 解碼 raw registers → physical value
-  ├─ 2. writable gate — reg_def.writable=False 時 RegisterNotWritableError + skip（v0.7.3）
+  ├─ 2. writable gate — reg_def.writable=False 時記錄 RegisterNotWritableError 並 skip（不 raise，v0.7.3）
   ├─ 3. WriteValidator chain — 全部 accept 才繼續
   ├─ 4. WriteRule clamp/reject — 範圍限制
   ├─ 5. 更新 GatewayRegisterMap
@@ -32,7 +32,7 @@ EMS 原始寫入 (raw registers)
 ```
 
 > [!note] v0.7.3 SEC-006
-> writable gate（步驟 2）在 validator chain 之前插入，`writable=False` 的 register 直接被 skip 並記錄 WARNING，不會進入後續驗證步驟。
+> writable gate（步驟 2）在 validator chain 之前插入，`writable=False` 的 register 直接被 skip 並記錄 WARNING（包含 `RegisterNotWritableError` 訊息），不會進入後續驗證步驟。**此 error 僅作為日誌載體，不會 raise，也不會向 Modbus client 回傳 exception**——client 端觀察到的是寫入後讀回仍為舊值。
 
 ### `process_write(address, values)` 流程
 

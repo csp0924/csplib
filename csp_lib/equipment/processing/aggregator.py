@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
@@ -43,7 +44,8 @@ class CoilToBitmaskAggregator:
     """
 
     output_name: str
-    coil_names: tuple[str, ...]
+    # 接受任意 Sequence[str]（list/tuple/...）；__post_init__ 內部轉為 tuple 以確保不可變性。
+    coil_names: Sequence[str]
     remove_source: bool = True
 
     def __post_init__(self) -> None:

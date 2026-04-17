@@ -13,8 +13,8 @@
 - **`PowerCompensator.update_ff_bin(bin_idx, ff_ratio, *, persist=False)`** (BUG-007): Public API to update a single FF table bin with validation chain (clamp to `[ff_min, ff_max]`, rejects NaN/Inf/negative, raises `TypeError`/`ValueError` for invalid inputs). Replaces direct `_ff_table` access anti-pattern. Optionally persists after update.
 - **`PowerCompensator.persist_ff_table()`** (BUG-007): Public API to persist the current FF table via the configured `FFTableRepository`. No-op if no repository is configured; preserves existing log-swallow semantics.
 - **`Command.is_fallback: bool = False`** (BUG-011): New field on the `Command` frozen dataclass. `StrategyExecutor` sets `is_fallback=True` on the zero-command returned when strategy execution raises an exception, allowing callers (monitoring, cluster status) to distinguish a normal zero-command from an error fallback. `with_p()` / `with_q()` propagate this flag automatically via `dataclasses.replace`.
-- **`GatewayRegisterDef.writable: bool = False`** (SEC-006): Per-register EMS write permission flag. `WritePipeline` checks this before the validator chain; registers with `writable=False` raise `RegisterNotWritableError` and are skipped. Defaults to `False` (secure-by-default). Only applies to HOLDING registers — INPUT registers are always read-only at the protocol level.
-- **`RegisterNotWritableError(WriteRejectedError)`** (SEC-006): New exception raised when EMS attempts to write a HOLDING register whose `writable` flag is `False`. Carries `register_name` and `address` attributes. Exported from `csp_lib.modbus_gateway`.
+- **`GatewayRegisterDef.writable: bool = False`** (SEC-006): Per-register EMS write permission flag. `WritePipeline` checks this before the validator chain; registers with `writable=False` are logged with a WARNING (carrying a `RegisterNotWritableError` message) and skipped. The error is **not raised** and **no Modbus exception is returned to the client** — the client observes the register retain its old value. Defaults to `False` (secure-by-default). Only applies to HOLDING registers — INPUT registers are always read-only at the protocol level.
+- **`RegisterNotWritableError(WriteRejectedError)`** (SEC-006): New exception class used as the log/audit payload when EMS attempts to write a HOLDING register whose `writable` flag is `False`. **Not raised** by `WritePipeline` — if Modbus-level rejection is required, wire it at the DataBlock/pipeline layer. Carries `register_name` and `address` attributes. Exported from `csp_lib.modbus_gateway`.
 
 ### Fixed
 
@@ -27,6 +27,8 @@
 - **`DeviceGroup._sequential_loop` timing drift** (WI-TD-106): Replaced fixed per-step sleep with `next_tick_delay` anchoring; device group step intervals now compensate for `read_once` execution time.
 - **`CommunicationWatchdog._check_loop` timing drift** (WI-TD-107): Fixed-sleep replaced with `next_tick_delay`; 24-hour drift at 1 s interval reduced from ~432 s to negligible.
 - **`SystemMonitor._run_loop` timing drift** (WI-TD-108): Fixed-sleep replaced with `next_tick_delay`; metrics collection + Redis publish latency (100–500 ms) no longer accumulates as drift.
+- **`ClusterStateSubscriber._parse_float_field` rejected JSON-encoded floats** (BUG-012, Copilot review): Publisher writes values via `json.dumps(...)`; Redis `hgetall` returns `str` (under `decode_responses=True`) or `bytes`, both of which `safe_float` rejected → `p_target`/`q_target`/`command_timestamp` silently fell back to `0.0` every poll. Now converts `str`/`bytes` to `float` before the finite check. Non-finite and malformed values still fall back to default and log a WARNING.
+- **`SystemController._on_start` partial-startup resource leak** (BUG-013, Copilot review): `_on_start` had no rollback path; if `processor.async_init()` or `heartbeat.start()` raised after `data_feed.attach()`, the event listener would leak because PEP 492 skips `__aexit__` when `__aenter__` raises. Wrapped in `try/except BaseException` that invokes `_on_stop()` (already None-safe for partial state) before re-raising. Added `test_on_start_rollback_on_heartbeat_failure` and `test_on_start_rollback_via_async_with`.
 
 ### Changed
 
@@ -40,6 +42,9 @@
 - **`PowerCompensator.update_ff_bin` 清理**：移除 `ff_ratio is None` 的不可達檢查（型別標註已排除 `None`）。
 - **`RedisSubscriptionSource._handle_message` 與 `PollingCallbackSource._poll_loop` 去重**：三個 single/list/kv 分支共用的 `try/except KeyError/PermissionError` 抽出為 `_dispatch(name, value)` helper；未知 register 與 HOLDING 拒絕的處理邏輯統一。
 - **`DeviceGroup._sequential_loop` catch-up 路徑 yield**：`next_tick_delay` 回傳 `delay==0`（嚴重漂移重設）時顯式 `await asyncio.sleep(0)`，確保 `_stop_event.set()` 在每個 tick 邊界都能被 scheduler 感知。
+- **`CommunicationWatchdog._check_loop` anchor 走 `self._clock`** (Copilot review)：原本 `anchor = time.monotonic()` 繞過建構時注入的 `clock` 參數，與同 loop 其他時間取得不一致。改為 `anchor = self._clock()`，注入時鐘的覆蓋更完整。
+- **`SinkManager._poll_remote` 改為 sleep-first** (Copilot review)：`attach_remote_source` 已於啟動時 fetch 一次；原 work-first 版本在啟動時會立刻再 fetch 一次，造成 startup double-fetch。改為先 `next_tick_delay` 再 fetch，保留原絕對時間錨定語意。
+- **`CoilToBitmaskAggregator.coil_names` 型別標註改為 `Sequence[str]`** (Copilot review)：`__post_init__` 本就接受 list/tuple 再轉為 tuple，但原 `tuple[str, ...]` 標註讓 mypy 拒絕傳入 list。改用 `Sequence[str]` 反映實際可接受的輸入型別。
 
 ### Security
 

@@ -73,7 +73,7 @@ class GatewayRegisterDef:
 
 > [!warning] v0.7.3 行為變更 (SEC-006)
 > `writable` 預設為 `False`。升級前所有 HOLDING register 隱式可寫，升級後必須明確設 `writable=True` 才允許 EMS 寫入。
-> 未設 `writable=True` 的 register 在 EMS 嘗試寫入時會收到 `RegisterNotWritableError`。
+> 未設 `writable=True` 的 register 在 EMS 嘗試寫入時會被 gateway 靜默拒絕並記錄 WARNING（含 `RegisterNotWritableError` 訊息）；**Modbus client 不會收到 exception**，觀察到的是寫入後讀回仍為舊值。
 
 ### 驗證規則
 

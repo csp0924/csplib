@@ -82,8 +82,9 @@ run()
       ├─ strategy.execute(context)        # 執行策略
       │   ├─ [成功] last_command = result # 更新 _last_command
       │   │         on_command(result)    # 回呼
-      │   └─ [例外] on_command(Command(0, 0, is_fallback=True))
-      │                                   # _last_command 不更新
+      │   └─ [例外] logger.exception(...) # 記錄後回傳 fallback
+      │             return Command(0, 0, is_fallback=True)
+      │             # _last_command 不更新；**不呼叫 on_command**
       └─ （繼續下一週期）
 ```
 
@@ -91,9 +92,10 @@ run()
 
 策略執行拋出例外時（`except Exception`）：
 
-1. 回傳 `Command(p_target=0.0, q_target=0.0, is_fallback=True)` 作為當輪輸出
+1. 回傳 `Command(p_target=0.0, q_target=0.0, is_fallback=True)` 作為 `_execute_strategy` 的 return value
 2. `self._last_command` **不更新**，下輪 `context.last_command` 仍是上次正常命令
-3. `on_command` callback 收到帶 `is_fallback=True` 的 Command，上層可據此觸發告警或記錄
+3. **不呼叫 `on_command` callback**；`run` 主迴圈丟棄 return value，僅 `execute_once()` 會回傳此 fallback command 供 caller 檢視 `is_fallback`
+4. Exception 細節由 `logger.exception(...)` 記錄（含 strategy 名稱、SOC、`last_command`）
 
 > [!warning] 升級注意
 > v0.7.3 前，異常時回傳 `self._last_command`（上次成功命令）。

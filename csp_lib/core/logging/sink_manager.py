@@ -403,7 +403,8 @@ class SinkManager:
     ) -> None:
         """背景輪詢遠端等級來源。
 
-        採用絕對時間錨定（work-first）避免時序漂移。
+        採用絕對時間錨定（sleep-first）避免時序漂移；由於 ``attach_remote_source``
+        已於啟動時 fetch 一次，此處採用 sleep-first 以避免啟動時的 double-fetch。
 
         Args:
             source: 遠端等級來源實例。
@@ -414,6 +415,9 @@ class SinkManager:
         anchor = time.monotonic()
         n = 0
         while True:
+            # sleep-first: attach_remote_source 已 fetch 過一次，避免啟動 double-fetch
+            delay, anchor, n = next_tick_delay(anchor, n, interval)
+            await asyncio.sleep(delay)
             try:
                 levels = await source.fetch_levels()
                 self._apply_remote_levels(levels)
@@ -421,8 +425,6 @@ class SinkManager:
                 raise
             except Exception:  # noqa: BLE001
                 pass  # 輪詢失敗不應中斷
-            delay, anchor, n = next_tick_delay(anchor, n, interval)
-            await asyncio.sleep(delay)
 
     # ---- 便利方法 ----
 
