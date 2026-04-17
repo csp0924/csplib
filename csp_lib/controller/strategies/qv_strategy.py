@@ -2,9 +2,13 @@
 #
 # 電壓-無功功率控制策略
 # 根據系統電壓偏差計算無功功率輸出
+#
+# v0.8.2: 支援透過 RuntimeParameters + param_keys 動態覆蓋所有 QVConfig 欄位，
+# 以及 enabled_key 即時啟停。
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from csp_lib.controller.core import (
@@ -15,6 +19,12 @@ from csp_lib.controller.core import (
     Strategy,
     StrategyContext,
 )
+from csp_lib.core import get_logger
+from csp_lib.core.runtime_params import RuntimeParameters
+
+from ._param_resolver import ParamResolver
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,13 +78,31 @@ class QVStrategy(Strategy):
         else:
             Q = 0 (死區)
 
+    Runtime 動態化 (v0.8.2):
+        ``param_keys`` 可涵蓋 QVConfig 的所有 public 欄位：
+        ``nominal_voltage`` / ``v_set`` / ``droop`` / ``v_deadband`` / ``q_max_ratio``。
+        ``enabled_key`` falsy → 回 ``Command(0, 0)``（立即停止 Q 輸出）。
+
     Usage:
         config = QVConfig(nominal_voltage=380, v_set=100, droop=5)
         strategy = QVStrategy(config)
     """
 
-    def __init__(self, config: QVConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: QVConfig | None = None,
+        *,
+        params: RuntimeParameters | None = None,
+        param_keys: Mapping[str, str] | None = None,
+        enabled_key: str | None = None,
+    ) -> None:
         self._config = config or QVConfig()
+        self._resolver = ParamResolver(
+            params=params,
+            param_keys=param_keys,
+            config=self._config,
+        )
+        self._enabled_key = enabled_key
 
     @property
     def config(self) -> QVConfig:
@@ -98,6 +126,13 @@ class QVStrategy(Strategy):
         Returns:
             Command: 計算出的無功功率命令 (比值需由 GridController 轉換)
         """
+        # Runtime enabled 旗標：falsy → 立即輸出 0
+        if self._enabled_key is not None:
+            enabled = self._resolver.resolve_optional(self._enabled_key, True)
+            if not enabled:
+                logger.debug("QV: runtime disabled via '%s', output zero", self._enabled_key)
+                return Command(p_target=0.0, q_target=0.0)
+
         voltage = context.extra.get("voltage")
         if voltage is None:
             # 無電壓資料，維持上一次命令
@@ -116,30 +151,36 @@ class QVStrategy(Strategy):
 
     def _calculate_q_ratio(self, voltage: float) -> float:
         """根據電壓計算無功功率比值 (-1 ~ 1)"""
-        cfg = self._config
+        # 讀取動態配置欄位
+        nominal_voltage = float(self._resolver.resolve("nominal_voltage"))
+        v_set = float(self._resolver.resolve("v_set"))
+        droop = float(self._resolver.resolve("droop"))
+        v_deadband = float(self._resolver.resolve("v_deadband"))
+        q_max_ratio = float(self._resolver.resolve("q_max_ratio"))
 
         # 轉換為 p.u.
-        v_pu = voltage / cfg.nominal_voltage
-        v_set_pu = cfg.v_set / 100
-        v_deadband_pu = cfg.v_deadband / 100
-        droop_pu = cfg.droop / 100
+        v_pu = voltage / nominal_voltage
+        v_set_pu = v_set / 100
+        v_deadband_pu = v_deadband / 100
+        droop_pu = droop / 100
 
         # 電壓過低: 輸出正 Q (提供無功)
         if v_pu <= v_set_pu - v_deadband_pu:
             q_ratio = 0.5 * (v_set_pu - v_deadband_pu - v_pu) / (v_set_pu * droop_pu)
-            return min(q_ratio, cfg.q_max_ratio)
+            return min(q_ratio, q_max_ratio)
 
         # 電壓過高: 輸出負 Q (吸收無功)
         if v_pu >= v_set_pu + v_deadband_pu:
             q_ratio = 0.5 * (v_set_pu + v_deadband_pu - v_pu) / (v_set_pu * droop_pu)
-            return max(q_ratio, -cfg.q_max_ratio)
+            return max(q_ratio, -q_max_ratio)
 
         # 死區內: Q = 0
         return 0.0
 
     def update_config(self, config: QVConfig) -> None:
-        """更新配置"""
+        """更新配置並重建 resolver（保留既有 runtime/scale 設定）。"""
         self._config = config
+        self._resolver = self._resolver.with_config(self._config)
 
     def __str__(self) -> str:
         return f"QVStrategy(V_set={self._config.v_set}%, droop={self._config.droop}%)"

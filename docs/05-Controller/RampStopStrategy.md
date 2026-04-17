@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/strategies/ramp_stop.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # RampStopStrategy
@@ -73,6 +73,60 @@ controller.register_event_override(
 )
 ```
 
+## 動態參數化（v0.8.2）
+
+透過 `RuntimeParameters` + `param_keys` 讓 EMS 在執行期即時調整斜坡停機參數。
+
+### 可動態化欄位
+
+內部使用私有 `_RampStopRuntimeConfig` frozen dataclass，可動態化的欄位為：
+
+| 欄位 | 說明 |
+|------|------|
+| `rated_power` | 系統額定功率 (kW) |
+| `ramp_rate_pct` | 斜率 (%/s) |
+
+### 建構參數（v0.8.2 新增，keyword-only）
+
+| 參數 | 型別 | 預設 | 說明 |
+|------|------|------|------|
+| `params` | `RuntimeParameters \| None` | `None` | 動態參數來源 |
+| `param_keys` | `Mapping[str, str] \| None` | `None` | `{欄位名: runtime key}` 映射 |
+| `enabled_key` | `str \| None` | `None` | runtime 啟停旗標 key |
+
+> [!note] `rated_power` 是 positional 參數
+> `RampStopStrategy(rated_power=2000.0, ramp_rate_pct=5.0)` 的舊呼叫方式完全相容；`params` 等新參數均為 keyword-only。
+
+### `enabled_key` 行為
+
+> [!note] RampStop 的 disabled 行為
+> `enabled_key` 指向的值為 falsy 時，`execute()` 直接回傳 `context.last_command`（保守策略）。這與 LoadShedding 一致，不強制執行 ramp-down。
+
+### 範例
+
+```python
+from csp_lib.core import RuntimeParameters
+from csp_lib.controller.strategies import RampStopStrategy
+
+params = RuntimeParameters()
+params.set("ramp_power", 2000.0)
+params.set("ramp_rate", 3.0)
+params.set("ramp_enabled", 1)
+
+ramp_stop = RampStopStrategy(
+    rated_power=2000.0,
+    ramp_rate_pct=5.0,
+    params=params,
+    param_keys={"rated_power": "ramp_power", "ramp_rate_pct": "ramp_rate"},
+    enabled_key="ramp_enabled",
+)
+
+# EMS 動態加快斜率：
+params.set("ramp_rate", 10.0)  # 下次 execute() 使用 10%/s
+```
+
+---
+
 ## 相關連結
 
 - [[Strategy]] — 基礎類別
@@ -80,3 +134,4 @@ controller.register_event_override(
 - [[ModeManager]] — 模式管理器，透過 override 啟動
 - [[EventDrivenOverride]] — 事件驅動自動啟動
 - [[Command]] — 輸出的功率命令
+- [[RuntimeParameters]] — 執行期可變參數容器

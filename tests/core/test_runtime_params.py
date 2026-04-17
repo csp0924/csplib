@@ -3,6 +3,8 @@
 import threading
 from unittest.mock import MagicMock
 
+import pytest
+
 from csp_lib.core.runtime_params import RuntimeParameters
 
 # ===========================================================================
@@ -303,3 +305,162 @@ class TestRuntimeParametersThreadSafety:
         for t in threads:
             t.join()
         assert errors == []
+
+
+# ===========================================================================
+# Attribute-style 存取（WI-RP-01）
+# ===========================================================================
+
+
+class TestRuntimeParametersAttributeAccess:
+    """驗證 __getattr__ / __setattr__ 對 .get() / .set() 的 dispatch 行為"""
+
+    def test_attr_read_existing_equals_get(self):
+        """params.soc_max 讀取等同 params.get("soc_max")"""
+        params = RuntimeParameters(soc_max=95.0)
+        assert params.soc_max == params.get("soc_max")
+        assert params.soc_max == 95.0
+
+    def test_attr_write_existing_equals_set(self):
+        """params.soc_max = 90 寫入等同 params.set("soc_max", 90)"""
+        params = RuntimeParameters(soc_max=95.0)
+        params.soc_max = 90.0
+        assert params.get("soc_max") == 90.0
+
+    def test_attr_write_triggers_observer(self):
+        """Attribute-style 寫入必須觸發 observer（等同 set()）"""
+        params = RuntimeParameters(soc_max=95.0)
+        cb = MagicMock()
+        params.on_change(cb)
+        params.soc_max = 90.0
+        cb.assert_called_once_with("soc_max", 95.0, 90.0)
+
+    def test_attr_write_same_value_no_observer(self):
+        """寫入相同值不觸發 observer（與 set() 行為一致）"""
+        params = RuntimeParameters(soc_max=95.0)
+        cb = MagicMock()
+        params.on_change(cb)
+        params.soc_max = 95.0
+        cb.assert_not_called()
+
+    def test_attr_read_missing_raises_attributeerror(self):
+        """不存在參數必須拋 AttributeError（而非回傳 None）"""
+        params = RuntimeParameters()
+        with pytest.raises(AttributeError):
+            _ = params.missing_param
+
+    def test_attr_read_missing_error_message_mentions_key(self):
+        """AttributeError 訊息應包含缺失的參數名稱"""
+        params = RuntimeParameters(x=1)
+        with pytest.raises(AttributeError, match="missing_param"):
+            _ = params.missing_param
+
+    def test_hasattr_existing_true(self):
+        """hasattr 對存在參數回傳 True"""
+        params = RuntimeParameters(existing=42)
+        assert hasattr(params, "existing") is True
+
+    def test_hasattr_missing_false(self):
+        """hasattr 對缺失參數回傳 False（由 AttributeError 驅動）"""
+        params = RuntimeParameters()
+        assert hasattr(params, "missing") is False
+
+    def test_underscore_attr_read_raises(self):
+        """底線開頭未知屬性拋 AttributeError（不 dispatch 到 _values）"""
+        params = RuntimeParameters()
+        # 即使存入名為 "_foo" 的 key，__getattr__ 也視為內部屬性拒絕
+        with pytest.raises(AttributeError):
+            _ = params._not_a_real_attr
+
+    def test_internal_slots_still_accessible(self):
+        """__slots__ 中的 _lock / _values / _observers 仍正常運作"""
+        params = RuntimeParameters(a=1)
+        assert isinstance(params._lock, type(threading.Lock()))
+        assert params._values == {"a": 1}
+        assert params._observers == []
+
+    def test_internal_slots_not_dispatched_to_set(self):
+        """__setattr__ 寫入 _xxx 不走 .set()，不會無窮遞迴或污染 _values"""
+        params = RuntimeParameters()
+        # 建構當下 self._lock = ... 就是此路徑；能完成建構即代表通過
+        assert "_lock" not in params._values
+        assert "_values" not in params._values
+        assert "_observers" not in params._values
+
+    def test_attr_dynamic_add_new_key(self):
+        """params.new_key = 1 動態新增參數，get() 可讀取"""
+        params = RuntimeParameters()
+        params.new_key = 42
+        assert params.get("new_key") == 42
+        assert params.new_key == 42
+        assert "new_key" in params
+
+    def test_attr_dynamic_add_fires_observer(self):
+        """動態新增時 observer 被觸發，old=None"""
+        params = RuntimeParameters()
+        cb = MagicMock()
+        params.on_change(cb)
+        params.new_key = 99
+        cb.assert_called_once_with("new_key", None, 99)
+
+    def test_attr_read_delegates_to_get_for_all_value_types(self):
+        """對 dict / list / None 等各種值類型的讀取都正常"""
+        params = RuntimeParameters(d={"k": 1}, lst=[1, 2, 3], none_val=None)
+        assert params.d == {"k": 1}
+        assert params.lst == [1, 2, 3]
+        # 注意：值本身為 None 與「key 不存在」在 attribute-style 下的差異
+        # key 存在但值為 None → 回傳 None（不拋 AttributeError）
+        assert params.none_val is None
+
+
+class TestRuntimeParametersSubclassing:
+    """Subclassing 情境驗證 docstring 警告的行為"""
+
+    def test_subclass_without_class_attr_works_normally(self):
+        """Subclass 未覆蓋參數名稱時，attribute-style 存取正常"""
+
+        class MyParams(RuntimeParameters):
+            pass
+
+        params = MyParams(soc_max=90.0)
+        assert params.soc_max == 90.0
+        params.soc_max = 80.0
+        assert params.get("soc_max") == 80.0
+
+    def test_subclass_class_attr_shadows_getattr(self):
+        """Warning in docstring: class attribute 與參數同名時，讀取命中 class attr"""
+
+        class MyParams(RuntimeParameters):
+            soc_max = 100.0  # class attribute shadow
+
+        params = MyParams(soc_max=90.0)
+        # 傳統屬性查找先命中 class attribute → __getattr__ 不會被呼叫
+        assert params.soc_max == 100.0  # NOT 90.0
+        # 但 .get() 仍讀取 _values（資料層級）
+        assert params.get("soc_max") == 90.0
+
+    def test_subclass_class_attr_write_still_dispatches_to_set(self):
+        """即使 class attr 存在，__setattr__ 對非底線名稱仍走 set() 路徑"""
+
+        class MyParams(RuntimeParameters):
+            soc_max = 100.0
+
+        params = MyParams(soc_max=90.0)
+        params.soc_max = 80.0
+        # .set() 更新 _values，不改動 class attribute
+        assert params.get("soc_max") == 80.0
+        assert MyParams.soc_max == 100.0  # class attribute 未被動到
+
+    def test_subclass_with_extra_slots_preserves_internal(self):
+        """Subclass 定義額外 __slots__ 時，底線屬性仍走原生路徑"""
+
+        class MyParams(RuntimeParameters):
+            __slots__ = ("_extra",)
+
+            def __init__(self, **kw):
+                super().__init__(**kw)
+                self._extra = "internal"  # 透過 object.__setattr__ 路徑
+
+        params = MyParams(a=1)
+        assert params._extra == "internal"
+        assert params.a == 1

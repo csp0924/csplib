@@ -15,12 +15,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from csp_lib.controller.core import NO_CHANGE, Command, NoChange, is_no_change
 from csp_lib.core import get_logger
 
 logger = get_logger(__name__)
+
+# SOC 取值函式簽名：接收 DeviceSnapshot，回傳 SOC (0~100) 或 None
+# 回傳 None 代表該 snapshot 無法提供 SOC，會 fallback 到內建 capability 讀取。
+SOCSource = Callable[["DeviceSnapshot"], "float | None"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +174,12 @@ class SOCBalancingDistributor:
         gain: SOC 偏差增益（預設 2.0）
         per_device_max_p: 單台設備最大有功功率限制 (kW)，None 表示不限制
         per_device_max_q: 單台設備最大無功功率限制 (kVar)，None 表示不限制
+        soc_source: 自訂 SOC 取值函式（可選）。若提供，優先用此函式計算；
+            回傳 None 時退回內建 capability 讀取路徑。本參數專為「SOC 不在
+            capability slot、而在 latest_values / metadata / 外部來源」的場景設計。
+            **例外行為**：``soc_source`` 若拋例外，**不會**被攔截，直接傳播
+            給 ``distribute()`` 呼叫方，以避免 silent corruption（分配決策
+            永遠應基於明確成功取得的狀態）。
     """
 
     def __init__(
@@ -180,6 +190,7 @@ class SOCBalancingDistributor:
         gain: float = 2.0,
         per_device_max_p: float | None = None,
         per_device_max_q: float | None = None,
+        soc_source: SOCSource | None = None,
     ) -> None:
         self._rated_key = rated_key
         self._soc_capability = soc_capability
@@ -187,6 +198,32 @@ class SOCBalancingDistributor:
         self._gain = gain
         self._per_device_max_p = per_device_max_p
         self._per_device_max_q = per_device_max_q
+        self._soc_source = soc_source
+
+    def _read_soc(self, d: DeviceSnapshot) -> float | None:
+        """
+        讀取單一設備的 SOC。
+
+        優先順序：
+            1. 若提供 ``soc_source``，呼叫之。
+               - 回傳非 None：直接使用（由呼叫方保證語意正確）。
+               - 回傳 None：視為「此來源無法提供」，退回步驟 2。
+               - 例外：**不攔截**，傳播至 ``distribute()`` 呼叫方。
+            2. 預設行為：讀 ``capabilities[soc_capability][soc_slot]``，
+               與 v0.8.1 之前完全一致。
+
+        Args:
+            d: 設備快照。
+
+        Returns:
+            SOC 值（0~100），或 ``None`` 表示無資料。
+        """
+        if self._soc_source is not None:
+            value = self._soc_source(d)
+            if value is not None:
+                return value
+        # Fallback：沿用既有 capability 讀取路徑（預設行為不變）
+        return d.get_capability_value(self._soc_capability, self._soc_slot)
 
     def distribute(self, command: Command, devices: list[DeviceSnapshot]) -> dict[str, Command]:
         n = len(devices)
@@ -204,11 +241,11 @@ class SOCBalancingDistributor:
         if p_no_change and q_no_change:
             return {d.device_id: Command(p_target=NO_CHANGE, q_target=NO_CHANGE) for d in devices}
 
-        # 收集 SOC 和額定值
+        # 收集 SOC 和額定值（SOC 透過 _read_soc helper 取得，支援 soc_source 注入）
         socs: list[float | None] = []
         rateds: list[float] = []
         for d in devices:
-            soc = d.get_capability_value(self._soc_capability, self._soc_slot)
+            soc = self._read_soc(d)
             socs.append(float(soc) if soc is not None else None)
             rateds.append(float(d.metadata.get(self._rated_key, 0.0)))
 
@@ -369,4 +406,5 @@ __all__ = [
     "EqualDistributor",
     "ProportionalDistributor",
     "SOCBalancingDistributor",
+    "SOCSource",
 ]

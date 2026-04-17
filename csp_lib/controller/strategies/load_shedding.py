@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -32,6 +33,9 @@ from csp_lib.controller.core import (
     StrategyContext,
 )
 from csp_lib.core import get_logger
+from csp_lib.core.runtime_params import RuntimeParameters
+
+from ._param_resolver import ParamResolver
 
 logger = get_logger(__name__)
 
@@ -200,13 +204,48 @@ class LoadSheddingStrategy(Strategy):
     - 恢復順序：priority 降序（高優先級先恢復）
     """
 
-    def __init__(self, config: LoadSheddingConfig) -> None:
+    def __init__(
+        self,
+        config: LoadSheddingConfig,
+        *,
+        params: RuntimeParameters | None = None,
+        param_keys: Mapping[str, str] | None = None,
+        enabled_key: str | None = None,
+    ) -> None:
+        """初始化負載卸載策略。
+
+        Runtime 動態化 (v0.8.2):
+            可動態化的純數值 / bool 欄位：
+                - evaluation_interval
+                - restore_delay
+                - auto_restore_on_deactivate
+
+            **stages 清單不動態化**（含 circuits / condition 等物件參照，
+            runtime 覆寫風險過大；如需改 stages 請用 ``update_config``）。
+
+            ``enabled_key`` falsy → 回 ``context.last_command``（保守策略；
+            不強制 shed/restore，避免誤動作）。
+
+        Args:
+            config: 負載卸載策略配置
+            params: RuntimeParameters，可選
+            param_keys: 欄位名 → runtime key 映射
+                （只對 evaluation_interval / restore_delay /
+                auto_restore_on_deactivate 生效）
+            enabled_key: runtime 啟停旗標 key
+        """
         self._config = config
         self._sorted_stages = sorted(config.stages, key=lambda s: s.priority)
         self._states: dict[str, _StageState] = {stage.name: _StageState() for stage in config.stages}
         self._pending_actions: list[tuple[str, str]] = []  # (stage_name, "shed"|"restore")
         self._action_task: asyncio.Task[None] | None = None
         self._action_event = asyncio.Event()
+        self._resolver = ParamResolver(
+            params=params,
+            param_keys=param_keys,
+            config=self._config,
+        )
+        self._enabled_key = enabled_key
 
     @property
     def config(self) -> LoadSheddingConfig:
@@ -214,10 +253,20 @@ class LoadSheddingStrategy(Strategy):
 
     @property
     def execution_config(self) -> ExecutionConfig:
-        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=self._config.evaluation_interval)
+        # evaluation_interval 可動態化：每次回 ExecutionConfig 時讀 runtime
+        interval = float(self._resolver.resolve("evaluation_interval"))
+        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=interval)
 
     def execute(self, context: StrategyContext) -> Command:
+        # Runtime enabled 旗標：falsy → 保守策略，維持上次指令（不強制改 0）
+        if self._enabled_key is not None:
+            enabled = self._resolver.resolve_optional(self._enabled_key, True)
+            if not enabled:
+                logger.debug("LoadSheddingStrategy: runtime disabled via '%s'", self._enabled_key)
+                return context.last_command
+
         now = time.monotonic()
+        restore_delay = float(self._resolver.resolve("restore_delay"))
 
         # 卸載評估（priority 升序：低優先級先卸）
         for stage in self._sorted_stages:
@@ -248,8 +297,8 @@ class LoadSheddingStrategy(Strategy):
                 logger.debug(f"Load shedding: stage '{stage.name}' restore delay started")
                 continue
 
-            # 檢查 restore_delay
-            if (now - state.restore_requested_at) >= self._config.restore_delay:
+            # 檢查 restore_delay（runtime 可動態化）
+            if (now - state.restore_requested_at) >= restore_delay:
                 state.is_shed = False
                 state.restore_requested_at = None
                 self._pending_actions.append((stage.name, "restore"))
@@ -274,7 +323,9 @@ class LoadSheddingStrategy(Strategy):
                 pass
             self._action_task = None
 
-        if self._config.auto_restore_on_deactivate:
+        # auto_restore_on_deactivate 可動態化
+        auto_restore = bool(self._resolver.resolve("auto_restore_on_deactivate"))
+        if auto_restore:
             await self._restore_all()
 
         # 重置狀態

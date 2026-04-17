@@ -6,7 +6,7 @@ tags:
 source: csp_lib/controller/strategies/load_shedding.py
 created: 2026-03-06
 updated: 2026-04-17
-version: ">=0.8.0"
+version: ">=0.8.2"
 ---
 
 # LoadSheddingStrategy
@@ -351,6 +351,61 @@ await controller.add_base_mode("load_shedding")
 
 # 查詢當前卸載狀態
 print(load_shedding.shed_stage_names)  # e.g. ["non_critical"]
+```
+
+---
+
+## 動態參數化（v0.8.2）
+
+透過 `RuntimeParameters` + `param_keys` 讓 EMS 在執行期即時覆蓋配置。
+
+### 可動態化欄位
+
+| `LoadSheddingConfig` 欄位 | 說明 |
+|--------------------------|------|
+| `evaluation_interval` | 評估週期（秒），v0.8.0 起支援 float |
+| `restore_delay` | 恢復延遲（秒） |
+| `auto_restore_on_deactivate` | 停用時是否自動恢復全部負載 |
+
+> [!note] `stages` 不支援動態化
+> `stages` 欄位（`list[ShedStage]`）含有 Protocol 物件（斷路器參照），不適合透過 RuntimeParameters 傳遞。
+
+### 建構參數（v0.8.2 新增）
+
+| 參數 | 型別 | 預設 | 說明 |
+|------|------|------|------|
+| `params` | `RuntimeParameters \| None` | `None` | 動態參數來源 |
+| `param_keys` | `Mapping[str, str] \| None` | `None` | `{config 欄位名: runtime key}` 映射 |
+| `enabled_key` | `str \| None` | `None` | runtime 啟停旗標 key |
+
+### `enabled_key` 行為
+
+> [!note] LoadShedding 的 disabled 行為
+> `enabled_key` 指向的值為 falsy 時，`execute()` 直接回傳 `context.last_command`（保守策略）。不強制卸載負載、不輸出零命令。
+
+### 範例
+
+```python
+from csp_lib.core import RuntimeParameters
+from csp_lib.controller.strategies.load_shedding import LoadSheddingStrategy, LoadSheddingConfig, ShedStage
+
+params = RuntimeParameters()
+params.set("shed_eval_interval", 10.0)
+params.set("shed_restore_delay", 120.0)
+params.set("shed_enabled", 1)
+
+strategy = LoadSheddingStrategy(
+    LoadSheddingConfig(stages=[...]),
+    params=params,
+    param_keys={
+        "evaluation_interval": "shed_eval_interval",
+        "restore_delay": "shed_restore_delay",
+    },
+    enabled_key="shed_enabled",
+)
+
+# EMS 調整評估間隔
+params.set("shed_eval_interval", 5.0)
 ```
 
 ---

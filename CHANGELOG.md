@@ -6,6 +6,31 @@
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-04-17
+
+### Added
+
+- **Strategy 動態參數化（`DroopStrategy` / `QVStrategy` / `FPStrategy`）**：三個策略 `__init__` 新增 keyword-only 參數 `params: RuntimeParameters | None`、`param_keys: Mapping[str, str] | None`（邏輯欄位 → RuntimeParameters key 映射）、`enabled_key: str | None`（falsy 時跳過策略計算）。`params=None` 時行為 100% 等同舊版（frozen config 路徑保留）；`param_keys` 僅列需動態化的欄位，未列者 fallback config default；`params.get(key)` 回 None 時 fallback config（不拋錯）；`params` 與 `param_keys` 不對稱時 raise `ValueError`。`DroopStrategy` 額外新增 `droop_scale: float = 1.0`（droop 欄位倍率縮放，如 EMS 傳百分比需 × 0.01）與 `schedule_p_key: str | None`（enabled_key 為 0 時仍輸出 schedule_p）。詳見 [[DroopStrategy]] / [[QVStrategy]] / [[FPStrategy]]。
+- **`RegistryAggregatingSource`** (`csp_lib.modbus_gateway`)：`DataSyncSource` 實作，每 `interval` 秒輪詢 `DeviceRegistry.get_devices_by_trait(trait)` 並對 `latest_values[point]` 執行聚合（`AggregateFunc.AVERAGE/SUM/MIN/MAX` 或自訂 `AggregateCallable`），結果寫入 Gateway register。全設備離線時支援 `offline_fallback` 回退值（None 則本週期跳過）；注入 `params` 時支援 `writable_param` 回寫 `RuntimeParameters`，讓 strategy 即時反映聚合值。詳見 [[RegistryAggregatingSource]]。
+- **`RegisterAggregateMapping`** frozen dataclass（`csp_lib.modbus_gateway`）：`RegistryAggregatingSource` 的單一 register 聚合映射定義，欄位：`register`、`trait`、`point`、`aggregate`（預設 `AggregateFunc.AVERAGE`）、`offline_fallback`、`writable_param`。
+- **`AggregateFunc`** enum（`csp_lib.modbus_gateway`）：內建聚合函式列舉，值：`AVERAGE`、`SUM`、`MIN`、`MAX`。
+- **`AggregateCallable`** 型別別名（`csp_lib.modbus_gateway`）：`Callable[[list[float]], float]`，自訂聚合函式的型別簽名。
+- **`RuntimeParameters.__getattr__` / `__setattr__`**：支援 attribute-style 存取（`params.soc_max`、`params.soc_max = 90.0`），等價於 `.get()` / `.set()`，觀察者正常觸發。不存在的 key 拋 `AttributeError`（非 `None`），底線開頭屬性走 `__slots__` 原生路徑。
+- **`DeviceRegistry.StatusChangeCallback` 型別別名** (`Callable[[str, bool], None]`)：設備回應狀態變化通知的回呼簽名，用於 `on_status_change()` / `remove_status_observer()`。
+- **`DeviceRegistry.on_status_change(callback)`**：註冊設備 `is_responsive` 變化觀察者；首次 `notify_status` 僅建立 baseline、不觸發（避免啟動期噪訊）；callback 在鎖外執行，例外隔離（warning log）。
+- **`DeviceRegistry.remove_status_observer(callback)`**：移除已註冊的狀態變化觀察者，未找到時靜默忽略。
+- **`DeviceRegistry.notify_status(device_id)`**：由呼叫方（`DeviceManager` / 輪詢迴圈）主動觸發狀態偵測；未註冊的 device_id 靜默忽略。
+- **`SOCBalancingDistributor.SOCSource` 型別別名** (`Callable[[DeviceSnapshot], float | None]`)：自訂 SOC 取值函式簽名，供 `soc_source` 參數使用。
+- **`SOCBalancingDistributor(soc_source=None)` 建構參數**：注入自訂 SOC 取值函式，適用於 SOC 不在 capability slot、而在 `latest_values` / `metadata` / 外部來源的場景；`None` 時走原路徑（100% 向後相容）；`soc_source` 拋例外**不攔截**，直接傳播給呼叫方（避免 silent corruption）。
+- **`csp_lib.alarm` 新模組（L8 Additional）**（WI-AL-01/02）：提供 in-process 多來源告警聚合與 Redis pub/sub 橋接。
+  - **`AlarmAggregator`**（`csp_lib.alarm.aggregator`）：多 source OR 聚合器；`bind_device(device, *, name=None)` 訂閱設備 `alarm_triggered` / `alarm_cleared` 事件、`bind_watchdog(watchdog, *, name)` 透過 `WatchdogProtocol` 綁定 watchdog timeout/recover、`unbind(name)` 解除並重算旗標、`mark_source(name, active)` 外部直接注入狀態；observer API：`on_change(cb)` / `remove_observer(cb)`；properties：`active: bool`、`active_sources: set[str]`；使用 `threading.Lock` 保護、callback 在 lock 外以快照呼叫（避免重入死鎖）。
+  - **`WatchdogProtocol`**（`csp_lib.alarm.protocols`）：`@runtime_checkable` 結構化協定，要求 `on_timeout(cb)` / `on_recover(cb)`，相容 `CommunicationWatchdog` 及任何自訂 watchdog，避免 alarm 層直接依賴上層模組。
+  - **`AlarmChangeCallback`**（`csp_lib.alarm.protocols`）：`Callable[[bool], None]` 型別別名。
+  - **`RedisAlarmPublisher`** / **`RedisAlarmSource`**（`csp_lib.alarm.redis_adapter`，需 `csp_lib[redis]` extra）：繼承 `AsyncLifecycleMixin`；Publisher 採 `asyncio.create_task` 排程 async publish，publish 失敗僅 log warning；預設 payload schema：`{"type": "aggregated_alarm", "active": bool, "sources": [...], "timestamp": iso}`，相容日本 demo；Source 支援自訂 `event_parser: Callable[[dict], bool]`；停止時呼叫 `aggregator.unbind(name)` 清除遠端 source 狀態。
+- **`PVSmoothStrategy` 動態參數化**（WI-ST-01）：`__init__` 新增 keyword-only `params: RuntimeParameters | None`、`param_keys: Mapping[str, str] | None`、`enabled_key: str | None`；可動態覆蓋欄位：`capacity`、`ramp_rate`、`pv_loss`、`min_history`；`enabled_key` falsy 時輸出 `Command(0, 0)`（PV 離線即停語義）；舊版 ctor 100% 相容。
+- **`LoadSheddingStrategy` 動態參數化**（WI-ST-02）：同上新增 `params` / `param_keys` / `enabled_key`；可動態覆蓋欄位：`evaluation_interval`、`restore_delay`、`auto_restore_on_deactivate`（`stages` 不動態化）；`enabled_key` falsy 時回傳 `context.last_command`（保守，不強制變 0）。
+- **`RampStopStrategy` 動態參數化**（WI-ST-03）：同上新增 `params` / `param_keys` / `enabled_key`；內部引入私有 `_RampStopRuntimeConfig` frozen dataclass；可動態覆蓋欄位：`rated_power`、`ramp_rate_pct`；`enabled_key` falsy 時回傳 `context.last_command`。
+
 ## [0.8.1] - 2026-04-17
 
 ### Added

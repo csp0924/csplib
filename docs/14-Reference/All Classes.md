@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-17
-version: ">=0.8.1"
+version: ">=0.8.2"
 
 ---
 
@@ -161,6 +161,32 @@ SORT file.name ASC
 | [[Command Refresh\|DeviceHeartbeatTarget]] | `AsyncModbusDevice` 點位的心跳寫入目標（v0.8.1） |
 | [[Command Refresh\|GatewayRegisterHeartbeatTarget]] | Modbus Gateway register 的心跳寫入目標（v0.8.1） |
 
+**快速參考（v0.8.2 新增）：**
+
+| 名稱 | 說明 |
+|------|------|
+| [[DeviceRegistry\|StatusChangeCallback]] | `Callable[[str, bool], None]`：設備回應狀態變化回呼簽名（v0.8.2） |
+| [[PowerDistributor\|SOCSource]] | `Callable[[DeviceSnapshot], float \| None]`：自訂 SOC 取值函式簽名（v0.8.2） |
+
+### Alarm（v0.8.2）
+
+```dataview
+TABLE source AS "來源模組"
+FROM ""
+WHERE contains(tags, "type/class") AND contains(tags, "layer/alarm")
+SORT file.name ASC
+```
+
+**快速參考：**
+
+| 名稱 | 說明 |
+|------|------|
+| [[AlarmAggregator]] | 多 source OR 聚合器（v0.8.2） |
+| [[AlarmAggregator\|WatchdogProtocol]] | Watchdog 結構化協定 `@runtime_checkable`（v0.8.2） |
+| [[AlarmAggregator\|AlarmChangeCallback]] | `Callable[[bool], None]` callback 型別別名（v0.8.2） |
+| [[Redis Adapter\|RedisAlarmPublisher]] | AlarmAggregator → Redis pub（v0.8.2，需 `[redis]`） |
+| [[Redis Adapter\|RedisAlarmSource]] | Redis sub → AlarmAggregator（v0.8.2，需 `[redis]`） |
+
 ### Storage (Mongo / Redis)
 
 ```dataview
@@ -201,6 +227,10 @@ SORT file.name ASC
 | [[StatePersistHook]] | 狀態持久化鉤子 |
 | [[RedisSubscriptionSource]] | Redis 訂閱資料來源 |
 | [[PollingCallbackSource]] | 輪詢回呼資料來源 |
+| [[RegistryAggregatingSource]] | DeviceRegistry 聚合同步來源（v0.8.2） |
+| [[RegistryAggregatingSource\|RegisterAggregateMapping]] | 單一 register 聚合映射定義 frozen dataclass（v0.8.2） |
+| [[RegistryAggregatingSource\|AggregateFunc]] | 內建聚合函式列舉 AVERAGE/SUM/MIN/MAX（v0.8.2） |
+| [[RegistryAggregatingSource\|AggregateCallable]] | 自訂聚合函式型別別名 `Callable[[list[float]], float]`（v0.8.2） |
 | [[GatewayConfig\|RegisterNotWritableError]] | EMS 寫入 writable=False register 時拋出（v0.7.3） |
 
 ### Modbus Server（v0.5.2）
