@@ -5,6 +5,8 @@ tags:
   - status/complete
 source: csp_lib/manager/base.py
 created: 2026-04-04
+updated: 2026-04-18
+version: ">=0.8.2"
 ---
 
 # BatchUploader
@@ -60,6 +62,7 @@ async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None
 | 類別 | 模組 | 說明 |
 |------|------|------|
 | [[MongoBatchUploader]] | `csp_lib.mongo` | MongoDB 批次上傳器（組合 BatchQueue + MongoWriter） |
+| [[LocalBufferedUploader]] | `csp_lib.mongo.local_buffer` | SQLite WAL 本地緩衝前置層，需 aiosqlite（v0.8.2） |
 
 ## 自訂實作範例
 
@@ -98,5 +101,6 @@ await uploader.enqueue("device_data", {"device_id": "dev_001", "value": 42})
 
 - [[DeviceEventSubscriber]] — 同在 `base.py` 中定義的基底類別
 - [[MongoBatchUploader]] — MongoDB 實作
+- [[LocalBufferedUploader]] — SQLite WAL 本地緩衝前置層（v0.8.2）
 - [[DataUploadManager]] — 主要消費者
 - [[UnifiedDeviceManager]] — 透過 `UnifiedConfig.mongo_uploader` 注入
