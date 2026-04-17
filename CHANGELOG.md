@@ -46,6 +46,10 @@
 - **`SinkManager._poll_remote` 改為 sleep-first** (Copilot review)：`attach_remote_source` 已於啟動時 fetch 一次；原 work-first 版本在啟動時會立刻再 fetch 一次，造成 startup double-fetch。改為先 `next_tick_delay` 再 fetch，保留原絕對時間錨定語意。
 - **`CoilToBitmaskAggregator.coil_names` 型別標註改為 `Sequence[str]`** (Copilot review)：`__post_init__` 本就接受 list/tuple 再轉為 tuple，但原 `tuple[str, ...]` 標註讓 mypy 拒絕傳入 list。改用 `Sequence[str]` 反映實際可接受的輸入型別。
 
+### Tests
+
+- **`test_watchdog.py` 4 個 timing-sensitive 測試改 fake `asyncio.sleep`**：`TestWatchdogTimeout` / `TestWatchdogRecovery` / `TestWatchdogCallbackExceptions` 原本依賴真實 `asyncio.sleep(0.01s)` 推進 `_check_loop`，在 Windows scheduler 精度不足或 pytest-xdist 多 worker 搶 CPU 時可能把 10ms sleep 延遲到秒級，造成 CI 偶發 `TimeoutError`（v0.7.3 首次 release 因此失敗）。改用 `patch("csp_lib.modbus_gateway.watchdog.asyncio.sleep", _yield_sleep)` 讓 `_check_loop` 只 yield event loop 不實際等待；因 `asyncio` 是 singleton module，patch 會全域生效，fake 內部透過 module-load 時保存的 `_REAL_SLEEP` reference 避免遞迴。
+
 ### Security
 
 - **(SEC-006) `GatewayRegisterDef.writable` defaults to `False`**: All HOLDING registers are now write-protected by default. EMS can only write registers explicitly marked `writable=True`. See migration note below.
