@@ -489,3 +489,67 @@ class TestDataUploadManagerSaveInterval:
 
         assert "device_001" not in manager._save_intervals
         assert "device_001" not in manager._last_save_times
+
+
+# ======================== v0.8.2: buffered_uploader 注入 ========================
+
+
+class TestDataUploadManagerBufferedUploader:
+    """
+    v0.8.2：buffered_uploader 作為 fail-safe wrapper
+
+    若提供 buffered_uploader，所有 enqueue 應走本地 SQLite buffer，
+    避免下游 MongoDB 故障時資料遺失。
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_buffered_uploader_uses_provided_uploader(self):
+        """buffered_uploader=None 時 self._uploader 應等於傳入的 uploader"""
+        uploader = MockUploader()
+        manager = DataUploadManager(uploader=uploader)
+
+        assert manager._uploader is uploader
+
+    @pytest.mark.asyncio
+    async def test_buffered_uploader_replaces_normal_uploader(self):
+        """提供 buffered_uploader 時 self._uploader 應改為 buffered_uploader"""
+        uploader = MockUploader()
+        buffered = MockUploader()  # 使用相同介面（register_collection + enqueue）
+        manager = DataUploadManager(uploader=uploader, buffered_uploader=buffered)
+
+        assert manager._uploader is buffered
+        assert manager._uploader is not uploader
+
+    @pytest.mark.asyncio
+    async def test_buffered_uploader_receives_enqueue_events(self):
+        """有 buffered_uploader 時，read_complete 應 enqueue 至 buffered_uploader 而非原 uploader"""
+        uploader = MockUploader()
+        buffered = MockUploader()
+        manager = DataUploadManager(uploader=uploader, buffered_uploader=buffered)
+
+        device = MockDevice("device_001")
+        manager.configure(device.device_id, "device_data")
+        manager.subscribe(device)
+
+        payload = ReadCompletePayload(
+            device_id="device_001",
+            values={"t": 25.5},
+            duration_ms=10.0,
+        )
+        await device.emit(EVENT_READ_COMPLETE, payload)
+
+        # buffered_uploader 被呼叫，原 uploader 不應被呼叫
+        buffered.enqueue.assert_awaited_once()
+        uploader.enqueue.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_buffered_uploader_receives_register_collection(self):
+        """configure 時 register_collection 應走 buffered_uploader"""
+        uploader = MockUploader()
+        buffered = MockUploader()
+        manager = DataUploadManager(uploader=uploader, buffered_uploader=buffered)
+
+        manager.configure("device_001", "device_data")
+
+        buffered.register_collection.assert_called_once_with("device_data")
+        uploader.register_collection.assert_not_called()

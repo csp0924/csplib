@@ -3,7 +3,7 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-17
+updated: 2026-04-18
 version: ">=0.8.2"
 
 ---
@@ -195,6 +195,17 @@ FROM ""
 WHERE contains(tags, "type/class") AND (contains(tags, "layer/mongo") OR contains(tags, "layer/redis"))
 SORT file.name ASC
 ```
+
+**快速參考（v0.8.2 新增）：**
+
+| 類別 | 說明 |
+|------|------|
+| [[LocalBufferedUploader]] | 本地緩衝上傳器；backend-agnostic，透過 `LocalBufferStore` Protocol 插拔（v0.8.2） |
+| [[LocalBufferedUploader\|LocalBufferConfig]] | `LocalBufferedUploader` 的 replay/cleanup frozen dataclass 配置（v0.8.2）；不含 `db_path` |
+| [[LocalBufferStore]] | Backend-agnostic 儲存 Protocol（`@runtime_checkable`，10 個 async CRUD method，v0.8.2） |
+| [[LocalBufferStore\|BufferedRow]] | `fetch_pending` 回傳的唯讀資料快照 frozen dataclass（v0.8.2） |
+| [[SqliteBufferStore]] | `LocalBufferStore` 的 aiosqlite + WAL 實作（v0.8.2，需 `csp_lib[local-buffer]`） |
+| [[MongoBufferStore]] | `LocalBufferStore` 的本地 mongod 實作（v0.8.2，已含於 `csp_lib[mongo]`，適用雙 MongoDB 拓樸） |
 
 ### Cluster
 
