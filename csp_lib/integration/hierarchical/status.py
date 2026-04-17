@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from csp_lib.controller.core import Command
+from csp_lib.controller.core import NO_CHANGE, Command, NoChange, is_no_change
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,15 +62,20 @@ class StatusReport:
     metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        """序列化為字典"""
+        """序列化為字典
+
+        v0.8.0：``Command.p_target`` / ``q_target`` 若為 ``NO_CHANGE``
+        sentinel，以 JSON ``null`` 表示（由 ``from_dict`` 還原為 ``NO_CHANGE``）。
+        """
+        last_cmd = self.status.last_command
         return {
             "site_id": self.site_id,
             "status": {
                 "strategy_name": self.status.strategy_name,
                 "last_command": {
-                    "p_target": self.status.last_command.p_target,
-                    "q_target": self.status.last_command.q_target,
-                    "is_fallback": self.status.last_command.is_fallback,
+                    "p_target": None if is_no_change(last_cmd.p_target) else last_cmd.p_target,
+                    "q_target": None if is_no_change(last_cmd.q_target) else last_cmd.q_target,
+                    "is_fallback": last_cmd.is_fallback,
                 },
                 "active_overrides": list(self.status.active_overrides),
                 "base_modes": list(self.status.base_modes),
@@ -84,16 +89,23 @@ class StatusReport:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StatusReport:
-        """從字典反序列化"""
+        """從字典反序列化
+
+        v0.8.0：``p_target`` / ``q_target`` 為 ``None`` 時還原為 ``NO_CHANGE``。
+        """
         status_data = data.get("status", {})
         cmd_data = status_data.get("last_command", {})
+        p_raw = cmd_data.get("p_target", 0.0)
+        q_raw = cmd_data.get("q_target", 0.0)
+        p_target: float | NoChange = NO_CHANGE if p_raw is None else float(p_raw)
+        q_target: float | NoChange = NO_CHANGE if q_raw is None else float(q_raw)
         return cls(
             site_id=data["site_id"],
             status=ExecutorStatus(
                 strategy_name=status_data.get("strategy_name", ""),
                 last_command=Command(
-                    p_target=float(cmd_data.get("p_target", 0.0)),
-                    q_target=float(cmd_data.get("q_target", 0.0)),
+                    p_target=p_target,
+                    q_target=q_target,
                     is_fallback=bool(cmd_data.get("is_fallback", False)),
                 ),
                 active_overrides=tuple(status_data.get("active_overrides", [])),

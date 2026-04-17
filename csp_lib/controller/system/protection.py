@@ -16,7 +16,7 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
-from csp_lib.controller.core import Command, StrategyContext
+from csp_lib.controller.core import Command, StrategyContext, is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core._numeric import is_non_finite_float
 
@@ -107,13 +107,18 @@ class SOCProtection(ProtectionRule):
             self._is_triggered = False
             return command
 
+        # NO_CHANGE：策略不變更 P 軸，SOC 保護不介入（設備保留上次實際功率）
+        if is_no_change(command.p_target):
+            self._is_triggered = False
+            return command
+
         # SEC-013a L4：soc 為非有限 float（NaN/Inf）視同資料不可用，
         # 沿用上次 is_triggered 並 passthrough（參考 DynamicSOCProtection 的設計）。
         if is_non_finite_float(soc):
             return command
 
         cfg = self._config
-        p = command.p_target
+        p: float = command.p_target
 
         # SOC 過高：禁止充電（P < 0 為充電）
         if soc >= cfg.soc_high:
@@ -194,6 +199,11 @@ class ReversePowerProtection(ProtectionRule):
             self._is_triggered = False
             return command
 
+        # NO_CHANGE：策略不變更 P 軸，逆送保護不介入
+        if is_no_change(command.p_target):
+            self._is_triggered = False
+            return command
+
         # SEC-013a L4：meter_power 為非有限 float（NaN/Inf）視同資料不可用，
         # 沿用上次 is_triggered 並 passthrough。避免 max_discharge=NaN 讓
         # `p > NaN` 恆為 False 把 is_triggered 無聲重置為 False
@@ -201,7 +211,7 @@ class ReversePowerProtection(ProtectionRule):
         if is_non_finite_float(meter_power):
             return command
 
-        p = command.p_target
+        p: float = command.p_target
 
         # P < 0 為充電（從電網取電），不受逆送保護限制
         if p < 0:

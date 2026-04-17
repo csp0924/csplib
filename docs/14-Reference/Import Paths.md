@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-16
-version: ">=0.7.3"
+updated: 2026-04-17
+version: ">=0.8.0"
 
 ---
 
@@ -254,6 +254,8 @@ from csp_lib.controller import (
     # 核心
     Command, SystemBase, StrategyContext,
     Strategy, ExecutionConfig, ExecutionMode, ConfigMixin,
+    # NO_CHANGE sentinel（v0.8.0）
+    NoChange, NO_CHANGE, is_no_change,
     # 命令處理管線（v0.5.1）
     CommandProcessor,
     # 校準（v0.5.1）

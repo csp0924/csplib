@@ -31,11 +31,14 @@ class ExecutionConfig:
 
     Attributes:
         mode: 執行模式
-        interval_seconds: 週期秒數 (適用於 PERIODIC 和 HYBRID 模式)
+        interval_seconds: 週期秒數（適用於 PERIODIC 和 HYBRID 模式）
+
+            v0.8.0 起型別由 ``int`` 擴寬為 ``float``，支援次秒級週期（如 0.5s、0.1s）。
+            既有傳整數字面值（如 ``interval_seconds=1``）完全相容，無需修改。
     """
 
     mode: ExecutionMode
-    interval_seconds: int = 1
+    interval_seconds: float = 1.0
 
     def __post_init__(self) -> None:
         if self.mode != ExecutionMode.TRIGGERED and self.interval_seconds <= 0:

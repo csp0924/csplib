@@ -69,6 +69,15 @@ class GridControllerBase(ABC):
 
         子類別實作此方法，將策略輸出的 Command 寫入 PCS。
 
+        Note:
+            v0.8.0 起 ``command.p_target`` / ``q_target`` 可能為 ``NO_CHANGE``
+            sentinel。推薦的實作方式：
+              - 在 SystemController 架構下，此類 sentinel 會在 ``CommandRouter``
+                層被過濾（不會觸發設備寫入），子類別無需額外處理。
+              - 若直接實作 ``_send_command``（不經 CommandRouter），建議使用
+                ``command.effective_p(fallback)`` / ``effective_q(fallback)``
+                取得有效浮點值，或明確 ``is_no_change(...)`` 守衛跳過該軸。
+
         Args:
             command: 策略輸出的命令
         """

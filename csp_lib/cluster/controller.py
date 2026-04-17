@@ -169,12 +169,16 @@ class ClusterController(AsyncLifecycleMixin):
 
         # 4. 啟動 ClusterStatePublisher
         executor = self._system_controller.executor
+        # NO_CHANGE 經 effective_p/q(0.0) 降級為 0.0：follower 快照視為「此輪無變更」。
         self._publisher = ClusterStatePublisher(
             config=self._config,
             redis_client=self._redis,
             mode_manager=self._system_controller.mode_manager,
             protection_guard=self._system_controller.protection_guard,
-            get_last_command=lambda: (executor.last_command.p_target, executor.last_command.q_target),
+            get_last_command=lambda: (
+                executor.last_command.effective_p(0.0),
+                executor.last_command.effective_q(0.0),
+            ),
             get_auto_stop=lambda: self._system_controller.auto_stop_active,
         )
         await self._publisher.start()

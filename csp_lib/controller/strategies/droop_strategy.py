@@ -64,16 +64,7 @@ class DroopConfig(ConfigMixin):
 
 
 def _clamp(value: float, low: float, high: float) -> float:
-    """Clamp a value within [low, high].
-
-    Args:
-        value: The value to clamp.
-        low: Lower bound.
-        high: Upper bound.
-
-    Returns:
-        The clamped value.
-    """
+    """將數值限制於 [low, high] 區間。"""
     if value < low:
         return low
     if value > high:
@@ -122,14 +113,8 @@ class DroopStrategy(Strategy):
 
     @property
     def execution_config(self) -> ExecutionConfig:
-        """執行配置: 週期執行
-
-        Note:
-            ExecutionConfig.interval_seconds is int. The config.interval (float)
-            is truncated via max(1, int(...)). Sub-second scheduling is handled
-            by the executor layer, not by ExecutionConfig.
-        """
-        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=max(1, int(self._config.interval)))
+        """執行配置：週期執行（支援次秒級週期）。"""
+        return ExecutionConfig(mode=ExecutionMode.PERIODIC, interval_seconds=self._config.interval)
 
     def execute(self, context: StrategyContext) -> Command:
         """

@@ -13,14 +13,24 @@ CommandProcessor — Post-Protection 命令處理器 Protocol
 
 Usage::
 
+    from csp_lib.controller.core import is_no_change
+
     class MyCompensator:
         async def process(self, command, context):
+            # 策略要求「此軸不變更」（NO_CHANGE）時補償器 bypass
+            if is_no_change(command.p_target):
+                return command
             compensated_p = self._compensate(command.p_target)
             return command.with_p(compensated_p)
 
     config = SystemControllerConfig(
         post_protection_processors=[MyCompensator()],
     )
+
+Note:
+    ``command.p_target`` / ``q_target`` 可能為 ``NO_CHANGE`` sentinel。若 processor
+    對值做計算（功率補償、限幅等），入口應使用 ``is_no_change(...)`` 守衛並原封
+    回傳 command，避免把 sentinel 當 float 餵進內部狀態（積分器、EMA 等）。
 """
 
 from __future__ import annotations

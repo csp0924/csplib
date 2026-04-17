@@ -68,20 +68,41 @@ def _validate_device_or_trait(device_id: str | None, trait: str | None) -> None:
         raise ValueError("Must set either device_id or trait; neither was provided.")
 
 
+def _validate_context_source(
+    device_id: str | None,
+    trait: str | None,
+    param_key: str | None,
+) -> None:
+    """驗證 ContextMapping 的三擇一來源：device_id / trait / param_key。
+
+    v0.8.0 起 ContextMapping 支援從 RuntimeParameters 讀值（``param_key``），
+    與設備讀取（device_id / trait）互斥 — 三者恰好設定其一。
+    """
+    sources = [s for s in (device_id, trait, param_key) if s is not None]
+    if len(sources) > 1:
+        raise ValueError("Cannot set more than one of device_id / trait / param_key; choose exactly one.")
+    if not sources:
+        raise ValueError("Must set exactly one of device_id / trait / param_key; none was provided.")
+
+
 @dataclass(frozen=True, slots=True)
 class ContextMapping:
     """
-    設備點位 → StrategyContext 欄位映射
+    設備點位 / RuntimeParameters → StrategyContext 欄位映射
 
-    將設備的讀取值映射到策略上下文中的特定欄位。
-    ``device_id`` 模式用於單一設備讀取；``trait`` 模式用於多設備聚合。
-    兩者必須恰好設定其一。
+    將設備的讀取值或 RuntimeParameters 中的參數映射到策略上下文中的特定欄位。
+    ``device_id`` 模式用於單一設備讀取；``trait`` 模式用於多設備聚合；
+    ``param_key``（v0.8.0+）模式用於從 RuntimeParameters 讀值。三者必須恰好設定其一。
 
     Attributes:
-        point_name: 設備點位名稱 (對應 device.latest_values 的 key)
-        context_field: 目標 context 欄位 ("soc" | "extra.xxx")
-        device_id: 指定單一設備 ID（與 trait 擇一）
-        trait: 指定 trait 標籤，匹配所有同 trait 設備（與 device_id 擇一）
+        point_name: 設備點位名稱（對應 ``device.latest_values`` 的 key）。
+            param_key 模式下此欄位不會被用到，但為相容既有 builder 介面仍需設值。
+        context_field: 目標 context 欄位（"soc" | "extra.xxx"）
+        device_id: 指定單一設備 ID（與 trait / param_key 擇一）
+        trait: 指定 trait 標籤，匹配所有同 trait 設備（與 device_id / param_key 擇一）
+        param_key: v0.8.0+ 新增。指定 ``RuntimeParameters`` 的 key，從 params 讀值
+            （與 device_id / trait 擇一）。requires ContextBuilder 以 ``runtime_params`` 建構；
+            否則會 log warning 並回退至 ``default``。
         aggregate: 多設備聚合函式（僅 trait 模式有效）
         custom_aggregate: 自訂聚合函式，優先於 aggregate
         default: 無法取得有效值時的預設值
@@ -92,13 +113,14 @@ class ContextMapping:
     context_field: str
     device_id: str | None = None
     trait: str | None = None
+    param_key: str | None = None
     aggregate: AggregateFunc = AggregateFunc.AVERAGE
     custom_aggregate: Callable[[list[Any]], Any] | None = None
     default: Any = None
     transform: Callable[[Any], Any] | None = None
 
     def __post_init__(self) -> None:
-        _validate_device_or_trait(self.device_id, self.trait)
+        _validate_context_source(self.device_id, self.trait, self.param_key)
 
 
 @dataclass(frozen=True, slots=True)
