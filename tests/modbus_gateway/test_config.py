@@ -115,7 +115,8 @@ class TestWatchdogConfig:
 class TestGatewayServerConfig:
     def test_defaults(self):
         cfg = GatewayServerConfig()
-        assert cfg.host == "0.0.0.0"
+        # v0.7.3 SEC-011: 預設 bind localhost（安全限定）
+        assert cfg.host == "127.0.0.1"
         assert cfg.port == 502
         assert cfg.unit_id == 1
         assert cfg.byte_order == ByteOrder.BIG_ENDIAN

@@ -274,6 +274,65 @@ class TestClusterStateSubscriber:
         await subscriber.stop()
 
     @pytest.mark.asyncio
+    async def test_polls_last_command_from_json_str(self):
+        """last_command 欄位為 JSON 字串時應正確解析為 float（publisher 用 json.dumps，Redis 讀回為 str）"""
+        config = _make_config()
+        redis = _make_mock_redis()
+        redis.get = AsyncMock(return_value=None)
+
+        def mock_hgetall(key):
+            if "last_command" in key:
+                # Publisher 端用 json.dumps，Redis hgetall 讀回為 str（decode_responses=True 場景）
+                return {
+                    "p_target": json.dumps(100.0),
+                    "q_target": json.dumps(-50.0),
+                    "timestamp": json.dumps(1234.5),
+                }
+            return {}
+
+        redis.hgetall = AsyncMock(side_effect=mock_hgetall)
+
+        subscriber = ClusterStateSubscriber(config=config, redis_client=redis)
+        await subscriber.start()
+        await asyncio.sleep(0.15)
+
+        snap = subscriber.snapshot
+        assert snap.p_target == 100.0, f"p_target 應解析為 100.0，實際為 {snap.p_target}"
+        assert snap.q_target == -50.0, f"q_target 應解析為 -50.0，實際為 {snap.q_target}"
+        assert snap.command_timestamp == 1234.5, f"command_timestamp 應解析為 1234.5，實際為 {snap.command_timestamp}"
+
+        await subscriber.stop()
+
+    @pytest.mark.asyncio
+    async def test_polls_last_command_rejects_non_finite(self):
+        """last_command 欄位為 NaN/Inf 字串時應回退到 default (finite guard)"""
+        config = _make_config()
+        redis = _make_mock_redis()
+        redis.get = AsyncMock(return_value=None)
+
+        def mock_hgetall(key):
+            if "last_command" in key:
+                return {
+                    "p_target": json.dumps(float("nan")),
+                    "q_target": json.dumps(float("inf")),
+                    "timestamp": "not-a-number",
+                }
+            return {}
+
+        redis.hgetall = AsyncMock(side_effect=mock_hgetall)
+
+        subscriber = ClusterStateSubscriber(config=config, redis_client=redis)
+        await subscriber.start()
+        await asyncio.sleep(0.15)
+
+        snap = subscriber.snapshot
+        assert snap.p_target == 0.0
+        assert snap.q_target == 0.0
+        assert snap.command_timestamp == 0.0
+
+        await subscriber.stop()
+
+    @pytest.mark.asyncio
     async def test_empty_redis_returns_defaults(self):
         """Redis 為空時應回傳預設值"""
         config = _make_config()

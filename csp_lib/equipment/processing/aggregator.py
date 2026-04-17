@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
@@ -29,7 +30,9 @@ class CoilToBitmaskAggregator:
 
     Attributes:
         output_name: 輸出值的名稱
-        coil_names: coil 點位名稱列表（按位元順序，bit 0 在前）
+        coil_names: coil 點位名稱（按位元順序，bit 0 在前）。
+            接受 ``list`` 或 ``tuple``，在初始化時一律轉為 ``tuple``
+            以確保不可變性。
         remove_source: 是否移除來源點位
 
     使用範例：
@@ -41,8 +44,13 @@ class CoilToBitmaskAggregator:
     """
 
     output_name: str
-    coil_names: list[str]
+    # 接受任意 Sequence[str]（list/tuple/...）；__post_init__ 內部轉為 tuple 以確保不可變性。
+    coil_names: Sequence[str]
     remove_source: bool = True
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.coil_names, tuple):
+            self.coil_names = tuple(self.coil_names)
 
     def process(self, values: dict[str, Any]) -> dict[str, Any]:
         """

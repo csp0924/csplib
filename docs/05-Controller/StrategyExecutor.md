@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/executor/strategy_executor.py
 created: 2026-02-17
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # StrategyExecutor
@@ -76,13 +76,31 @@ command = await executor.execute_once()
 ```
 run()
  └─ while not stop_event:
-      ├─ wait_for_execution(config)   # 根據 mode 等待
-      ├─ context_provider()           # 取得上下文
-      ├─ replace(last_command, time)  # 注入不可變副本
-      ├─ strategy.execute(context)    # 執行策略
-      ├─ last_command = result        # 更新
-      └─ on_command(result)           # 回呼
+      ├─ wait_for_execution(config)       # 根據 mode 等待
+      ├─ context_provider()               # 取得上下文
+      ├─ replace(last_command, time)      # 注入不可變副本
+      ├─ strategy.execute(context)        # 執行策略
+      │   ├─ [成功] last_command = result # 更新 _last_command
+      │   │         on_command(result)    # 回呼
+      │   └─ [例外] logger.exception(...) # 記錄後回傳 fallback
+      │             return Command(0, 0, is_fallback=True)
+      │             # _last_command 不更新；**不呼叫 on_command**
+      └─ （繼續下一週期）
 ```
+
+### 異常 Fallback 行為（v0.7.3）
+
+策略執行拋出例外時（`except Exception`）：
+
+1. 回傳 `Command(p_target=0.0, q_target=0.0, is_fallback=True)` 作為 `_execute_strategy` 的 return value
+2. `self._last_command` **不更新**，下輪 `context.last_command` 仍是上次正常命令
+3. **不呼叫 `on_command` callback**；`run` 主迴圈丟棄 return value，僅 `execute_once()` 會回傳此 fallback command 供 caller 檢視 `is_fallback`
+4. Exception 細節由 `logger.exception(...)` 記錄（含 strategy 名稱、SOC、`last_command`）
+
+> [!warning] 升級注意
+> v0.7.3 前，異常時回傳 `self._last_command`（上次成功命令）。
+> 升級後回傳明確的零命令 + `is_fallback=True`。
+> 若上層程式碼依賴異常後仍沿用上次命令的行為，需評估影響。
 
 ## 相關連結
 

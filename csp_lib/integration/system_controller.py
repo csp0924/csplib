@@ -610,21 +610,36 @@ class SystemController(AsyncLifecycleMixin):
     # ---- 生命週期 ----
 
     async def _on_start(self) -> None:
-        """啟動系統控制器"""
-        # Preflight: 驗證能力需求
-        self.preflight_check()
+        """啟動系統控制器
 
-        # 初始化 post-protection processors（async_init for MongoDB etc.）
-        for proc in self._config.post_protection_processors:
-            if hasattr(proc, "async_init"):
-                await proc.async_init()
-        if self._data_feed is not None:
-            self._data_feed.attach()
-        if self._heartbeat is not None:
-            self._validate_heartbeat_points()
-            await self._heartbeat.start()
-        self._run_task = asyncio.create_task(self._executor.run())
-        logger.info("SystemController started.")
+        中途失敗時呼叫 ``_on_stop()`` 清理已啟動的元件（data_feed、heartbeat、
+        _run_task），再 re-raise。避免 PEP 492 ``async with`` 模式下 ``__aenter__``
+        拋異常後 ``__aexit__`` 不會被呼叫所導致的資源洩漏。
+        """
+        try:
+            # Preflight: 驗證能力需求
+            self.preflight_check()
+
+            # 初始化 post-protection processors（async_init for MongoDB etc.）
+            for proc in self._config.post_protection_processors:
+                if hasattr(proc, "async_init"):
+                    await proc.async_init()
+            if self._data_feed is not None:
+                self._data_feed.attach()
+            if self._heartbeat is not None:
+                self._validate_heartbeat_points()
+                await self._heartbeat.start()
+            self._run_task = asyncio.create_task(self._executor.run())
+            logger.info("SystemController started.")
+        except Exception:
+            # 僅處理 Exception：CancelledError/KeyboardInterrupt/SystemExit 不做 rollback
+            # （中止訊號下繼續 await 另一個 coroutine 會再拋 CancelledError，遮蔽原例外）。
+            logger.opt(exception=True).warning("SystemController._on_start failed; rolling back partial startup.")
+            try:
+                await self._on_stop()
+            except Exception:
+                logger.opt(exception=True).warning("SystemController rollback _on_stop also failed.")
+            raise
 
     async def _on_stop(self) -> None:
         """停止系統控制器"""

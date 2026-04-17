@@ -162,8 +162,12 @@ class TestStrategyExecutor:
         assert called_cmd.p_target == 200.0
 
     @pytest.mark.asyncio
-    async def test_strategy_exception_returns_last_command(self):
-        """策略執行異常時應返回 last_command"""
+    async def test_strategy_exception_returns_fallback_command(self):
+        """v0.7.3 BUG-011: 策略執行異常時應返回 fallback Command（p=0, q=0, is_fallback=True）。
+
+        修復前：返回 self._last_command（可能不為零，讓上層無法區分正常與異常）。
+        修復後：返回 Command(0, 0, is_fallback=True)，且不更新 _last_command。
+        """
         executor = StrategyExecutor(context_provider=lambda: StrategyContext())
 
         # 先設定一個正常策略執行一次
@@ -181,8 +185,12 @@ class TestStrategyExecutor:
 
         cmd = await executor.execute_once()
 
-        # 應返回上一次的 command
-        assert cmd.p_target == 100.0
+        # 應返回 fallback command
+        assert cmd.p_target == 0.0
+        assert cmd.q_target == 0.0
+        assert cmd.is_fallback is True
+        # _last_command 應保持為之前的正常值
+        assert executor.last_command.p_target == 100.0
 
     @pytest.mark.asyncio
     async def test_run_and_stop(self):
@@ -367,3 +375,104 @@ class TestStrategyExecutor:
         assert strategy.last_context is not None
         assert strategy.last_context.last_command == Command()  # 執行時的 last
         assert strategy.last_context.current_time is not None
+
+
+# =============== v0.7.3 BUG-011: Command.is_fallback ===============
+
+
+class TestCommandIsFallback:
+    """v0.7.3 BUG-011: Command 新增 is_fallback 旗標。
+
+    修復前：Command 無法區分「正常策略輸出零」與「策略異常 fallback 零」。
+    修復後：is_fallback=True 標記異常回退輸出，上層可辨識。
+    """
+
+    def test_command_is_fallback_default_false(self):
+        """預設建構的 Command 的 is_fallback 應為 False。"""
+        assert Command().is_fallback is False
+        assert Command(p_target=1.0).is_fallback is False
+
+    def test_command_is_fallback_explicit_true(self):
+        """顯式設定 is_fallback=True。"""
+        cmd = Command(p_target=0.0, q_target=0.0, is_fallback=True)
+        assert cmd.is_fallback is True
+
+    def test_command_is_fallback_preserved_through_with_p(self):
+        """with_p() 應保留 is_fallback 旗標（使用 dataclasses.replace）。"""
+        cmd = Command(p_target=1.0, is_fallback=True)
+        new_cmd = cmd.with_p(2.0)
+        assert new_cmd.p_target == 2.0
+        assert new_cmd.is_fallback is True
+
+    def test_command_is_fallback_preserved_through_with_q(self):
+        """with_q() 應保留 is_fallback 旗標。"""
+        cmd = Command(q_target=1.0, is_fallback=True)
+        new_cmd = cmd.with_q(2.0)
+        assert new_cmd.q_target == 2.0
+        assert new_cmd.is_fallback is True
+
+
+class TestExecutorFallbackBehavior:
+    """v0.7.3 BUG-011: StrategyExecutor 異常 fallback 行為。
+
+    修復前：exception 時返回 self._last_command 並更新。
+    修復後：exception 時返回 Command(0, 0, is_fallback=True)，不更新 _last_command。
+    """
+
+    async def test_execute_strategy_exception_returns_fallback_command(self):
+        """策略拋出異常時應返回 is_fallback=True 的零命令。"""
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext())
+
+        class FailingStrategy(MockStrategy):
+            def execute(self, context):
+                raise RuntimeError("strategy exploded")
+
+        await executor.set_strategy(FailingStrategy())
+        cmd = await executor.execute_once()
+
+        assert cmd.p_target == 0.0
+        assert cmd.q_target == 0.0
+        assert cmd.is_fallback is True
+
+    async def test_last_command_preserved_across_exception(self):
+        """策略異常後 executor.last_command 仍為上一次成功值。
+
+        修復前：_last_command 被更新為回傳的 Command，導致異常後狀態不一致。
+        修復後：_last_command 不更新，保持上一次成功值。
+        """
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext())
+
+        # 先成功執行一次
+        normal = MockStrategy(return_command=Command(p_target=50.0, q_target=10.0))
+        await executor.set_strategy(normal)
+        await executor.execute_once()
+        assert executor.last_command.p_target == 50.0
+
+        # 換成失敗策略
+        class FailingStrategy(MockStrategy):
+            def execute(self, context):
+                raise RuntimeError("boom")
+
+        await executor.set_strategy(FailingStrategy())
+        fallback = await executor.execute_once()
+
+        # fallback 是零命令
+        assert fallback.is_fallback is True
+        # 但 last_command 保持之前的成功值
+        assert executor.last_command.p_target == 50.0
+        assert executor.last_command.q_target == 10.0
+
+    async def test_on_command_callback_not_called_on_exception(self):
+        """策略異常時不應呼叫 on_command 回呼。"""
+        callback = AsyncMock()
+        executor = StrategyExecutor(context_provider=lambda: StrategyContext(), on_command=callback)
+
+        class FailingStrategy(MockStrategy):
+            def execute(self, context):
+                raise RuntimeError("fail")
+
+        await executor.set_strategy(FailingStrategy())
+        await executor.execute_once()
+
+        # 異常時不應呼叫 callback
+        callback.assert_not_called()

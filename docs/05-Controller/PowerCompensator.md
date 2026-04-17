@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/compensator.py
-updated: 2026-04-15
-version: ">=0.7.2"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # PowerCompensator
@@ -136,10 +136,27 @@ command = ff(power_bin) × setpoint + Ki × ∫error·dt
 | `reset()` | 重置積分與追蹤狀態（保留 FF 表） |
 | `reset_ff_table()` | 重置 FF 表為全 1.0 |
 | `load_ff_table(table)` | 外部載入 FF 表（如校準結果） |
+| `update_ff_bin(bin_idx, ff_ratio, *, persist=False)` | 更新單一 FF bin 係數，含完整驗證鏈（v0.7.3） |
+| `persist_ff_table()` | 持久化當前 FF 表至 repository（v0.7.3） |
 | `async async_init()` | 從 async repository 載入 FF 表 |
 | `enabled` | 啟用/停用補償器 |
 | `diagnostics` | 診斷資訊 dict |
 | `ff_table` | FF 表淺拷貝 |
+
+### `update_ff_bin(bin_idx, ff_ratio, *, persist=False)` 詳解
+
+取代直接存取 `_ff_table` 的反模式，提供完整驗證鏈：
+
+| 驗證步驟 | 說明 |
+|----------|------|
+| `bin_idx` 型別 | 必須為 `int`（`bool` 被排除），否則 `TypeError` |
+| `bin_idx` 存在 | 必須在當前 FF 表中，否則 `ValueError`（顯示有效範圍） |
+| `ff_ratio` 有限 | 拒絕 `None` / `NaN` / `Inf`，否則 `ValueError` |
+| `ff_ratio` 非負 | 必須 >= 0，否則 `ValueError` |
+| clamp | 超出 `[ff_min, ff_max]` 時 clamp 並記錄 `WARNING` |
+
+> [!note] 執行緒安全
+> `update_ff_bin` 非 thread-safe，呼叫端需自行保證序列化。
 
 ## Quick Example
 

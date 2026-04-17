@@ -4,8 +4,8 @@ tags:
   - layer/modbus-gateway
   - status/complete
 source: csp_lib/modbus_gateway/server.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # ModbusGatewayServer
@@ -13,6 +13,13 @@ version: ">=0.5.0"
 > [!info] v0.5.0 新增
 
 `ModbusGatewayServer` 是 Modbus TCP Gateway 的主 orchestrator，對外暴露系統狀態讓 EMS/SCADA 透過標準 Modbus TCP 讀寫。整合 [[RegisterMap|GatewayRegisterMap]]、[[WriteValidation|WritePipeline]]、[[SyncSources|DataSyncSource]]、[[GatewayConfig#CommunicationWatchdog|CommunicationWatchdog]] 的完整生命週期管理。
+
+> [!warning] v0.7.3 安全強化（SEC-006 / SEC-011 / SEC-018）
+> - **SEC-006** `GatewayRegisterDef.writable` 預設 `False`：所有 HOLDING register 須明確 opt-in `writable=True` 才允許 EMS 寫入
+> - **SEC-011** `GatewayServerConfig.host` 預設改為 `"127.0.0.1"`：需外部連線時明確設 `host="0.0.0.0"`
+> - **SEC-018** Sync sources 禁止寫入 HOLDING register：`_update_register_callback` 對 HOLDING register 拋出 `PermissionError`
+>
+> 詳見 [[GatewayConfig]] 和 [[SyncSources]] 的遷移說明。
 
 ---
 

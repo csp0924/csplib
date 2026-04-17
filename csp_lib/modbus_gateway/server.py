@@ -24,7 +24,7 @@ from typing import Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 
-from .config import GatewayRegisterDef, GatewayServerConfig
+from .config import GatewayRegisterDef, GatewayServerConfig, RegisterType
 from .hooks import StatePersistHook
 from .pipeline import WritePipeline
 from .register_map import GatewayRegisterMap
@@ -175,6 +175,12 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
         await self._watchdog.start()
 
         self._serve_event.clear()
+
+        if self._config.host == "0.0.0.0":
+            logger.warning(
+                "Gateway bound to 0.0.0.0 (all interfaces); consider binding to a specific interface for security"
+            )
+
         logger.info(
             f"ModbusGatewayServer started on {self._config.host}:{self._config.port} "
             f"(unit_id={self._config.unit_id}, {len(self._register_defs)} registers)"
@@ -203,7 +209,20 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
     # ─────────────────────── Internal ───────────────────────
 
     async def _update_register_callback(self, register_name: str, value: Any) -> None:
-        """Callback for DataSyncSource to update registers."""
+        """Callback for DataSyncSource to update registers.
+
+        Sync sources may only write INPUT registers; HOLDING registers belong to
+        the EMS command space and are mutable only via the Modbus WritePipeline.
+        """
+        reg_def = self._register_map.get_register_def(register_name)
+
+        if reg_def.register_type == RegisterType.HOLDING:
+            logger.error(
+                f"sync source attempted to write HOLDING register "
+                f"'{register_name}' — rejected (sync sources may only write INPUT registers)"
+            )
+            raise PermissionError(f"Sync sources cannot write HOLDING register '{register_name}'.")
+
         self._register_map.set_value(register_name, value)
 
 

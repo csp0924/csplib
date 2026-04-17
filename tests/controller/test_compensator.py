@@ -1084,3 +1084,131 @@ class TestCompensatorFFInheritance:
         comp.compensate(setpoint=510.0, measurement=510.0, dt=1.0)
         # Should not crash; bin 5 stays 1.08
         assert comp.ff_table[5] == pytest.approx(1.08)
+
+
+# ===========================================================================
+# v0.7.3 BUG-007: update_ff_bin / persist_ff_table public API
+# ===========================================================================
+
+
+class TestUpdateFFBin:
+    """v0.7.3 BUG-007: update_ff_bin 公開介面驗證。
+
+    修復前：calibration 等外部呼叫者直接操作 ``_ff_table`` dict（反模式）。
+    修復後：透過 ``update_ff_bin()`` 提供完整驗證鏈。
+    """
+
+    def test_update_ff_bin_happy_path(self):
+        """正常呼叫：update_ff_bin(-2, 1.2) 後對應 bin 的值更新。"""
+        comp = _make_compensator()
+        assert comp.ff_table[-2] == pytest.approx(1.0)
+        comp.update_ff_bin(-2, 1.2)
+        assert comp.ff_table[-2] == pytest.approx(1.2)
+
+    def test_update_ff_bin_raises_typeerror_on_non_int_bin(self):
+        """bin_idx 非 int 時應拋出 TypeError。"""
+        comp = _make_compensator()
+        with pytest.raises(TypeError):
+            comp.update_ff_bin("a", 1.0)  # type: ignore[arg-type]
+
+    def test_update_ff_bin_raises_typeerror_on_bool_bin(self):
+        """bool 是 int 的子類但不應被接受。"""
+        comp = _make_compensator()
+        with pytest.raises(TypeError):
+            comp.update_ff_bin(True, 1.0)  # type: ignore[arg-type]
+
+    def test_update_ff_bin_raises_valueerror_on_missing_bin(self):
+        """bin_idx 不在 FF 表中時應拋出 ValueError。"""
+        comp = _make_compensator()
+        # 預設 step=5 → bins 從 -20 到 20
+        with pytest.raises(ValueError, match="不在 FF 表中"):
+            comp.update_ff_bin(999, 1.0)
+
+    def test_update_ff_bin_raises_valueerror_on_nan(self):
+        """ff_ratio 為 NaN 時應拋出 ValueError。"""
+        comp = _make_compensator()
+        with pytest.raises(ValueError):
+            comp.update_ff_bin(0, float("nan"))
+
+    def test_update_ff_bin_raises_valueerror_on_inf(self):
+        """ff_ratio 為 Inf 時應拋出 ValueError。"""
+        comp = _make_compensator()
+        with pytest.raises(ValueError):
+            comp.update_ff_bin(0, float("inf"))
+
+    def test_update_ff_bin_raises_valueerror_on_negative_inf(self):
+        """ff_ratio 為 -Inf 時應拋出 ValueError。"""
+        comp = _make_compensator()
+        with pytest.raises(ValueError):
+            comp.update_ff_bin(0, float("-inf"))
+
+    def test_update_ff_bin_raises_valueerror_on_negative(self):
+        """ff_ratio < 0 時應拋出 ValueError。"""
+        comp = _make_compensator()
+        with pytest.raises(ValueError, match=">= 0"):
+            comp.update_ff_bin(0, -0.5)
+
+    def test_update_ff_bin_clamps_out_of_range(self):
+        """ff_ratio 超出 [ff_min, ff_max] 時應 clamp（不 raise）。"""
+        comp = _make_compensator(ff_min=0.8, ff_max=1.5)
+        # 超過上限 → 應 clamp 到 ff_max
+        comp.update_ff_bin(0, 2.0)
+        assert comp.ff_table[0] == pytest.approx(1.5)
+
+    def test_update_ff_bin_clamps_below_min(self):
+        """ff_ratio 低於 ff_min 但仍 >= 0 時應 clamp 到 ff_min。"""
+        comp = _make_compensator(ff_min=0.8, ff_max=1.5)
+        comp.update_ff_bin(0, 0.5)
+        assert comp.ff_table[0] == pytest.approx(0.8)
+
+    def test_update_ff_bin_persist_true_triggers_save(self):
+        """persist=True 時應呼叫 repository.save。"""
+        repo = FakeRepository()
+        comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=repo)
+        comp.update_ff_bin(0, 1.1, persist=True)
+        assert repo.saved is not None
+        assert 0 in repo.saved
+
+    def test_update_ff_bin_persist_false_no_save(self):
+        """persist=False 時不應呼叫 repository.save。"""
+        repo = FakeRepository()
+        comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=repo)
+        comp.update_ff_bin(0, 1.1, persist=False)
+        assert repo.saved is None
+
+    def test_update_ff_bin_zero_is_valid(self):
+        """ff_ratio=0.0 是合法值（在 ff_min 內時直接寫入，不在時 clamp 到 ff_min）。"""
+        comp = _make_compensator(ff_min=0.0, ff_max=1.5)
+        comp.update_ff_bin(0, 0.0)
+        assert comp.ff_table[0] == pytest.approx(0.0)
+
+
+class TestPersistFFTable:
+    """v0.7.3 BUG-007: persist_ff_table 公開介面驗證。"""
+
+    def test_persist_ff_table_no_repository_is_noop(self):
+        """repository=None 時呼叫 persist_ff_table 不應 raise。"""
+        comp = PowerCompensator(PowerCompensatorConfig(persist_path=""))
+        assert comp._repository is None
+        comp.persist_ff_table()  # 不應拋出例外
+
+    def test_persist_ff_table_calls_repository_save(self):
+        """有 repository 時應呼叫 save。"""
+        repo = FakeRepository()
+        comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=repo)
+        comp.persist_ff_table()
+        assert repo.saved is not None
+
+    def test_persist_ff_table_swallows_repository_exception(self):
+        """repository.save 拋出例外時不應向上傳播。"""
+
+        class FailingRepo:
+            def save(self, table):
+                raise OSError("disk full")
+
+            def load(self):
+                return None
+
+        comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=FailingRepo())
+        # 不應 raise
+        comp.persist_ff_table()

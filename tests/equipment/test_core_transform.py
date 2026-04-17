@@ -310,6 +310,50 @@ class TestBitExtractTransform:
         result = transform.apply(value)
         assert result == 0x1234
 
+    # ── v0.7.3 BUG-009: bit_offset + bit_length 上限驗證 ──
+
+    def test_bit_offset_plus_length_exceeds_max_raises(self):
+        """bit_offset + bit_length 超過 _MAX_BIT_WIDTH(64) 時應 raise ValueError。"""
+        # 邊界：63 + 2 = 65 > 64
+        with pytest.raises(ValueError, match="超過可操作範圍上限"):
+            BitExtractTransform(bit_offset=63, bit_length=2)
+
+    def test_bit_offset_plus_length_at_boundary_ok(self):
+        """bit_offset + bit_length = 64（恰好等於上限）不應 raise。"""
+        # 邊界：63 + 1 = 64 = _MAX_BIT_WIDTH
+        t = BitExtractTransform(bit_offset=63, bit_length=1)
+        assert t.bit_offset == 63
+        assert t.bit_length == 1
+
+    def test_bit_offset_plus_length_exactly_max_ok(self):
+        """bit_offset=0, bit_length=64 恰好等於上限，應允許。"""
+        t = BitExtractTransform(bit_offset=0, bit_length=64)
+        assert t.bit_offset == 0
+        assert t.bit_length == 64
+
+    def test_bit_offset_plus_length_one_over_max_raises(self):
+        """bit_offset=0, bit_length=65 超過上限。"""
+        with pytest.raises(ValueError, match="超過可操作範圍上限"):
+            BitExtractTransform(bit_offset=0, bit_length=65)
+
+    def test_16bit_boundary_offset_15_length_2_ok(self):
+        """模擬 16-bit register 場景：offset=15, length=2 → 15+2=17 < 64，合法。
+
+        真正不合法的是接近 64 的情況（見 ``test_large_offset_with_length_exceeds_max``）。"""
+        # 15+2=17 < 64 → OK
+        t = BitExtractTransform(bit_offset=15, bit_length=2)
+        assert t.bit_offset == 15
+
+    def test_large_offset_with_length_exceeds_max(self):
+        """大 offset 搭配小 length 仍可超過上限。"""
+        with pytest.raises(ValueError, match="超過可操作範圍上限"):
+            BitExtractTransform(bit_offset=60, bit_length=5)  # 60+5=65 > 64
+
+    def test_offset_60_length_4_at_boundary_ok(self):
+        """60+4=64，恰好等於上限。"""
+        t = BitExtractTransform(bit_offset=60, bit_length=4)
+        assert t.bit_offset == 60
+
 
 class TestMultiFieldExtractTransform:
     """MultiFieldExtractTransform 測試"""

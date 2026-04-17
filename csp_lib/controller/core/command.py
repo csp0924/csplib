@@ -87,10 +87,16 @@ class Command:
     Attributes:
         p_target: 有功功率目標值 (kW)
         q_target: 無功功率目標值 (kVar)
+        is_fallback: 是否為 fallback 命令。
+            StrategyExecutor 在策略執行失敗時回傳 ``Command(0, 0, is_fallback=True)``，
+            供上層（如監控、叢集狀態發佈）辨識是否為異常情境下的保守輸出。
+            預設 False；``with_p`` / ``with_q`` 透過 ``dataclasses.replace``
+            會自動保留此旗標。
     """
 
     p_target: float = 0.0
     q_target: float = 0.0
+    is_fallback: bool = False
 
     def with_p(self, p: float) -> Command:
         """建立新 Command，替換 P 值"""

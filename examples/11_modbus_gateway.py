@@ -127,6 +127,7 @@ def create_gateway_registers() -> list[GatewayRegisterDef]:
             unit="kW",
             initial_value=0.0,
             description="EMS 有功功率指令",
+            writable=True,
         ),
         GatewayRegisterDef(
             name="q_command",
@@ -136,6 +137,7 @@ def create_gateway_registers() -> list[GatewayRegisterDef]:
             unit="kVar",
             initial_value=0.0,
             description="EMS 無功功率指令",
+            writable=True,
         ),
         GatewayRegisterDef(
             name="mode_command",
@@ -144,6 +146,7 @@ def create_gateway_registers() -> list[GatewayRegisterDef]:
             register_type=RegisterType.HOLDING,
             initial_value=0,
             description="EMS 模式指令 (0=idle, 1=charge, 2=discharge)",
+            writable=True,
         ),
         # ---- Input Registers（唯讀系統狀態）----
         GatewayRegisterDef(

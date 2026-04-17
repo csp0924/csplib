@@ -35,7 +35,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
-from csp_lib.core._numeric import is_non_finite_float
+from csp_lib.core._numeric import clamp, is_non_finite_float
 
 logger = get_logger(__name__)
 
@@ -457,6 +457,67 @@ class PowerCompensator:
                 loaded += 1
         logger.info(f"FF table loaded externally ({loaded} bins)")
 
+    def update_ff_bin(
+        self,
+        bin_idx: int,
+        ff_ratio: float,
+        *,
+        persist: bool = False,
+    ) -> None:
+        """更新單一 FF bin 補償係數（公開 API，取代直接存取 ``_ff_table``）。
+
+        超出 ``[ff_min, ff_max]`` 時會 clamp 後寫入並記錄 warning，與
+        ``_learn_if_steady`` / ``_learn_from_saturation`` 的行為一致。
+
+        Args:
+            bin_idx: FF 表 bin 索引，必須存在於當前 FF 表（依 ``power_bin_step_pct`` 產生）。
+            ff_ratio: 前饋補償係數，必須為有限且非負的浮點數。
+            persist: 為 True 時在更新後立即持久化（委派 :meth:`persist_ff_table`）。
+
+        Raises:
+            TypeError: ``bin_idx`` 非 ``int``。
+            ValueError: ``bin_idx`` 不在 FF 表、``ff_ratio`` 非有限值或為負值。
+
+        Note:
+            非 thread-safe — 呼叫端需自行保證序列化。
+        """
+        # bool 是 int 的子類，需顯式排除避免誤判
+        if not isinstance(bin_idx, int) or isinstance(bin_idx, bool):
+            raise TypeError(f"bin_idx 必須為 int，收到: {type(bin_idx).__name__}")
+
+        if bin_idx not in self._ff_table:
+            valid_min = min(self._ff_table)
+            valid_max = max(self._ff_table)
+            raise ValueError(f"bin_idx={bin_idx} 不在 FF 表中，有效範圍 [{valid_min}, {valid_max}]")
+
+        if is_non_finite_float(ff_ratio):
+            raise ValueError(f"ff_ratio 必須為有限浮點數，收到: {ff_ratio!r}")
+
+        ff_ratio_f = float(ff_ratio)
+        if ff_ratio_f < 0:
+            raise ValueError(f"ff_ratio 必須 >= 0，收到: {ff_ratio_f}")
+
+        cfg = self._config
+        clamped = clamp(ff_ratio_f, cfg.ff_min, cfg.ff_max)
+        if abs(clamped - ff_ratio_f) > 1e-9:
+            logger.warning(
+                f"update_ff_bin: bin[{bin_idx}] ff_ratio={ff_ratio_f:.4f} "
+                f"超出 [{cfg.ff_min}, {cfg.ff_max}]，clamp 為 {clamped:.4f}"
+            )
+
+        self._ff_table[bin_idx] = clamped
+
+        if persist:
+            self.persist_ff_table()
+
+    def persist_ff_table(self) -> None:
+        """持久化當前 FF 表。
+
+        若未配置 repository（None）則為 no-op，不拋例外。
+        ``repository.save()`` 例外會被 log-swallow，呼叫端可安全呼叫。
+        """
+        self._save_ff_table()
+
     async def async_init(self) -> None:
         """
         Async 初始化 — 從 async repository（如 MongoDB）載入 FF Table
@@ -589,7 +650,7 @@ class PowerCompensator:
             denom = setpoint / old_ff + i_term
             new_ff = setpoint / denom if abs(denom) > 1e-6 else old_ff
 
-        new_ff = max(cfg.ff_min, min(new_ff, cfg.ff_max))
+        new_ff = clamp(new_ff, cfg.ff_min, cfg.ff_max)
 
         if abs(new_ff - old_ff) > 1e-6:
             self._ff_table[idx] = new_ff
@@ -654,10 +715,10 @@ class PowerCompensator:
 
         # 6. 單次變動量 clamp（避免單步衝擊過大）
         max_step = cfg.saturation_learn_max_step
-        new_ff = max(old_ff - max_step, min(new_ff, old_ff + max_step))
+        new_ff = clamp(new_ff, old_ff - max_step, old_ff + max_step)
 
         # 7. ff_min / ff_max 全域 clamp
-        new_ff = max(cfg.ff_min, min(new_ff, cfg.ff_max))
+        new_ff = clamp(new_ff, cfg.ff_min, cfg.ff_max)
 
         # 8. 更新 FF 表並持久化（只在值確實變動時才寫）
         if abs(new_ff - old_ff) > 1e-6:
@@ -674,7 +735,10 @@ class PowerCompensator:
         """透過 repository 儲存 FF Table"""
         if self._repository is None:
             return
-        self._repository.save(dict(self._ff_table))
+        try:
+            self._repository.save(dict(self._ff_table))
+        except Exception:
+            logger.opt(exception=True).warning("PowerCompensator: failed to save FF table")
 
     def _load_ff_table(self) -> None:
         """透過 repository 載入 FF Table（含 step 遷移）"""

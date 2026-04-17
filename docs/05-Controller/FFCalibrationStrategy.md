@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/calibration.py
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-16
+version: ">=0.7.3"
 ---
 
 # FFCalibrationStrategy
@@ -104,10 +104,13 @@ controller.register_mode("ff_cal", cal, ModePriority.MANUAL)
 await controller.push_override("ff_cal")
 ```
 
+> [!note] v0.7.3 BUG-007
+> `_finish()` 方法已重構為呼叫 `compensator.update_ff_bin()` 和 `compensator.persist_ff_table()` public API，不再直接存取 `_ff_table` / `_save_ff_table`。對外行為不變。
+
 ## 相關連結
 
 - [[Strategy]] — 基礎類別
-- [[PowerCompensator]] — 校準目標
+- [[PowerCompensator]] — 校準目標（`update_ff_bin()` / `persist_ff_table()` public API）
 - [[FFTableRepository]] — FF 表持久化
 - [[ModeManager]] — 透過 override 啟動校準
 - [[Command]] — 輸出的功率命令

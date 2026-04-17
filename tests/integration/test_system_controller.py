@@ -571,6 +571,67 @@ class TestSystemControllerLifecycle:
             assert sc.is_running is False
 
     @pytest.mark.asyncio
+    async def test_on_start_rollback_on_heartbeat_failure(self):
+        """若 heartbeat.start() 失敗，_on_start 應呼叫 _on_stop 清理已 attach 的 data_feed。
+
+        PEP 492 規定 ``__aenter__`` 拋異常時不會呼叫 ``__aexit__``，因此 ``_on_start``
+        自身必須負責部分啟動的 rollback，否則 data_feed 會洩漏 event listener。
+        """
+        from csp_lib.integration.schema import DataFeedMapping
+
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1", {"pv_power": 100.0})
+        reg.register(dev)
+
+        config = SystemControllerConfig(
+            data_feed_mapping=DataFeedMapping(device_id="pcs1", point_name="pv_power"),
+        )
+        sc = SystemController(reg, config)
+
+        # 注入會失敗的 heartbeat mock（直接覆寫 _heartbeat，繞過 config 驅動的初始化）
+        failing_hb = MagicMock()
+        failing_hb.start = AsyncMock(side_effect=RuntimeError("heartbeat start failed"))
+        failing_hb.stop = AsyncMock()
+        sc._heartbeat = failing_hb
+        sc._validate_heartbeat_points = MagicMock()  # type: ignore[method-assign]
+
+        # 記錄 data_feed 的 detach 呼叫
+        assert sc._data_feed is not None
+        detach_spy = MagicMock(wraps=sc._data_feed.detach)
+        sc._data_feed.detach = detach_spy  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="heartbeat start failed"):
+            await sc.start()
+
+        # Rollback 路徑必須呼叫 detach（避免 event listener 洩漏）
+        detach_spy.assert_called()
+        # _run_task 不應被建立
+        assert sc._run_task is None
+        # is_running 回到 False
+        assert sc.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_on_start_rollback_via_async_with(self):
+        """async with 模式下若 _on_start 失敗，caller 不應再看到 executor 在跑。
+
+        驗證 PEP 492 陷阱的防護：__aenter__ 拋異常時 __aexit__ 不會被呼叫，
+        但 _on_start 內的 try/except 已做 rollback。
+        """
+        reg = DeviceRegistry()
+        config = SystemControllerConfig()
+        sc = SystemController(reg, config)
+
+        # 讓 preflight_check 直接 raise
+        sc.preflight_check = MagicMock(side_effect=RuntimeError("preflight failed"))  # type: ignore[method-assign]
+
+        with pytest.raises(RuntimeError, match="preflight failed"):
+            async with sc:
+                pass  # pragma: no cover
+
+        assert sc._run_task is None
+        assert sc.is_running is False
+
+    @pytest.mark.asyncio
     async def test_full_pipeline(self):
         """完整 pipeline: context → strategy → protection → route"""
         reg = DeviceRegistry()

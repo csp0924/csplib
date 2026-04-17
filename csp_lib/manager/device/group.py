@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
@@ -105,10 +106,12 @@ class DeviceGroup:
 
         依序呼叫每個設備的 read_once()，確保不會同時讀取。
         單一設備的讀取錯誤不會影響其他設備。
-        """
-        while not self._stop_event.is_set():
-            start = time.monotonic()
 
+        採用絕對時間錨定（work-first）避免時序漂移。
+        """
+        anchor = time.monotonic()
+        n = 0
+        while not self._stop_event.is_set():
             for device in self.devices:
                 if self._stop_event.is_set():
                     break
@@ -124,17 +127,15 @@ class DeviceGroup:
                 finally:
                     await asyncio.sleep(self.step_interval)
 
-            elapsed = time.monotonic() - start
-            sleep_time = max(0, self.interval - elapsed)
-
-            if sleep_time > 0:
+            delay, anchor, n = next_tick_delay(anchor, n, self.interval)
+            if delay > 0:
                 try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(),
-                        timeout=sleep_time,
-                    )
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
                 except asyncio.TimeoutError:
-                    pass  # 正常超時，繼續下一輪
+                    pass  # 正常 tick，繼續下一輪
+            else:
+                # catch-up 路徑：讓出 event loop 給 stop_event.set() 機會被排程
+                await asyncio.sleep(0)
 
     # ================ 屬性 ================
 
