@@ -1,8 +1,8 @@
 ---
 tags: [type/class, layer/core, status/complete]
 source: csp_lib/core/runtime_params.py
-updated: 2026-04-04
-version: v0.5.0
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 # RuntimeParameters
 
@@ -65,6 +65,30 @@ class RuntimeParameters:
 
 回呼在 `set`/`update`/`delete` 時**同步呼叫（在鎖外）**。若需要 async 操作，請在回呼內使用 `loop.call_soon_threadsafe()`。
 
+### Attribute-style 存取
+
+> [!info] v0.8.2 新增
+
+除了 `get()` / `set()` 之外，`RuntimeParameters` 也支援 Python attribute 語法，讓策略程式碼更簡潔：
+
+| 語法 | 等價呼叫 | 差異 |
+|------|---------|------|
+| `params.soc_max` | `params.get("soc_max")` | key 不存在時拋 `AttributeError`（非 `None`） |
+| `params.soc_max = 90.0` | `params.set("soc_max", 90.0)` | 觀察者照常觸發 |
+
+**限制**：
+- 底線開頭屬性（`_values`、`_lock`、`_observers`）走 `__slots__` 原生路徑，不進入此機制。
+- Subclass 若定義與參數同名的 class attribute（如 `soc_max = 100`），讀取會優先命中 class attribute 而非 `_values`，造成與 `get()` 不一致。建議 subclass 不要覆蓋參數名稱；若需類別預設值，請於 `__init__` 傳入 `initial_values`。
+
+```python
+# 策略程式碼範例（v0.8.2+）
+def compute(self, context: StrategyContext) -> Command:
+    params = context.params
+    soc_max = params.soc_max         # 等同 params.get("soc_max")，key 不存在拋 AttributeError
+    params.last_p = context.p_meas   # 等同 params.set("last_p", ...)，觸發 observers
+    ...
+```
+
 ## 型別別名
 
 | 名稱 | 定義 | 說明 |
@@ -83,14 +107,17 @@ params = RuntimeParameters(
     grid_limit_pct=100,
 )
 
-# 讀取
-soc_max = params.get("soc_max")       # 95.0
+# 讀取（兩種等價語法）
+soc_max = params.get("soc_max")       # 95.0（key 不存在回傳 None）
+soc_max = params.soc_max              # 95.0（key 不存在拋 AttributeError，v0.8.2+）
+
 snap = params.snapshot()               # {"soc_max": 95.0, "soc_min": 5.0, ...}
 print("soc_max" in params)             # True
 print(len(params))                     # 3
 
-# 寫入（觸發 observers）
+# 寫入（兩種等價語法，觸發 observers）
 params.set("soc_max", 90.0)
+params.soc_max = 90.0                  # v0.8.2+
 
 # 批次更新
 params.update({"soc_max": 90.0, "soc_min": 10.0})

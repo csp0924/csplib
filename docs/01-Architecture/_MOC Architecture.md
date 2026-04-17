@@ -1,7 +1,7 @@
 ---
 tags: [type/moc, status/complete]
 updated: 2026-04-17
-version: ">=0.8.1"
+version: ">=0.8.2"
 ---
 # _MOC Architecture
 
@@ -45,3 +45,4 @@ SORT file.name ASC
 | [[_MOC Integration]] | 整合層 |
 | [[_MOC Manager]] | 管理層 |
 | [[_MOC Storage]] | 儲存層（MongoDB + Redis） |
+| [[_MOC Alarm]] | Alarm 模組（L8，告警聚合與 Redis 橋接，v0.8.2） |

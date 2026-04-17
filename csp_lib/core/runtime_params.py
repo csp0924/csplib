@@ -55,6 +55,21 @@ class RuntimeParameters:
     - asyncio task 之間的一致性
     - Modbus hook thread 與 asyncio event loop 之間的安全存取
 
+    Attribute-style 存取：
+        除 ``get()`` / ``set()`` 之外，也支援屬性語法：
+
+            params.soc_max = 90.0        # 等同 params.set("soc_max", 90.0)
+            value = params.soc_max       # 等同 params.get("soc_max")，缺失時 AttributeError
+
+        方便與 StrategyContext.params 搭配撰寫策略程式碼。
+
+    Warning:
+        **Subclassing 注意**：若於 subclass 定義與參數同名的 **class attribute**
+        （例如 ``class MyParams(RuntimeParameters): soc_max = 100``），
+        attribute-style 讀取會優先命中 class attribute 而非 ``_values``，
+        造成與 ``get()`` 不一致的行為。建議 subclass 不要覆蓋參數名稱；
+        若確實需要類別預設值，請於 ``__init__`` 傳入 ``initial_values``。
+
     Attributes:
         _values: 參數鍵值對
         _lock: 保護 _values 的鎖
@@ -156,6 +171,49 @@ class RuntimeParameters:
                 cb(key, old, new)
             except Exception:
                 logger.opt(exception=True).warning(f"RuntimeParameters observer 執行失敗: key={key}")
+
+    # ─────────────────────── Attribute-style 存取 ───────────────────────
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        Attribute-style 讀取：``params.soc_max`` 等同 ``params.get("soc_max")``，
+        但缺失時拋 ``AttributeError`` 而非回傳 ``None``，確保 ``hasattr`` 行為正確。
+
+        Note:
+            ``__getattr__`` 僅在傳統屬性查找失敗後才被呼叫。
+            ``__slots__`` 中的 ``_values`` / ``_lock`` / ``_observers``
+            會先被找到，不會進入此分支。
+
+        Args:
+            name: 參數名稱。底線開頭視為內部屬性，一律拋 ``AttributeError``
+                  以避免干擾 Python 內部機制（如 copy、pickle、IDE introspection）。
+
+        Raises:
+            AttributeError: 參數不存在，或為底線開頭的未知屬性。
+        """
+        if name.startswith("_"):
+            raise AttributeError(name)
+        with self._lock:
+            if name in self._values:
+                return self._values[name]
+        raise AttributeError(f"{type(self).__name__!s} has no parameter '{name}'")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """
+        Attribute-style 寫入：``params.soc_max = 90.0`` 等同
+        ``params.set("soc_max", 90.0)``，會觸發 observers。
+
+        底線開頭屬性走 ``object.__setattr__`` 原生路徑，
+        否則 ``self._lock = ...`` 等初始化會無窮遞迴回到 ``self.set()``。
+
+        Args:
+            name: 屬性或參數名稱。
+            value: 欲寫入的值。
+        """
+        if name.startswith("_"):
+            object.__setattr__(self, name, value)
+        else:
+            self.set(name, value)
 
     # ─────────────────────── 表示 ───────────────────────
 

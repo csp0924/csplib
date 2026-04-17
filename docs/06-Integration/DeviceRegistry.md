@@ -4,8 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/registry.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-17
+version: ">=0.8.2"
 ---
 
 # DeviceRegistry
@@ -130,6 +130,51 @@ responsive = registry.get_responsive_devices_by_trait("pcs")    # Only responsiv
 
 # 查詢 metadata
 meta = registry.get_metadata("bess_a")  # {"rated_p": 500.0}
+```
+
+### 狀態變化通知
+
+> [!info] v0.8.2 新增
+
+`DeviceRegistry` 支援訂閱設備 `is_responsive` 狀態變化，供 `DeviceManager` / 輪詢迴圈在每次讀取後主動推送。
+
+**型別別名**
+
+```python
+StatusChangeCallback = Callable[[str, bool], None]
+# callback(device_id, responsive)
+# responsive=True：設備從無回應轉為有回應；False 則相反
+```
+
+| 方法 | 說明 |
+|------|------|
+| `on_status_change(callback)` | 註冊狀態變化觀察者；首次 `notify_status` 僅建 baseline，不觸發 |
+| `remove_status_observer(callback)` | 移除觀察者，未找到時靜默忽略 |
+| `notify_status(device_id)` | 呼叫方在讀取設備後主動觸發；Registry 自行判斷是否有變化再通知 |
+
+**行為細節：**
+- 首次 `notify_status` 呼叫：僅建立 baseline，不觸發 callback（避免啟動期噪訊）。
+- 後續呼叫：僅當 `is_responsive` 實際改變才觸發所有 callback。
+- Callback 在鎖外同步呼叫，單一 callback 例外隔離（warning log），不影響其他 callback。
+- `unregister()` 時同步清除該設備的 baseline，確保重新註冊後首次 `notify_status` 為乾淨狀態。
+
+```python
+from csp_lib.integration import DeviceRegistry
+
+registry = DeviceRegistry()
+
+def on_device_status(device_id: str, responsive: bool) -> None:
+    status = "恢復回應" if responsive else "失去回應"
+    print(f"設備 {device_id} {status}")
+
+# 註冊觀察者
+registry.on_status_change(on_device_status)
+
+# 在 DeviceManager 讀取迴圈中呼叫（每次讀取後）
+registry.notify_status("pcs_001")
+
+# 移除觀察者
+registry.remove_status_observer(on_device_status)
 ```
 
 ## 相關頁面
