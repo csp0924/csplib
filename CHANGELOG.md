@@ -6,6 +6,41 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-04-17
+
+### Added
+
+- **`CommandRefreshService(AsyncLifecycleMixin)`** (WI-REFRESH-001/003): Kubernetes-style reconciler，每隔 `interval` 秒把 `CommandRouter._last_written`（desired state）重新推回設備（actual state），解決三類問題：(A) 寫入失敗黑洞、(B) PCS 業務 watchdog 自動歸零、(C) EMS/SCADA 透過 ModbusGatewayServer 繞過策略直接改 register。採 `next_tick_delay` 絕對時間錨定；單次失敗不中止服務；NO_CHANGE 軸不污染 desired state。
+- **`CommandRefreshConfig` frozen dataclass** (WI-REFRESH-003): `CommandRefreshService` 的結構化配置，欄位：`refresh_interval: float = 1.0`、`enabled: bool = False`、`device_filter: frozenset[str] | None = None`。由 `SystemControllerConfig.command_refresh` 持有。
+- **`CommandRouter.try_write_single(device_id, point_name, value) -> bool`** (WI-REFRESH-002): 公開單設備寫入 API（舊 `_write_single` 現在是 alias）。成功後更新 `_last_written` desired-state 表；protected / unresponsive / 設備不存在 / 寫入失敗皆回傳 `False`。
+- **`CommandRouter.get_last_written(device_id) -> dict[str, Any]`** (WI-REFRESH-002): 回傳指定設備目前追蹤的 desired state snapshot（`point_name → value`）；設備未追蹤時回傳空 dict。
+- **`CommandRouter.get_tracked_device_ids() -> frozenset[str]`** (WI-REFRESH-002): 回傳所有已有 desired-state 記錄的 device_id 集合。
+- **`SystemControllerConfigBuilder.command_refresh(interval_seconds, enabled, devices)` 方法** (WI-REFRESH-003): Fluent API 啟用命令刷新服務；`devices=None` 代表全部被控設備。
+- **`SystemController` 生命週期整合 `CommandRefreshService`** (WI-REFRESH-004): `_on_start` 啟動順序：executor → command_refresh → heartbeat；`_on_stop` 反向停止，確保 reconciler 在設備寫入能力存在期間才執行。
+- **`HeartbeatValueGenerator` Protocol** (WI-HB-001): `@runtime_checkable` 協定，要求實作 `next(key: str) -> int` 與 `reset(key: str | None) -> None`。`key` 為多設備共用同一 generator instance 時的狀態隔離鍵。
+- **`ToggleGenerator`** (WI-HB-001): 每個 `key` 在 0/1 之間交替的心跳值產生器；第一次呼叫回傳 1，與舊版 `HeartbeatMode.TOGGLE` 行為一致。
+- **`IncrementGenerator(max_value=65535)`** (WI-HB-001): 遞增計數的心跳值產生器；到達 `max_value` 後歸零，合法範圍 `1 ≤ max_value ≤ 65535`。
+- **`ConstantGenerator(value=1)`** (WI-HB-001): 常數值心跳值產生器；任何 `next(key)` 皆回傳固定值，合法範圍 `0 ≤ value ≤ 65535`。
+- **`HeartbeatTarget` Protocol** (WI-HB-002): `@runtime_checkable` 協定，要求實作 `async write(value: int) -> None` 與 `identity: str` 屬性，抽象化「心跳值要寫到哪裡」。
+- **`DeviceHeartbeatTarget(device, point_name)`** (WI-HB-002): `HeartbeatTarget` 的預設實作，對 `AsyncModbusDevice` 的單一點位寫入；`DeviceError` 僅 log warning（fire-and-forget）。
+- **`GatewayRegisterHeartbeatTarget(gateway, register_name)`** (WI-HB-002): `HeartbeatTarget` 的 Modbus Gateway 實作，將心跳值寫入 `ModbusGatewayServer` 的指定 register；位於 `csp_lib.modbus_gateway`，避免 integration 層反向 import。
+- **`HeartbeatMapping.value_generator: HeartbeatValueGenerator | None = None`** (WI-HB-003): 新欄位，用 Protocol 取代 `mode` enum；與 `mode` 欄位互斥（`__post_init__` 驗證，新舊混用時 raise `ValueError`）。
+- **`HeartbeatMapping.target: HeartbeatTarget | None = None`** (WI-HB-003): 新欄位，用 Protocol 取代 `(device_id, point_name)` 硬編碼；與 `device_id` 欄位互斥（`__post_init__` 驗證）。
+- **`HeartbeatConfig` frozen dataclass** (WI-HB-004): 將舊 6 個 `heartbeat_*` 欄位收攏為結構化 config，新增 `targets: list[HeartbeatTarget] = []` 欄位支援 Protocol 委派目標列表。
+- **`HeartbeatService` `targets` kwarg** (WI-HB-005): `__init__` 新增 `targets: list[HeartbeatTarget] | None = None`；啟動時對每個 target 呼叫其 `write(value)`，value 來自 per-target generator（`_resolve_generator` per-mapping cache）。
+- **`SystemControllerConfigBuilder.heartbeat(HeartbeatConfig(...))` positional 語法** (WI-HB-006): 傳入 `HeartbeatConfig` 實例時走新路徑，忽略其他 kwargs；舊版 `heartbeat(mappings=[...], interval=...)` 語法完全保留。
+- **`csp_lib.integration` / `csp_lib.modbus_gateway` `__init__` exports 更新** (WI-HB-007): `integration` 新增 `CommandRefreshService`、`CommandRefreshConfig`、`HeartbeatConfig`、`HeartbeatValueGenerator`、`ToggleGenerator`、`IncrementGenerator`、`ConstantGenerator`、`HeartbeatTarget`、`DeviceHeartbeatTarget`；`modbus_gateway` 新增 `GatewayRegisterHeartbeatTarget`。
+
+### Changed
+
+- **`CommandRouter._safe_write` 回傳型別 `None → bool`**: 內部 static method，現在回傳是否成功（供 `try_write_single` 判斷是否更新 `_last_written`）；所有呼叫點均為 `CommandRouter` 內部，無 public API breaking 影響。
+
+### Deprecated
+
+- **`HeartbeatMapping.mode`、`HeartbeatMapping.constant_value`、`HeartbeatMapping.increment_max`**: 舊版 enum-based 欄位保留，僅在新舊混用（同時設定 `value_generator` 或 `target`）時於建構期 raise `ValueError`；legacy-only 路徑**不** emit `DeprecationWarning`（靜默相容策略，避免既有測試 noise）。計畫於 v1.0.0 移除。
+- **`SystemControllerConfig.heartbeat_*` 六個欄位**（`heartbeat_mappings`、`heartbeat_interval`、`use_heartbeat_capability`、`heartbeat_capability_mode`、`heartbeat_capability_constant_value`、`heartbeat_capability_increment_max`）: 同上靜默相容策略；新代碼應改用 `SystemControllerConfig.heartbeat: HeartbeatConfig`。計畫於 v1.0.0 移除。
+- **`HeartbeatMode` enum**: 隨舊欄位一併保留至 v1.0.0。完整 deprecation 清單已登錄至 BACKLOG.md v1.0.0 section（WI-HB-008）。
+
 ## [0.8.0] - 2026-04-17
 
 ### Added

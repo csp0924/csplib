@@ -1,7 +1,7 @@
 ---
 tags: [type/reference, status/complete]
 updated: 2026-04-17
-version: ">=0.8.0"
+version: ">=0.8.1"
 ---
 # CSP Library 知識庫
 
@@ -14,7 +14,7 @@ version: ">=0.8.0"
 │                    Integration Layer                     │
 │  DeviceRegistry · ContextBuilder · CommandRouter         │
 │  GridControlLoop · SystemController · GroupController     │
-│  PowerDistributor · HeartbeatService                     │
+│  PowerDistributor · HeartbeatService · CommandRefreshSvc  │
 ├─────────────────────────────────────────────────────────┤
 │              Manager Layer              │   Controller   │
 │  DeviceManager · AlarmPersistence       │   Strategy     │
@@ -89,5 +89,5 @@ version: ">=0.8.0"
 - **作者**: Cheng Sin Pang (鄭善淜)
 - **聯絡**: donaldpang123@gmail.com
 - **Python**: 3.13+
-- **目前版本**: 0.8.0
+- **目前版本**: 0.8.1
 - **授權**: Apache-2.0
