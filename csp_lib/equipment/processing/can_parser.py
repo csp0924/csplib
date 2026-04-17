@@ -41,6 +41,12 @@ class CANField:
     decimals: int | None = None
     as_int: bool = False
 
+    def __post_init__(self) -> None:
+        """建構後驗證：resolution 不得為 0，否則 physical = raw*0 + offset 變常數"""
+        # BUG-004：僅禁止 0（含 -0.0），極小正/負值（如 1e-300）仍允許
+        if self.resolution == 0:
+            raise ValueError("CANField.resolution must not be zero")
+
 
 @dataclass
 class CANFrameParser:

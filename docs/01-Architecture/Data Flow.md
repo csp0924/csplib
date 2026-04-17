@@ -1,7 +1,7 @@
 ---
 tags: [type/concept, status/complete]
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-15
+version: ">=0.7.2"
 ---
 # Data Flow
 
@@ -300,7 +300,7 @@ flowchart TD
         MEAS["context.extra.p_measurement\n量測值 480 kW"] --> ERR
         SUMFF --> ERR["error = p_ff - p_measurement\n= 517 - 480 = 37 kW"]
         ERR --> INTEG["integral += error × Ki × dt\n（累積誤差）"]
-        INTEG --> ICLAMP["積分夾緊\n防止 windup"]
+        INTEG --> ICLAMP["Asymmetric Anti-Windup\n飽和同向凍結積分\n飽和異向允許修正"]
         ICLAMP --> IVAL["i_correction = +13 kW"]
     end
 

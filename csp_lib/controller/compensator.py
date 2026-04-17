@@ -35,6 +35,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
+from csp_lib.core._numeric import is_non_finite_float
 
 logger = get_logger(__name__)
 
@@ -193,6 +194,12 @@ class PowerCompensatorConfig:
         rate_limit: 輸出變化率限制 (kW/s, 0=停用)
         measurement_key: context.extra 中量測值的 key
         persist_path: FF 表持久化路徑 (空=不持久化)
+        saturation_learn_min_cycles: 連續飽和 N 個週期後才觸發飽和學習
+            （避免單次瞬態飽和即更新 FF）
+        saturation_learn_alpha: 飽和學習的 EMA 平滑係數 (0~1)，
+            1.0 = 完全採用物理推算值，0.0 = 完全保留舊值
+        saturation_learn_max_step: 單次飽和學習的 FF 最大變動量
+            （限制單步衝擊，預設 0.03 對應約 1.5 秒收斂）
     """
 
     rated_power: float = 2000.0
@@ -212,6 +219,9 @@ class PowerCompensatorConfig:
     rate_limit: float = 0.0
     measurement_key: str = "meter_power"
     persist_path: str = ""
+    saturation_learn_min_cycles: int = 2
+    saturation_learn_alpha: float = 0.5
+    saturation_learn_max_step: float = 0.03
 
 
 class PowerCompensator:
@@ -272,6 +282,8 @@ class PowerCompensator:
         self._steady_count: int = 0
         self._integral_hold: int = 0
         self._settle_threshold: float = 0.0
+        # 飽和脫離週期計數（v0.7.2 BUG-012）— 累積連續飽和週期，達到 min_cycles 後啟動飽和學習
+        self._saturation_escape_count: int = 0
 
     # ─────────────────────── CommandProcessor Protocol ───────────────────────
 
@@ -281,6 +293,10 @@ class PowerCompensator:
 
         從 context.extra 讀取量測值，計算補償後的功率指令。
         若補償器停用或無量測值，直接回傳原始 command。
+
+        SEC-013a L4 防禦：measurement 為非有限值（NaN/Inf）時整體 bypass —
+        不更新 _integral / _last_output / _filtered_error / FF table，
+        避免 NaN 污染狀態後永久黏住。
         """
         if not self._enabled:
             return command
@@ -288,6 +304,13 @@ class PowerCompensator:
         measurement_key = self._config.measurement_key
         measurement = context.extra.get(measurement_key)
         if measurement is None:
+            return command
+
+        # SEC-013a L4：非有限 measurement 整體 bypass（比 EMA update 更前置）
+        if is_non_finite_float(measurement):
+            logger.debug(
+                f"PowerCompensator: non-finite measurement {measurement!r}, bypass compensate to avoid state poisoning"
+            )
             return command
 
         # 計算 dt（從 context.extra 取得，或預設 0.3s）
@@ -345,16 +368,25 @@ class PowerCompensator:
         else:
             ff_output = setpoint / ff if abs(ff) > 1e-6 else setpoint
 
-        # 5. 飽和檢測
-        saturated = ff_output >= cfg.output_max or ff_output <= cfg.output_min
+        # 5. 飽和檢測（分方向，供 asymmetric anti-windup 使用）
+        sat_high = ff_output >= cfg.output_max
+        sat_low = ff_output <= cfg.output_min
+        saturated = sat_high or sat_low
+
+        # Asymmetric anti-windup（v0.7.2 BUG-012）：
+        # - 飽和在上限 + error 為負（量測 > 目標）→ 朝脫離方向，允許累積負 integral 拉回
+        # - 飽和在下限 + error 為正（量測 < 目標）→ 朝脫離方向，允許累積正 integral 拉回
+        # - 非飽和 + 誤差超出死區 → 正常積分累積
+        # - 飽和同向（誤差與飽和一致）→ 凍結積分以避免 windup
+        can_integrate_high = sat_high and filtered_error < -cfg.deadband
+        can_integrate_low = sat_low and filtered_error > cfg.deadband
+        can_integrate_free = (not saturated) and abs(filtered_error) >= cfg.deadband
 
         # 6. 積分更新
-        if saturated:
-            self._integral = 0.0
-        elif self._integral_hold > 0:
+        if self._integral_hold > 0:
             if abs(filtered_error) <= self._settle_threshold:
                 self._integral_hold -= 1
-        elif abs(filtered_error) >= cfg.deadband:
+        elif can_integrate_high or can_integrate_low or can_integrate_free:
             self._integral += filtered_error * dt
             self._clamp_integral()
 
@@ -371,8 +403,18 @@ class PowerCompensator:
             if abs(delta) > max_delta:
                 output = self._last_output + math.copysign(max_delta, delta)
 
-        # 10. 穩態學習
-        if not saturated:
+        # 10. 學習分支（飽和學習 與 穩態學習 互斥）
+        if saturated:
+            # 飽和（任一方向）→ 累積 escape 計數，達標後物理推算學習
+            # 註：不論同向或異向飽和都學 FF — 同向飽和代表 PCS 已 clamp 仍不足，正是 FF 學歪的信號
+            # 方向性保護仍由上面的 asymmetric anti-windup 確保（integral 不 windup）
+            self._saturation_escape_count += 1
+            if self._integral_hold == 0 and abs(setpoint) >= cfg.deadband:
+                self._learn_from_saturation(setpoint, measurement, sat_high, output)
+            self._steady_count = 0
+        else:
+            # 非飽和 → 重置 escape 計數，走穩態學習
+            self._saturation_escape_count = 0
             self._learn_if_steady(setpoint, filtered_error)
 
         self._last_output = output
@@ -388,6 +430,7 @@ class PowerCompensator:
         self._last_output = 0.0
         self._steady_count = 0
         self._integral_hold = 0
+        self._saturation_escape_count = 0
 
     def reset_ff_table(self) -> None:
         """重置 FF 補償表為全 1.0 並清除持久化"""
@@ -516,7 +559,10 @@ class PowerCompensator:
 
     def _learn_if_steady(self, setpoint: float, filtered_error: float) -> None:
         cfg = self._config
-        if abs(setpoint) < cfg.deadband:
+        # BUG-002 guard：deadband=0 時 `abs(setpoint) < 0` 永遠 False，
+        # 若 setpoint=0 會在後面的 `filtered_error / setpoint` 除以零。
+        # 用 max(deadband, 1e-6) 作為底線，確保零 setpoint 一定被攔截。
+        if abs(setpoint) < max(cfg.deadband, 1e-6):
             self._steady_count = 0
             return
 
@@ -552,6 +598,75 @@ class PowerCompensator:
             self._save_ff_table()
 
         self._steady_count = 0
+
+    def _learn_from_saturation(self, setpoint: float, measurement: float, sat_high: bool, output: float) -> None:
+        """飽和學習：飽和期間用物理量直接推算 FF 係數（v0.7.2 BUG-012）。
+
+        與 ``_learn_if_steady`` 的差異：
+        - 穩態學習：需要非飽和 + 積分累積 + 連續 steady_count 達標
+        - 飽和學習：只要連續飽和 min_cycles，直接用「實際輸出 / 電網讀數」一步到位
+
+        物理推導（用當下實際 PCS 命令 output，含 integral 修正）：
+        - 放電飽和（sat_high, setpoint > 0）：PCS 實出 output，電網讀到 measurement。
+          觀察 β = measurement / output，要讓下次 grid = setpoint 需 PCS 出 setpoint / β。
+          對應 ``ff × setpoint = setpoint / β`` → ``new_ff = output / measurement``
+        - 充電飽和（sat_low, setpoint < 0）：PCS 實出 output（負），measurement（負）。
+          對應 ``setpoint / ff = setpoint / β`` → ``new_ff = measurement / output``
+
+        Args:
+            setpoint: 目標功率 (kW)
+            measurement: 電網端實際功率 (kW)
+            sat_high: True 表示飽和在上限（放電），False 表示飽和在下限（充電）
+            output: 當下實際送給 PCS 的指令（已 clamp，含 integral 修正）
+        """
+        cfg = self._config
+
+        # 1. min_cycles 閘門：連續飽和週期數不足，不學
+        if self._saturation_escape_count < cfg.saturation_learn_min_cycles:
+            return
+
+        # 2. measurement 有效性
+        if not math.isfinite(measurement):
+            return
+        # 避免 measurement 過小（接近零）導致物理推算失真或除零
+        if abs(measurement) < max(cfg.deadband, 1.0):
+            return
+
+        # 3. 符號一致性：PCS 指令方向與電錶讀數異號 → 線路接反或量測異常，不學
+        if sat_high and measurement <= 0:
+            return
+        if (not sat_high) and measurement >= 0:
+            return
+
+        # 4. 物理推算（用當下實際 output，非 output_max，以反映 integral 修正後的真實命令）
+        idx = self._get_bin_index(setpoint)
+        old_ff = self._ff_table.get(idx, 1.0)
+        # 避免 output 過小導致除零或失真
+        if abs(output) < max(cfg.deadband, 1.0):
+            return
+        if sat_high:
+            new_ff_physical = output / measurement
+        else:
+            new_ff_physical = measurement / output
+
+        # 5. EMA 平滑（α 靠近 1 時快速採用物理值、靠近 0 時保留舊值）
+        new_ff = cfg.saturation_learn_alpha * new_ff_physical + (1.0 - cfg.saturation_learn_alpha) * old_ff
+
+        # 6. 單次變動量 clamp（避免單步衝擊過大）
+        max_step = cfg.saturation_learn_max_step
+        new_ff = max(old_ff - max_step, min(new_ff, old_ff + max_step))
+
+        # 7. ff_min / ff_max 全域 clamp
+        new_ff = max(cfg.ff_min, min(new_ff, cfg.ff_max))
+
+        # 8. 更新 FF 表並持久化（只在值確實變動時才寫）
+        if abs(new_ff - old_ff) > 1e-6:
+            self._ff_table[idx] = new_ff
+            logger.debug(
+                f"FF sat-learn: bin[{idx}]({idx * cfg.power_bin_step_pct}%) "
+                f"ff: {old_ff:.4f} → {new_ff:.4f} (meas={measurement:.1f})"
+            )
+            self._save_ff_table()
 
     # ─────────────────────── 持久化 ───────────────────────
 

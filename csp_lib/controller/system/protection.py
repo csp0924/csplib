@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
+from csp_lib.core._numeric import is_non_finite_float
 
 logger = get_logger("csp_lib.controller.system.protection")
 
@@ -106,6 +107,11 @@ class SOCProtection(ProtectionRule):
             self._is_triggered = False
             return command
 
+        # SEC-013a L4：soc 為非有限 float（NaN/Inf）視同資料不可用，
+        # 沿用上次 is_triggered 並 passthrough（參考 DynamicSOCProtection 的設計）。
+        if is_non_finite_float(soc):
+            return command
+
         cfg = self._config
         p = command.p_target
 
@@ -186,6 +192,13 @@ class ReversePowerProtection(ProtectionRule):
         meter_power = context.extra.get(self._meter_power_key)
         if meter_power is None:
             self._is_triggered = False
+            return command
+
+        # SEC-013a L4：meter_power 為非有限 float（NaN/Inf）視同資料不可用，
+        # 沿用上次 is_triggered 並 passthrough。避免 max_discharge=NaN 讓
+        # `p > NaN` 恆為 False 把 is_triggered 無聲重置為 False
+        # （瞬間通訊 glitch 會誤導上層以為保護解除 → 允許繼續逆送）。
+        if is_non_finite_float(meter_power):
             return command
 
         p = command.p_target

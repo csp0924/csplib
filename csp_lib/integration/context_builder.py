@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from csp_lib.controller.core import Command, StrategyContext, SystemBase
 from csp_lib.core import get_logger
+from csp_lib.core._numeric import is_non_finite_float
 
 from .registry import DeviceRegistry
 from .schema import AggregateFunc, CapabilityContextMapping, ContextMapping, capability_display_name
@@ -300,7 +301,15 @@ class ContextBuilder:
         支援點號路徑：
         - "soc" → ctx.soc = value
         - "extra.xxx" → ctx.extra["xxx"] = value
+
+        SEC-013a L6 防禦：非有限 float（NaN / +Inf / -Inf）視同 None，
+        避免污染下游保護鏈與策略計算（NaN 比較永遠 False 會讓保護被無聲繞過）。
         """
+        # SEC-013a L6：float 非有限值一律視同 None
+        if is_non_finite_float(value):
+            logger.debug(f"Non-finite value {value!r} for field '{field}', treating as None")
+            value = None
+
         if field.startswith("extra."):
             key = field[len("extra.") :]
             ctx.extra[key] = value

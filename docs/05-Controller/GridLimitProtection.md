@@ -4,8 +4,8 @@ tags:
   - layer/controller
   - status/complete
 source: csp_lib/controller/system/dynamic_protection.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # GridLimitProtection
@@ -46,7 +46,11 @@ max_p = total_rated_kw × limit_pct / 100
 
 | 鍵 | 型別 | 預設值 | 說明 |
 |----|------|--------|------|
-| `grid_limit_pct`（可自訂） | `float` | `100` | 功率限制百分比 (0~100)，100 = 無限制 |
+| `grid_limit_pct`（可自訂） | `float` | `100` | 功率限制百分比，自動 clamp 至 `[0, 100]`，100 = 無限制 |
+
+> [!note] v0.7.2 值域與 NaN 防護
+> - **值域 clamp（SEC-004）**：`evaluate()` 對 `grid_limit_pct` clamp 至 `[0, 100]`，防止 EMS 寫入超出範圍的值（如 `grid_limit_pct=200`）導致功率限制保護永不觸發
+> - **NaN/Inf fail-safe（SEC-013a）**：context 的功率量測為非有限 float 時，passthrough 沿用上次的 `_is_triggered`，不強制觸發也不重置
 
 ## Quick Example
 

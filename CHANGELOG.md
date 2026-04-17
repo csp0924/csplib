@@ -6,6 +6,44 @@
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-04-16
+
+### Added
+
+- **`PowerCompensatorConfig.saturation_learn_min_cycles`**（預設 `2`）：連續飽和達到 N 個週期後才觸發飽和學習，避免單次瞬態飽和即更新 FF 表
+- **`PowerCompensatorConfig.saturation_learn_alpha`**（預設 `0.5`）：飽和學習的 EMA 平滑係數（0 = 完全保留舊值，1 = 完全採用物理推算值）
+- **`PowerCompensatorConfig.saturation_learn_max_step`**（預設 `0.03`）：單次飽和學習 FF 最大變動量，限制單步衝擊
+- **`PowerCompensator._learn_from_saturation()`**：連續飽和期間以 `output / measurement`（放電）或 `measurement / output`（充電）物理比值直接推算 FF 係數，經 EMA 平滑與 max_step clamp 後更新 FF 表
+- **`csp_lib.core._numeric`**（internal helper，不對外 export）：`is_non_finite_float()` / `safe_float()` / `clamp()` 集中處理 NaN/Inf 偵測與值域 clamp，供 SEC-013a/SEC-004/BUG-005 共用
+- **`csp_lib.core._time_anchor`**（internal helper，不對外 export）：`next_tick_delay()` 提供絕對時間錨定（absolute time anchoring）的睡眠 delay 計算，含「嚴重落後重設 anchor 避免 burst catch-up」邏輯，供 WI-TD-101/102/103 共用
+
+### Fixed
+
+- **`PowerCompensator` Asymmetric anti-windup (BUG-012)**：修復飽和時無條件清零 integral 導致 FF 表過高 bin 永久鎖死的現場 bug。現在依飽和方向與誤差方向判斷：高飽和 + error < -deadband（量測超標）→ 允許累積負 integral 拉回；低飽和 + error > +deadband → 允許累積正 integral；飽和同向 → 凍結 integral（避免 windup）。現場症狀：setpoint=1993kW 但 PCS 持續輸出 2200kW（rel_err 9.4% 不自修正）
+- **`PowerCompensator._learn_if_steady` setpoint=0 除以零 (BUG-002)**：修復 `deadband=0` 時 guard 失效，`setpoint=0` 在 `filtered_error / setpoint` 行 crash 的問題。改用 `abs(setpoint) < max(cfg.deadband, 1e-6)` 確保零 setpoint 一定被攔截
+- **`assemble_from_registers()` / `split_to_registers()` LOW_FIRST 忽略 register order (BUG-001)**：`csp_lib/modbus/types/_register_helpers.py` 中 register_count ≠ 2/4 的 fallback 路徑遺漏 `LOW_FIRST` reverse，導致 `DynamicInt(96)` 等大型資料型別解碼錯誤。統一所有長度走同一條 reverse 邏輯
+- **`DynamicSOCProtection` 反轉配置 (BUG-003)**：`soc_max < soc_min` 時改為直接拋 `ValueError`（原本未驗證會同時禁止充放電造成 BESS 癱瘓）。配置錯誤需明確拋錯，不靜默運作
+- **`CANField.__post_init__` resolution=0 除以零 (BUG-004)**：`csp_lib/equipment/processing/can_parser.py` `CANField` 加 `__post_init__` 驗證 `resolution != 0`，避免 encoder 在執行階段除零 crash
+- **`StatisticsEngine.process_read` NaN/Inf 污染 power_sum (BUG-005)**：以 `math.isfinite()` 過濾 power 與 energy tracking 兩條路徑的非有限 float，NaN/Inf 不寫入也不覆寫上次有效值
+- **`PymodbusTcpClient.connect()` 重複連線保護 (BUG-006)**：以 `asyncio.Lock` 序列化併發呼叫 + lock 內以 `client.connected` 真實狀態判斷是否需 connect，避免重複呼叫底層 `AsyncModbusTcpClient.connect`。網路掉線（`client.connected` 自動翻為 False）後仍可正常重連，不會被 sticky flag 卡死
+
+### Security
+
+- **NaN/Inf 分層防禦：L4/L6 fail-safe (SEC-013a)**：Modbus `Float32/64.decode()` 維持 IEEE 754 permissive（尊重合法 NaN/Inf sentinel，如電表 fault 信號），但於上層 fail-safe：
+  - **L6 `ContextBuilder._set_context_field`**：非有限 float → 寫入 `None`（不留 stale value），下游欄位型別本就是 `float | None`，沿用既有 None 處理路徑
+  - **L4 `PowerCompensator.process()`**：measurement 非有限 → 整體 bypass compensate（不更新 `_integral` / `_last_output` / `_filtered_error` / FF table），避免 EMA / integral 永久污染
+  - **L4 Protection rules**（`DynamicSOCProtection` / `SOCProtection` / `ReversePowerProtection` / `GridLimitProtection`）：context 值非有限 → passthrough command 沿用上次 `_is_triggered`（不強制觸發避免 NaN 閃爍掉電，也不重置避免上層誤判）
+  - **L4 `DynamicSOCProtection._resolve_limits()` 額外防禦**：`soc_max` / `soc_min` 在 clamp 前先驗證 `is_non_finite_float()`，避免 NaN 通過 clamp 後 `<` 比較永遠 False 而無聲繞過 BUG-003 反轉檢查與 SOC 保護
+- **`RuntimeParameters` 值域 clamp (SEC-004)**：`DynamicSOCProtection._resolve_limits()` 對 `soc_max` / `soc_min` clamp 到 `[0, 100]`；`GridLimitProtection.evaluate()` 對 `grid_limit_pct` clamp 到 `[0, 100]`。防止 EMS/Modbus 寫入無物理意義的值（如 `soc_max=200` 讓 SOC 上限保護永不觸發）
+- **`GroupReader.read_many()` partial failure 不再吞掉成功結果 (SEC-016)**：並行模式 `asyncio.gather()` 加 `return_exceptions=True` + 逐結果檢查；只對 `Exception` 子類別 log warning + continue，其他 `BaseException`（`CancelledError` / `SystemExit` / `KeyboardInterrupt`）正常 re-raise，避免吞掉 lifecycle 停機與系統中斷信號（舊行為：整批 `latest_values` 不更新，控制策略基於陳舊資料決策）
+
+### Performance
+
+- **`AsyncCANDevice._snapshot_loop` 絕對時間錨定 (WI-TD-101)**：改採 work-first 絕對時間錨定，sleep delay 補償 work 耗時，消除累積時序漂移（修復前 interval=0.1s, work=0.02s → 1 小時漂移 720s）。落後超過一個 interval 時自動重設 anchor 避免 burst catch-up
+- **`PeriodicSendScheduler._send_loop` 絕對時間錨定 (WI-TD-102)**：每個 CAN ID 獨立錨定，sleep delay 補償 send_callback 耗時。Exception 路徑保留固定 `sleep(interval)` 並重新錨定避免緊迴圈
+- **`AsyncModbusDevice._read_loop` 絕對時間錨定 (WI-TD-103)**：取代原 elapsed-subtraction 模式。Reconnect 成功後重設 anchor 避免重連瞬間 burst catch-up 壓垮設備
+- **三個迴圈共用 `next_tick_delay()` helper**：CAN snapshot / PeriodicSender / Modbus read_loop 統一呼叫 `csp_lib.core._time_anchor.next_tick_delay()`，移除三處重複的 inline 錨定邏輯，避免後續維護分叉
+
 ## [0.7.1] - 2026-04-06
 
 ### Added

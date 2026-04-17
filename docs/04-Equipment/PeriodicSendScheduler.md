@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/equipment/transport/periodic_sender.py
 created: 2026-03-06
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # PeriodicSendScheduler
@@ -85,8 +85,8 @@ sequenceDiagram
     participant Buffer as CANFrameBuffer
     participant Client as CAN Client
 
-    loop 每個 CAN ID 獨立 Task
-        Note over Scheduler: asyncio.sleep(interval)
+    loop 每個 CAN ID 獨立 Task（絕對時間錨定）
+        Note over Scheduler: next_tick_delay(anchor, interval)
         alt 未暫停
             Scheduler->>Buffer: get_frame(can_id)
             Buffer-->>Scheduler: 8 bytes
@@ -97,7 +97,14 @@ sequenceDiagram
     end
 ```
 
-每個 CAN ID 建立一個獨立的 `asyncio.Task`，互不影響。發送失敗時記錄日誌並繼續下一個週期。
+每個 CAN ID 建立一個獨立的 `asyncio.Task`，互不影響。發送失敗時記錄日誌並重新錨定，繼續下一個週期。
+
+> [!note] v0.7.2 絕對時間錨定（WI-TD-102）
+> `_send_loop` 改採 work-first 絕對時間錨定（`next_tick_delay()`），sleep delay 補償 `send_callback` 耗時。
+> - 修復前（`asyncio.sleep(interval)`）：每次迴圈固定 sleep interval 秒，work 耗時累積後產生漂移（interval=0.1s, work=0.02s → 1 小時漂移 720s）
+> - 修復後：實際 sleep = `interval - elapsed`，時序嚴格對齊絕對時間戳
+> - 落後超過一個 interval 時自動重設 anchor，避免 burst catch-up 壓垮設備
+> - Exception 路徑保留固定 `sleep(interval)` 並重新錨定，避免緊迴圈
 
 ---
 

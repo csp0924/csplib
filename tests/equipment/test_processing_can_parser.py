@@ -2,6 +2,8 @@
 #
 # CAN 訊框解析器單元測試
 
+import pytest
+
 from csp_lib.equipment.processing.can_parser import CANField, CANFrameParser
 
 
@@ -36,6 +38,27 @@ class TestCANField:
         assert field.resolution == 0.1
         assert field.offset == -100.0
         assert field.decimals == 2
+
+    # --- BUG-004: resolution=0 應被拒絕 ---
+    #
+    # 現象：當使用者不慎將 resolution 設為 0，raw × 0 + offset 永遠等於 offset，
+    # 欄位變成一個「常數」，背後其實是配置錯誤。此外在反向工程（已知物理值反推
+    # raw）時會發生除以零。
+    # 修復後預期：__post_init__ 驗證 resolution != 0，否則 raise ValueError。
+
+    def test_resolution_zero_should_raise(self):
+        """
+        BUG-004：resolution=0.0 應在建構時 raise ValueError
+        修復前：CANField 無 __post_init__，resolution=0 會靜默通過
+        修復後：建構時 raise ValueError
+        """
+        with pytest.raises(ValueError):
+            CANField(name="bad", start_bit=0, bit_length=8, resolution=0.0)
+
+    def test_resolution_tiny_positive_should_pass(self):
+        """邊界：極小正值 (1e-300) 應通過，不被誤判為零"""
+        field = CANField(name="tiny", start_bit=0, bit_length=8, resolution=1e-300)
+        assert field.resolution == 1e-300
 
 
 class TestCANFrameParser:

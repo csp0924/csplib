@@ -15,15 +15,15 @@ class TestLoadSimulatorControllable:
         sim = LoadSimulator()
         assert sim.controllability == ControllabilityMode.CONTROLLABLE
 
-    def test_setpoint_write(self):
+    async def test_setpoint_write(self):
         """setpoint 寫入生效"""
         sim = LoadSimulator(ramp_rate=1000.0)
         sim.on_write("p_setpoint", 0.0, 50.0)
 
         # 由於 ramp_rate 很大，一步即到達
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(sim.update())
+        # Py 3.13 起 asyncio.get_event_loop() 在無 running loop 時直接 raise，
+        # 改走 asyncio_mode=auto 的 async test 路徑
+        await sim.update()
         p = sim.get_value("p_actual")
         assert abs(p - 50.0) < 0.01
 

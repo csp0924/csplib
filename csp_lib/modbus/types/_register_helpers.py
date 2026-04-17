@@ -32,12 +32,9 @@ def split_to_registers(
     bo = byte_order.value
     regs = [struct.unpack(f"{bo}H", packed[i * 2 : i * 2 + 2])[0] for i in range(register_count)]
 
-    if register_count == 2:
-        if register_order == RegisterOrder.LOW_FIRST:
-            regs.reverse()
-    elif register_count == 4:
-        if register_order == RegisterOrder.LOW_FIRST:
-            regs.reverse()
+    # 統一處理任意 register_count：LOW_FIRST 反轉整個暫存器列表
+    if register_order == RegisterOrder.LOW_FIRST:
+        regs.reverse()
 
     return regs
 
@@ -63,18 +60,9 @@ def assemble_from_registers(
     bo = byte_order.value
     regs = list(registers[:register_count])
 
-    if register_count == 2:
-        if register_order == RegisterOrder.HIGH_FIRST:
-            high, low = regs[0], regs[1]
-        else:
-            low, high = regs[0], regs[1]
-        return struct.pack(f"{bo}HH", high, low)
-    elif register_count == 4:
-        if register_order == RegisterOrder.LOW_FIRST:
-            regs.reverse()
-        fmt = f"{bo}" + "H" * register_count
-        return struct.pack(fmt, *regs)
+    # 統一處理任意 register_count：LOW_FIRST 反轉整個暫存器列表後打包
+    if register_order == RegisterOrder.LOW_FIRST:
+        regs.reverse()
 
-    # Fallback for other register counts
     fmt = f"{bo}" + "H" * register_count
     return struct.pack(fmt, *regs)

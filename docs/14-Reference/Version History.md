@@ -3,13 +3,80 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-05
-version: ">=0.7.0"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # 版本歷史
 
 本專案的所有重要變更皆記錄於此。格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
+
+---
+
+## [0.7.2] - 2026-04-16
+
+### Added
+
+- **`PowerCompensatorConfig.saturation_learn_min_cycles`**（預設 `2`）：連續飽和達到 N 個週期後才觸發飽和學習，避免單次瞬態飽和即更新 FF 表
+- **`PowerCompensatorConfig.saturation_learn_alpha`**（預設 `0.5`）：飽和學習的 EMA 平滑係數
+- **`PowerCompensatorConfig.saturation_learn_max_step`**（預設 `0.03`）：單次飽和學習 FF 最大變動量
+
+### Fixed
+
+- **`PowerCompensator` Asymmetric anti-windup (BUG-012)**：修復飽和時無條件清零 integral 導致 FF 表過高 bin 永久鎖死的問題。依飽和方向與誤差方向決定：允許拉回方向積分、飽和同向則凍結，杜絕現場症狀（setpoint=1993kW 但 PCS 持續輸出 2200kW 不自修正）
+- **`PowerCompensator._learn_if_steady` setpoint=0 除以零 (BUG-002)**：修復 `setpoint=0` 在 `filtered_error / setpoint` 行 crash 的問題，改用 `abs(setpoint) < max(deadband, 1e-6)` 確保零 setpoint 一定被攔截
+- **`assemble_from_registers()` / `split_to_registers()` LOW_FIRST register order (BUG-001)**：fallback 路徑遺漏 `LOW_FIRST` reverse 導致 `DynamicInt(96)` 等大型資料型別解碼錯誤；統一所有長度走同一條 reverse 邏輯
+- **`DynamicSOCProtection` 反轉配置 (BUG-003)**：`soc_max < soc_min` 時改為拋 `ValueError`（原本未驗證會同時禁止充放電導致 BESS 癱瘓）
+- **`CANField.__post_init__` resolution=0 除以零 (BUG-004)**：加 `__post_init__` 驗證 `resolution != 0`，避免 encoder 執行階段除零 crash
+- **`StatisticsEngine.process_read` NaN/Inf 污染 (BUG-005)**：以 `math.isfinite()` 過濾 power 與 energy tracking 的非有限 float
+- **`PymodbusTcpClient.connect()` 重複連線保護 (BUG-006)**：以 `asyncio.Lock` 序列化併發呼叫，網路掉線後仍可正常重連
+
+### Security
+
+- **NaN/Inf 分層防禦 (SEC-013a)**：L6 `ContextBuilder._set_context_field` 非有限 float 寫入 `None`；L4 `PowerCompensator.process()` 量測非有限時 bypass 補償；L4 Protection rules（`DynamicSOCProtection` / `SOCProtection` / `ReversePowerProtection` / `GridLimitProtection`）值非有限時 passthrough 沿用上次 `_is_triggered`
+- **`RuntimeParameters` 值域 clamp (SEC-004)**：`DynamicSOCProtection._resolve_limits()` 對 `soc_max` / `soc_min` clamp 到 `[0, 100]`；`GridLimitProtection.evaluate()` 對 `grid_limit_pct` clamp 到 `[0, 100]`
+- **`GroupReader.read_many()` partial failure 修復 (SEC-016)**：加 `return_exceptions=True`，並行讀取局部失敗不再吞掉已成功的結果；`BaseException`（`CancelledError` / `SystemExit`）正常 re-raise
+
+### Performance
+
+- **絕對時間錨定（WI-TD-101/102/103）**：`AsyncCANDevice._snapshot_loop`、`PeriodicSendScheduler._send_loop`、`AsyncModbusDevice._read_loop` 三個迴圈改採 work-first 絕對時間錨定，消除累積時序漂移；落後超過一個 interval 自動重設 anchor 避免 burst catch-up。`_read_loop` 在 reconnect 成功後亦重設 anchor
+
+詳細 API 文件：[[PowerCompensator]] | [[DynamicSOCProtection]] | [[GridLimitProtection]] | [[GroupReader]]
+
+---
+
+## [0.7.1] - 2026-04-06
+
+### Added
+
+- **`BackgroundFlushMixin`** (`csp_lib.core.flush_mixin`): 背景定期 flush 迴圈的共用 Mixin（internal），提供 `_start_flush_loop()` / `_stop_flush_loop()` / `_flush_once()` hook 骨架
+- **`DeviceEventType`** (`csp_lib.equipment.device.events`): 設備事件類型 StrEnum（internal），與現有 `EVENT_xxx` 字串常數共存且完全相等
+- **`CTX_*` 常數** (`csp_lib.controller.core.constants`): `StrategyContext.extra` 常用 key 常數化（internal），包含 `CTX_FREQUENCY`、`CTX_VOLTAGE`、`CTX_METER_POWER` 等 7 個
+- **`UnifiedConfig.batch_uploader`** 欄位: 新增 `batch_uploader: BatchUploader | None = None`，作為 `mongo_uploader` 的推薦替代
+- **`ClampPriority`** enum (`csp_lib.controller.system`): CascadingStrategy 的限幅優先級，`P_FIRST`（保 P 削 Q）或 `Q_FIRST`（保 Q 削 P）
+- **CAN exception error context**: `CANError` 新增 `can_id: int | None` 和 `bus_index: int | None` keyword-only 參數
+
+### Changed
+
+- **QVStrategy `p_target=0.0`**: QV 策略只控制 Q，P 不再從 `last_command` 帶入；混合 P+Q 控制請用 cascade/mode switch
+- **CascadingStrategy 重寫為加法式**: 每層策略輸出「貢獻量」，逐層相加後依 `ClampPriority` 限幅
+- **Config frozen 對齊**: 12 個 Config dataclass 加 `frozen=True, slots=True`
+- **全庫 leaf frozen dataclass 補 `slots=True`**: 約 80 個無繼承關係的 `@dataclass(frozen=True)` 類別加上 `slots=True`
+- **型別標註現代化**: `Optional[X]` → `X | None` 等現代語法
+- **`SystemControllerConfig.runtime_params`** 從 `Any` 收窄為 `RuntimeParameters | None`
+
+### Fixed
+
+- **`_build_device_snapshots` 過濾無 capability 設備**: 避免 meter 等非被控設備灌入 `PowerDistributor` 分母導致分配比例錯誤
+- **Import 防護統一**: `cluster`、`grpc`、`redis`、`gui`、`monitor` 模組加入 `try/except ImportError` 防護
+
+### Examples
+
+- **全面重整**: 19 個舊範例重整為 14 個新範例 + README.md 學習指南，所有範例使用 SimulationServer 可直接執行
+
+### Deprecated
+
+- **`UnifiedConfig.mongo_uploader`**: 改用 `batch_uploader`，將於 v1.0.0 移除
 
 ---
 

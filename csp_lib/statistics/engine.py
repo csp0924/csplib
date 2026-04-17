@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -127,16 +128,24 @@ class StatisticsEngine:
         point_name = self._metric_point_map.get(device_id)
         if point_name and point_name in values:
             value = values[point_name]
-            if isinstance(value, (int, float)):
+            # BUG-005：布林也是 int subclass，但這裡維持既有 isinstance 判斷即可
+            if isinstance(value, (int, float)) and math.isfinite(value):
                 tracker = self._trackers[device_id]
                 records.extend(tracker.feed(value, timestamp))
 
         # Power sum tracking
+        # BUG-005：NaN / ±Inf 會污染 sum 結果，且不得覆寫上次有效值，
+        # 必須以 math.isfinite 過濾後再寫入 _power_device_values。
         for sum_name, ps_point in self._device_power_sums.get(device_id, []):
             if ps_point in values:
                 value = values[ps_point]
-                if isinstance(value, (int, float)):
+                if isinstance(value, (int, float)) and math.isfinite(value):
                     self._power_device_values[sum_name][device_id] = float(value)
+                elif isinstance(value, (int, float)):
+                    # 非有限值：保留上次有效值，僅紀錄 debug 以便追蹤
+                    logger.debug(
+                        f"StatisticsEngine: 跳過非有限值 device='{device_id}' point='{ps_point}' value={value}"
+                    )
 
         return records
 

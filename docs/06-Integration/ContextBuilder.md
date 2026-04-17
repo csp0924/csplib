@@ -4,8 +4,8 @@ tags:
   - layer/integration
   - status/complete
 source: csp_lib/integration/context_builder.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # ContextBuilder
@@ -77,6 +77,9 @@ builder = ContextBuilder(
 context = builder.build()
 # context.soc, context.extra["avg_soc"], context.params 皆已填入
 ```
+
+> [!note] v0.7.2 NaN/Inf fail-safe（SEC-013a）
+> `_set_context_field()` 寫入欄位前先以 `math.isfinite()` 檢查浮點值：非有限 float（NaN/Inf）寫入 `None` 而非保留 stale value。context 欄位型別本就是 `float | None`，下游沿用既有 None 處理路徑。此設計讓 Modbus `Float32/64.decode()` 可維持 IEEE 754 permissive（保留合法 NaN/Inf sentinel，如電表 fault 信號），由 L6 進行 fail-safe 過濾。
 
 ## 相關頁面
 

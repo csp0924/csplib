@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/base.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # AsyncModbusDevice
@@ -325,6 +325,11 @@ cancel()  # 取消訂閱
 ```
 
 ---
+
+> [!note] v0.7.2 _read_loop 絕對時間錨定（WI-TD-103）
+> `_read_loop` 改採 work-first 絕對時間錨定（`next_tick_delay()`），sleep delay 補償每次讀取的實際耗時，消除累積時序漂移。
+> - Reconnect 成功後重設 anchor，避免重連瞬間 burst catch-up 壓垮設備
+> - 落後超過一個 interval 時自動重設 anchor
 
 ## 內部元件
 

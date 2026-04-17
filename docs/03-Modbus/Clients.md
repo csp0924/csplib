@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/modbus/clients/
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.0
+updated: 2026-04-16
+version: ">=0.7.2"
 ---
 
 # Clients
@@ -59,6 +59,9 @@ async with PymodbusTcpClient(config) as client:
 - 每個實例獨立連線
 - 支援並行讀寫（多工）
 - 不重試（`retries=0`）
+
+> [!note] v0.7.2 重複連線保護（BUG-006）
+> `connect()` 以 `asyncio.Lock` 序列化所有併發呼叫，並於 lock 內以底層 `client.connected` 真實狀態決定是否執行連線動作。修復前：多個協程同時呼叫 `connect()` 會重複呼叫底層連線。網路掉線（`client.connected` 自動翻 False）後重連仍可正常運作，不被 sticky flag 卡死。
 
 ---
 

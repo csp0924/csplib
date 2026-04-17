@@ -188,6 +188,36 @@ class TestDynamicSOCProtection:
         result = rule.evaluate(cmd, ctx)
         assert result.p_target == pytest.approx(0.0)
 
+    # --- BUG-003: soc_max < soc_min (反轉配置) ---
+    #
+    # 現象：當使用者誤將 soc_max / soc_min 寫反（例如 soc_max=30, soc_min=70），
+    # 保護邏輯會同時禁止充電與放電，導致系統完全無法運作。
+    # 修復後：明確拋 ValueError（不自動 swap），讓配置錯誤立即可見，
+    # 由上層 ProtectionGuard 捕捉並由配置端修正。
+
+    def test_soc_max_less_than_soc_min_raises_value_error_on_charging(self):
+        """
+        BUG-003：soc_max=30, soc_min=70（反轉配置）→ evaluate 應拋 ValueError
+        充電命令場景驗證。
+        """
+        params = RuntimeParameters(soc_max=30.0, soc_min=70.0)
+        rule = self._make(params)
+        cmd = Command(p_target=-100.0)  # charging
+        ctx = StrategyContext(soc=50.0)
+        with pytest.raises(ValueError, match="soc_max .* < soc_min"):
+            rule.evaluate(cmd, ctx)
+
+    def test_soc_max_less_than_soc_min_raises_value_error_on_discharging(self):
+        """
+        BUG-003：放電命令場景同樣應拋 ValueError，行為一致。
+        """
+        params = RuntimeParameters(soc_max=30.0, soc_min=70.0)
+        rule = self._make(params)
+        cmd = Command(p_target=100.0)  # discharging
+        ctx = StrategyContext(soc=50.0)
+        with pytest.raises(ValueError, match="soc_max .* < soc_min"):
+            rule.evaluate(cmd, ctx)
+
 
 # ===========================================================================
 # GridLimitProtection

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from csp_lib.controller.core import Command, StrategyContext
 from csp_lib.core import get_logger
+from csp_lib.core._numeric import clamp, is_non_finite_float
 
 from .protection import ProtectionRule, SOCProtectionConfig
 
@@ -76,16 +77,51 @@ class DynamicSOCProtection(ProtectionRule):
     def _resolve_limits(self) -> tuple[float, float, float]:
         """Resolve soc_max, soc_min, warning_band from the parameter source."""
         if isinstance(self._params, SOCProtectionConfig):
-            return self._params.soc_high, self._params.soc_low, self._params.warning_band
-        # RuntimeParameters path
-        soc_max = float(self._params.get(self._soc_max_key, 95.0))
-        soc_min = float(self._params.get(self._soc_min_key, 5.0))
-        return soc_max, soc_min, self._warning_band
+            soc_max = self._params.soc_high
+            soc_min = self._params.soc_low
+            wb = self._params.warning_band
+        else:
+            # RuntimeParameters path
+            soc_max = float(self._params.get(self._soc_max_key, 95.0))
+            soc_min = float(self._params.get(self._soc_min_key, 5.0))
+            wb = self._warning_band
+
+        # SEC-013a + SEC-004：先驗證非有限值（NaN/Inf clamp 後仍是 NaN/Inf，
+        # 後續 BUG-003 的 < 比較對 NaN 永遠 False，會無聲繞過反轉檢查與
+        # SOC 保護。必須在 clamp 前明確攔截）。
+        if is_non_finite_float(soc_max) or is_non_finite_float(soc_min):
+            raise ValueError(
+                f"DynamicSOC: soc_max ({soc_max}) / soc_min ({soc_min}) 含 NaN/Inf — "
+                f"無效配置，請檢查 RuntimeParameters '{self._soc_max_key}' / '{self._soc_min_key}'"
+            )
+
+        # SEC-004：SOC 百分比物理合理範圍為 [0, 100]，clamp 以防 EMS/Modbus
+        # 寫入異常值（如 soc_max=150 會讓上限保護永不觸發，可能過充）。
+        soc_max = clamp(soc_max, 0.0, 100.0)
+        soc_min = clamp(soc_min, 0.0, 100.0)
+
+        # BUG-003：若使用者誤設 soc_max < soc_min（反轉配置），明確拋錯。
+        # 不自動 swap：配置錯誤靜默運作會掩蓋問題，使用者無從察覺，
+        # 應由 ProtectionGuard 上層捕捉並記錄，由配置端修正。
+        if soc_max < soc_min:
+            raise ValueError(
+                f"DynamicSOC: soc_max ({soc_max}) < soc_min ({soc_min}) — "
+                f"無效的反轉配置，請檢查 RuntimeParameters '{self._soc_max_key}' / '{self._soc_min_key}'"
+            )
+
+        return soc_max, soc_min, wb
 
     def evaluate(self, command: Command, context: StrategyContext) -> Command:
         soc = context.soc
         if soc is None:
             self._is_triggered = False
+            return command
+
+        # SEC-013a L4：soc 為非有限 float（NaN/Inf）視同資料不可用，
+        # 沿用上次 is_triggered 值並 passthrough command。
+        # 不強制觸發保護（避免通訊瞬態 NaN 造成功率閃爍），
+        # 也不重置為 False（避免上層誤判保護解除）。
+        if is_non_finite_float(soc):
             return command
 
         soc_max, soc_min, wb = self._resolve_limits()
@@ -170,7 +206,18 @@ class GridLimitProtection(ProtectionRule):
         return self._is_triggered
 
     def evaluate(self, command: Command, context: StrategyContext) -> Command:
-        pct = float(self._params.get(self._limit_key, 100))
+        pct_raw = self._params.get(self._limit_key, 100)
+
+        # SEC-013a L4：grid_limit_pct 為非有限 float → 視同資料不可用，
+        # 沿用上次 is_triggered 並 passthrough。避免 max_p=NaN 造成比較恆 False
+        # 把 is_triggered 無聲重置為 False。
+        if is_non_finite_float(pct_raw):
+            return command
+
+        pct = float(pct_raw)
+        # SEC-004：grid_limit_pct 物理合理範圍為 [0, 100]，clamp 以防
+        # 上越界（pct=250 讓 max_p 超過額定）或下越界（pct=-50 讓放電變充電）。
+        pct = clamp(pct, 0.0, 100.0)
         max_p = self._rated * pct / 100.0
         p = command.p_target
 

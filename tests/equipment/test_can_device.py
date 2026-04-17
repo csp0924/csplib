@@ -385,7 +385,12 @@ class TestSnapshotLoop:
 
     @pytest.mark.asyncio
     async def test_rx_no_read_complete_per_frame(self):
-        """驗證收到 RX 訊框時不發射 READ_COMPLETE"""
+        """驗證收到 RX 訊框時不發射額外 READ_COMPLETE。
+
+        snapshot loop 採 work-first 絕對時間錨定（v0.7.2 WI-TD-101），
+        startup 會立即 emit 一次基準 READ_COMPLETE；之後在 read_interval=10s 內
+        不會再觸發。注入 RX 訊框後 snapshot 計數應與 baseline 相同。
+        """
         device, client = _make_short_interval_device(read_interval=10.0)
 
         read_complete_events = []
@@ -396,8 +401,11 @@ class TestSnapshotLoop:
         device.on(EVENT_READ_COMPLETE, on_read_complete)
 
         await device.connect()
-        # 不啟動 snapshot loop（read_interval=10s，不會在測試期間觸發）
         await device.start()
+
+        # 等 startup snapshot tick 完成（work-first：開始時會 emit 一次）
+        await asyncio.sleep(0.05)
+        baseline_count = len(read_complete_events)
 
         # 注入多個 RX 訊框
         for i in range(5):
@@ -411,8 +419,8 @@ class TestSnapshotLoop:
         await device.stop()
         await device.disconnect()
 
-        # RX 訊框不應觸發 READ_COMPLETE
-        assert len(read_complete_events) == 0
+        # RX 訊框不應觸發額外 READ_COMPLETE（snapshot 計數應等於 baseline）
+        assert len(read_complete_events) == baseline_count
 
 
 class TestRxTimeout:

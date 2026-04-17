@@ -82,6 +82,9 @@ class PymodbusTcpClient(AsyncModbusClientBase):
     def __init__(self, config: ModbusTcpConfig) -> None:
         self._config = config
         self._client: AsyncModbusTcpClient | None = None
+        # BUG-006：lock 防止併發 connect() 重複呼叫底層；以 client.connected 為準，
+        # 不用 sticky flag（避免網路掉線後 client.connected=False 卻被誤判已連線）
+        self._connect_lock = asyncio.Lock()
 
     def _get_client(self) -> AsyncModbusTcpClient:
         """取得或建立 pymodbus 客戶端"""
@@ -98,9 +101,14 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         return self._client
 
     async def connect(self) -> None:
-        """建立 TCP 連線"""
-        client = self._get_client()
-        if not client.connected:
+        """建立 TCP 連線（idempotent + 併發安全）"""
+        # BUG-006：lock 序列化併發呼叫；lock 內以 client.connected 為準判斷是否需 connect
+        # 確保網路掉線（client.connected 自動翻為 False）後仍可重連
+        async with self._connect_lock:
+            client = self._get_client()
+            if client.connected:
+                return  # 真實連線狀態已連，跳過底層呼叫
+
             logger.info(f"Connecting to {self._config.host}:{self._config.port}...")
             connected = await client.connect()
             if not connected:

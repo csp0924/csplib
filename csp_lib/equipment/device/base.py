@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.core.errors import CommunicationError, ConfigurationError, DeviceConnectionError
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.equipment.alarm import AlarmEvaluator, AlarmStateManager
@@ -689,13 +690,20 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         return raw_values
 
     async def _read_loop(self) -> None:
-        """讀取循環（含自動重連）"""
+        """讀取循環（含自動重連）。
+
+        採用絕對時間錨定（absolute time anchoring）避免時序漂移：
+        以 ``next_tick_delay`` helper 統一計算 sleep delay，補償 read 耗時。
+        重連成功後重設 anchor 與 completed 計數，避免斷線期間錯過的 tick
+        在重連瞬間 burst catch-up 壓垮設備。
+        """
         interval = self._config.read_interval
         reconnect_interval = self._config.reconnect_interval
 
-        while not self._stop_event.is_set():
-            start_time = time.monotonic()
+        anchor = time.monotonic()
+        n = 0
 
+        while not self._stop_event.is_set():
             # 未連線時嘗試重連
             if not self._client_connected:
                 try:
@@ -705,6 +713,9 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
                         self._device_responsive = True
                         self._consecutive_failures = 0
                     await self._emitter.emit_await(EVENT_CONNECTED, ConnectedPayload(device_id=self._config.device_id))
+                    # 重連成功後重設 anchor 與計數，避免 burst catch-up
+                    anchor = time.monotonic()
+                    n = 0
                 except DeviceConnectionError:
                     # 重連失敗，等待後重試
                     await asyncio.sleep(reconnect_interval)
@@ -720,9 +731,8 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
             except Exception as e:
                 logger.warning(f"[{self._config.device_id}] Read loop error: {e}")
 
-            elapsed = time.monotonic() - start_time
-            sleep_time = max(0, interval - elapsed)
-            await asyncio.sleep(sleep_time)
+            delay, anchor, n = next_tick_delay(anchor, n, interval)
+            await asyncio.sleep(delay)
 
     async def _handle_read_failure(self, error_msg: str) -> None:
         """處理讀取失敗：累加計數 + 記錄失敗時間 + 發送錯誤事件"""

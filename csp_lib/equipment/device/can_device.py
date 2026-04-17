@@ -14,6 +14,7 @@ from typing import Any, Callable, Sequence
 from csp_lib.can.clients.base import AsyncCANClientBase
 from csp_lib.can.config import CANFrame
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.equipment.alarm import AlarmEvaluator, AlarmStateManager
 from csp_lib.equipment.processing import AggregatorPipeline
@@ -447,9 +448,16 @@ class AsyncCANDevice(AlarmMixin):
     # =============== Snapshot Loop ===============
 
     async def _snapshot_loop(self) -> None:
-        """週期性發射 READ_COMPLETE + 告警評估 + RX timeout 檢查"""
+        """週期性發射 READ_COMPLETE + 告警評估 + RX timeout 檢查。
+
+        採用絕對時間錨定（absolute time anchoring）避免時序漂移：
+        以 ``next_tick_delay`` helper 統一計算 sleep delay；work-first 語義，
+        sleep 自動補償 work 耗時，落後一個 interval 重設 anchor 避免 burst。
+        """
+        interval = self._config.read_interval
+        anchor = time.monotonic()
+        n = 0
         while True:
-            await asyncio.sleep(self._config.read_interval)
             values = self._latest_values.copy()
 
             self._emitter.emit(
@@ -463,6 +471,9 @@ class AsyncCANDevice(AlarmMixin):
 
             await self._evaluate_alarm(values)
             self._check_rx_timeout()
+
+            delay, anchor, n = next_tick_delay(anchor, n, interval)
+            await asyncio.sleep(delay)
 
     def _check_rx_timeout(self) -> None:
         """檢查 RX 是否超時，若超時則標記為無回應"""
