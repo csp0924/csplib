@@ -1,0 +1,198 @@
+# ======================================================================
+# GitHub Actions: Release (tag 觸發 → PyPI + GitHub Release)
+#
+# 目的：release-please merge Release PR 後會自動建立 tag，此 workflow
+#       由 tag push 觸發，完成 PyPI 發佈與 GitHub Release 製作。
+#
+# 觸發策略：
+#   - tag push `v[0-9]+.[0-9]+.[0-9]+`（正式版）
+#   - tag push `v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+`（預發佈→ TestPyPI）
+#   - 其他 tag（例如 `v0.8.2-backup`）不觸發
+#
+# 改動摘要 vs build-wheels.yml 原 publish job：
+#   - 從 CI 拆出（獨立檔案，權限範圍收窄）
+#   - tag pattern 從 `v*` 改為嚴格語意版本（backup / draft tag 不誤觸）
+#   - RC tag 走 TestPyPI（dry run），正式 tag 走 PyPI
+#   - 用 OIDC trusted publishing（`id-token: write`），不再需要 PyPI token secret
+#   - 移除「build 跑兩次」問題：預設重新 build（因 tag commit 可能與 CI 跑的 commit 不同），
+#     若確定 tag 指向 main HEAD 可改 artifact reuse
+# ======================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      # 嚴格語意版本 + 可選 RC 後綴
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  # ============ 預檢：tag 與 __version__ 一致性 ============
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      is_rc: ${{ steps.parse.outputs.is_rc }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Parse tag
+        id: parse
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          if [[ "$VERSION" == *"-rc"* ]]; then
+            echo "is_rc=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_rc=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Tag: $TAG | Version: $VERSION"
+
+      - name: Verify tag matches __version__
+        run: |
+          TAG_VERSION="${{ steps.parse.outputs.version }}"
+          # 正式 tag：要完全 match；RC tag：允許 __version__ 不含 -rcN（本地 0.8.3 對 tag v0.8.3-rc1）
+          PKG_VERSION=$(python3 -c "
+          import re
+          m = re.search(r'__version__\\s*=\\s*\"([^\"]+)\"', open('csp_lib/__init__.py').read())
+          print(m.group(1))
+          ")
+          EXPECTED="${TAG_VERSION%%-rc*}"
+          if [ "$EXPECTED" != "$PKG_VERSION" ]; then
+            echo "::error::Tag $TAG_VERSION does not match __version__=$PKG_VERSION (expected $EXPECTED)"
+            exit 1
+          fi
+
+  # ============ Build sdist + wheel ============
+  build:
+    name: Build dist
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install build tooling
+        run: pip install build twine
+
+      - name: Build
+        run: |
+          python -m build
+          twine check dist/*
+
+      - name: Upload dist
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: dist-${{ needs.preflight.outputs.version }}
+          path: dist/
+
+  # ============ Extract release notes from CHANGELOG ============
+  notes:
+    name: Release notes
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    outputs:
+      notes_exist: ${{ steps.extract.outputs.notes_exist }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Extract notes
+        id: extract
+        run: |
+          VERSION="${{ needs.preflight.outputs.version }}"
+          # RC 版本取 base version 的 CHANGELOG section（RC 通常沒有獨立 section）
+          BASE="${VERSION%%-rc*}"
+          python3 - <<PY
+          import re
+          version = "$BASE"
+          content = open('CHANGELOG.md', encoding='utf-8').read()
+          pattern = rf'## \\[{re.escape(version)}\\].*?\\n(.*?)(?=\\n## \\[|\\Z)'
+          m = re.search(pattern, content, re.DOTALL)
+          notes = m.group(1).strip() if m else f'Release {version}'
+          with open('release_notes.md', 'w', encoding='utf-8') as f:
+              f.write(notes)
+          PY
+          if [ -s release_notes.md ]; then
+            echo "notes_exist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notes_exist=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload notes
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: release-notes-${{ needs.preflight.outputs.version }}
+          path: release_notes.md
+
+  # ============ Publish RC → TestPyPI ============
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [preflight, build, notes]
+    if: needs.preflight.outputs.is_rc == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/csp0924-lib
+    permissions:
+      id-token: write  # OIDC
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: dist-${{ needs.preflight.outputs.version }}
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc  # v1.12.4
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist/
+
+  # ============ Publish Release → PyPI + GitHub Release ============
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [preflight, build, notes]
+    if: needs.preflight.outputs.is_rc == 'false'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/csp0924-lib
+    permissions:
+      contents: write  # gh-release 需要寫 releases
+      id-token: write  # OIDC for PyPI
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: dist-${{ needs.preflight.outputs.version }}
+          path: dist/
+
+      - name: Download release notes
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8
+        with:
+          name: release-notes-${{ needs.preflight.outputs.version }}
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc  # v1.12.4
+        with:
+          packages-dir: dist/
+          attestations: true
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191  # v2.0.8
+        with:
+          files: dist/*
+          body_path: release_notes.md
