@@ -37,8 +37,10 @@ permissions:
 
 jobs:
   # ============ Lint (並行) ============
+  # job name 保持 "Lint" 以對上 branch protection 的 required status check
+  # (舊 build-wheels.yml 遺留；mypy 也放在此 job 內一起跑)
   lint:
-    name: Lint & Type Check
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
