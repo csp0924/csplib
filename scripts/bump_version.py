@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # {v} = new version, {date} = today's date (YYYY-MM-DD)
 REPLACEMENTS: list[tuple[str, str, str]] = [
     ("csp_lib/__init__.py", r'__version__\s*=\s*"[^"]+"', '__version__ = "{v}"'),
-    ("README.md", r"version-[\d.]+-blue", "version-{v}-blue"),
+    # README L5 Version badge 已改為 PyPI 動態 badge，不再需要版號替換
     ("README.md", r"version = \{[\d.]+\}", "version = {{{v}}}"),
     ("README.md", r"目前版本：`[\d.]+`", "目前版本：`{v}`"),
     ("CITATION.cff", r"^version:\s*[\d.]+", "version: {v}"),
