@@ -175,7 +175,7 @@ uv run mypy csp_lib/
   author = {Cheng Sin Pang (鄭善淜)},
   year = {2024},
   url = {https://github.com/csp0924/csp_lib},
-  version = {0.8.2}, % x-release-please-version
+  version = {0.9.0}, % x-release-please-version
   license = {Apache-2.0}
 }
 ```
