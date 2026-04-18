@@ -10,6 +10,7 @@
       "bump-patch-for-minor-pre-major": false,
       "draft": false,
       "prerelease": false,
+      "last-release-sha": "de66f02329a754af97ed7c497c75daa902e0b37f",
       "extra-files": [
         { "type": "generic", "path": "csp_lib/__init__.py" },
         { "type": "generic", "path": "README.md" },
