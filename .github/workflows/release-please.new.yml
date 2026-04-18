@@ -1,0 +1,46 @@
+# ======================================================================
+# GitHub Actions: release-please
+#
+# 目的：掃 main 上的 conventional commits，自動維護「Release PR」。
+#       當 user merge Release PR 時，release-please 會：
+#         1. 合併 commits 到 CHANGELOG.md
+#         2. 撞 csp_lib/__init__.py 的 __version__ 到下個版本
+#         3. 推 `vX.Y.Z` tag
+#       tag 推出後由 release.new.yml 接手（PyPI + GitHub Release）。
+#
+# 觸發策略：
+#   - push main → 重新計算 Release PR 內容
+#   - 手動觸發 → 同上（方便第一次 bootstrap）
+#
+# 相依：release-please-config.json、.release-please-manifest.json
+# ======================================================================
+
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write       # 需要寫 CHANGELOG、__init__.py、推 tag
+  pull-requests: write  # 需要開/更新 Release PR
+  issues: write         # 需要標 label（release-please 會標 `autorelease: pending`）
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Run release-please
+    runs-on: ubuntu-latest
+    steps:
+      - name: release-please
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445  # v4.1.3
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # 預設 token 即 GITHUB_TOKEN，足以在同 repo 開 PR
+          token: ${{ secrets.GITHUB_TOKEN }}

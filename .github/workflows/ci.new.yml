@@ -1,0 +1,172 @@
+# ======================================================================
+# GitHub Actions: CI (PR + push main)
+#
+# 目的：對 main 和所有 PR 跑快速回饋（lint / type / test / build-check）
+# 不負責發版 — 發版由 release.new.yml 處理（tag 觸發）
+#
+# 觸發策略：
+#   - PR → lint + test + build-check
+#   - push main（release-please bot merge 或 hotfix）→ lint + test + build-check
+#   - 手動觸發 → 完整流程
+#
+# 改動摘要 vs build-wheels.yml：
+#   - 拆分 publish 到 release.new.yml（tag 觸發，此 workflow 不再發 PyPI）
+#   - tag 觸發移除（publish 交給 release.new.yml）
+#   - 加 concurrency control（同 PR 新 push 自動取消舊 run）
+#   - macOS 只在 push main 跑（PR 跑太慢且 astral 已在 ubuntu+windows 覆蓋）
+#   - cache 擴充 .mypy_cache / .ruff_cache
+#   - 所有 actions pin commit SHA（防供應鏈攻擊）
+#   - lint 與 test 併行（removed needs: [lint] from test）
+# ======================================================================
+
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ============ Lint (並行) ============
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v7.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Restore tool caches
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57  # v4.2.0
+        with:
+          path: |
+            .ruff_cache
+            .mypy_cache
+          key: ${{ runner.os }}-lint-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-lint-
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: mypy
+        run: uv run mypy csp_lib/
+
+  # ============ Test (並行；macOS 只在 push main 跑) ============
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: macos-latest
+            # macOS 只在 push main 時納入矩陣（PR 跑太慢）
+            condition: push-main
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Skip macOS on PR
+        if: matrix.condition == 'push-main' && github.event_name == 'pull_request'
+        run: |
+          echo "macOS test skipped on PR"
+          exit 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v7.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Restore pytest cache
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57  # v4.2.0
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-
+
+      - name: Install dependencies
+        run: uv sync --group dev --all-extras
+
+      - name: Run tests with coverage
+        # 用 `uv run python -m pytest` 確保 Windows 中文路徑 /  PATH 一致性
+        run: uv run python -m pytest tests/ -v -n auto --cov=csp_lib --cov-report=xml --cov-report=term
+
+      - name: Coverage threshold
+        if: matrix.os == 'ubuntu-latest'
+        run: uv run coverage report --fail-under=80
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  # ============ Build Check (PR + push main，不發佈) ============
+  build-check:
+    name: Build Check
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Build sdist and wheel
+        run: |
+          pip install build twine
+          python -m build
+          twine check dist/*
+
+      - name: Verify pure-Python wheel
+        run: |
+          WHL=$(ls dist/*.whl)
+          if [[ "$WHL" != *"py3-none-any"* ]]; then
+            echo "::error::Wheel is not pure Python: $WHL"
+            exit 1
+          fi
+
+      - name: Install wheel with [all] extras
+        run: |
+          WHL=$(ls dist/*.whl)
+          pip install "${WHL}[all]"
+
+      - name: Verify import
+        run: |
+          python -c "import csp_lib; print(f'csp_lib {csp_lib.__version__} imported successfully')"
+
+      # Upload artifact 讓 release.new.yml 可以 reuse（tag workflow 不用重跑 build）
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
