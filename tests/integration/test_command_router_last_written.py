@@ -213,6 +213,59 @@ class TestFailureDoesNotUpdate:
         dev.write.assert_awaited_once_with("p_set", 77.0)
 
 
+# ─────────────── Bug #3: try_write_single NO_CHANGE 防呆 ───────────────
+
+
+class TestTryWriteSingleRejectsNoChange:
+    """Bug #3：try_write_single 應在 value 為 NO_CHANGE sentinel 時 early-return
+
+    若不擋：外部誤傳會把 sentinel 寫入設備並進 _last_written，
+    CommandRefreshService 後續會週期性把 sentinel 當 desired-state 重送。
+    """
+
+    async def test_no_change_early_returns_false_without_write(self):
+        """try_write_single(NO_CHANGE) → 回 False、不呼叫 device.write、不 record"""
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+        router = CommandRouter(reg, mappings=[])
+
+        result = await router.try_write_single("pcs1", "p_set", NO_CHANGE)
+
+        assert result is False, "NO_CHANGE 應被拒寫"
+        dev.write.assert_not_awaited()
+        assert router.get_last_written("pcs1") == {}
+
+    async def test_no_change_does_not_overwrite_existing_last_written(self):
+        """先成功寫 p=100，再直接傳 NO_CHANGE → last_written 應保留 100（不被污染）"""
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+        router = CommandRouter(reg, mappings=[])
+
+        ok = await router.try_write_single("pcs1", "p_set", 100.0)
+        assert ok is True
+        assert router.get_last_written("pcs1") == {"p_set": 100.0}
+
+        # 直接 bypass route() 傳 NO_CHANGE sentinel
+        result = await router.try_write_single("pcs1", "p_set", NO_CHANGE)
+
+        assert result is False
+        # last_written 不得被 NO_CHANGE sentinel 覆蓋
+        assert router.get_last_written("pcs1") == {"p_set": 100.0}
+
+    async def test_no_change_does_not_track_device(self):
+        """若 device 先前未被寫入過，NO_CHANGE 不應讓它進 tracked set"""
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+        router = CommandRouter(reg, mappings=[])
+
+        await router.try_write_single("pcs1", "p_set", NO_CHANGE)
+
+        assert router.get_tracked_device_ids() == frozenset()
+
+
 # ─────────────── get_last_written shallow copy ───────────────
 
 

@@ -435,8 +435,8 @@ config = SystemControllerConfig(
 ```
 
 > [!note] v0.8.1 生命週期啟動順序
-> 啟動：executor → command_refresh → heartbeat
-> 停止：heartbeat → command_refresh → executor
+> 啟動：command_refresh → heartbeat → executor（command_refresh 先於 heartbeat，避免首輪 reconcile 被 pause/resume 干擾；executor 最後掛 task）
+> 停止：executor → heartbeat → command_refresh（先停新命令來源，再依序停輸出端）
 
 ## 相關頁面
 

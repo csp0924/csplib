@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from csp_lib.controller.core import is_no_change
+from csp_lib.controller.core import NO_CHANGE, is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core.errors import DeviceError
 
@@ -135,8 +135,12 @@ class CommandRouter:
 
         Returns:
             ``True`` 若寫入成功；``False`` 若 device 不存在 / protected /
-            unresponsive / 寫入拋 ``DeviceError``。
+            unresponsive / 寫入拋 ``DeviceError`` / value 為 NO_CHANGE。
         """
+        # 防呆：NO_CHANGE sentinel 不可被當 desired-state 寫入 / 紀錄，
+        # 否則 CommandRefreshService 會週期性將 sentinel 重送給設備。
+        if value is NO_CHANGE:
+            return False
         device = self._registry.get_device(device_id)
         if device is None:
             logger.warning(f"Device '{device_id}' not found in registry, skipping write.")

@@ -177,7 +177,7 @@ class HeartbeatService:
             if mapping.target is not None:
                 generator = self._resolve_generator(mapping)
                 value = generator.next(mapping.target.identity)
-                await mapping.target.write(value)
+                await self._safe_target_write(mapping.target, value)
                 continue
 
             # 1b. Legacy 路徑：以 device_id / trait + point_name 組合計算值並寫入
@@ -195,7 +195,7 @@ class HeartbeatService:
         # 2. 獨立 targets：不經 registry / mapping，直接寫入
         for target in self._targets:
             value = self._targets_generator.next(target.identity)
-            await target.write(value)
+            await self._safe_target_write(target, value)
 
         # 3. 能力發現
         if self._use_capability:
@@ -273,6 +273,19 @@ class HeartbeatService:
             logger.opt(exception=True).warning(
                 f"Heartbeat write failed: device='{device.device_id}' point='{point_name}'"
             )
+
+    @staticmethod
+    async def _safe_target_write(target: HeartbeatTarget, value: int) -> None:
+        """安全寫入 HeartbeatTarget：單一目標失敗不終止整個心跳迴圈
+        自訂 target 可能拋 DeviceError 以外的例外（網路、Redis、HTTP…），
+        service 層一律吞掉並記錄，保證 fire-and-forget。
+        """
+        try:
+            await target.write(value)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.opt(exception=True).warning(f"Heartbeat target write failed: identity='{target.identity}'")
 
 
 __all__ = [

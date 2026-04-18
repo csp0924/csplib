@@ -79,20 +79,22 @@ config = SystemControllerConfig(
 `SystemController` 啟動順序：
 
 ```
-StrategyExecutor.start()
-  → CommandRefreshService.start()   # refresh 在 executor 存活後才啟動
-    → HeartbeatService.start()
+CommandRefreshService.start()   # 先啟動，避免 heartbeat pause/resume 干擾首輪 reconcile
+  → HeartbeatService.start()
+    → StrategyExecutor.run() (asyncio.create_task)
 ```
 
 停止順序（反向）：
 
 ```
-HeartbeatService.stop()
-  → CommandRefreshService.stop()
-    → StrategyExecutor.stop()
+StrategyExecutor.stop()         # 先停新命令來源
+  → HeartbeatService.stop()     # 再停心跳
+    → CommandRefreshService.stop()  # 最後停 reconciler
 ```
 
-這確保 reconciler 只在設備寫入能力（CommandRouter）存在期間運行。
+設計理由：
+- **啟動** command_refresh 先於 heartbeat，避免首輪 reconcile 與 heartbeat pause/resume 競爭；executor 最後掛 task 讓前置服務已就緒。
+- **停止** executor 先停斷掉新命令來源，再依序停 heartbeat / refresh；短暫尾流寫入對設備安全（設備看到重複的舊命令不會行為變更）。
 
 ## 與其他元件的互動
 
