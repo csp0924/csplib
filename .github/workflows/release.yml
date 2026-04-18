@@ -191,8 +191,19 @@ jobs:
           packages-dir: dist/
           attestations: true
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191  # v2.0.8
-        with:
-          files: dist/*
-          body_path: release_notes.md
+      # 用 gh CLI 一次 call 建 release + 附 asset，避開 "先 create 再 upload"
+      # 兩階段流程：GitHub Immutable Releases 會讓 release 建出來就 immutable，
+      # 導致後續 upload asset 失敗（v0.8.3 首次 release 踩到這個坑）。
+      # gh release create 把 assets 當成 positional args 一併帶入 create 請求。
+      - name: Create GitHub Release with assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          # attestation 檔已隨 PyPI publish 上 sigstore，GH Release 只附 wheel + sdist
+          gh release create "$TAG" \
+            dist/*.whl dist/*.tar.gz \
+            --title "$TAG" \
+            --notes-file release_notes.md
