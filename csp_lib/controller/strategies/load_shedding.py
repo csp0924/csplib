@@ -262,7 +262,7 @@ class LoadSheddingStrategy(Strategy):
         if self._enabled_key is not None:
             enabled = self._resolver.resolve_optional(self._enabled_key, True)
             if not enabled:
-                logger.debug("LoadSheddingStrategy: runtime disabled via '%s'", self._enabled_key)
+                logger.debug("LoadSheddingStrategy: runtime disabled via '{}'", self._enabled_key)
                 return context.last_command
 
         now = time.monotonic()

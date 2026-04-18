@@ -181,7 +181,7 @@ class DroopStrategy(Strategy):
             enabled = self._resolver.resolve_optional(self._enabled_key, True)
             if not enabled:
                 schedule_p = float(self._resolver.resolve_optional(self._schedule_p_key, 0.0))
-                logger.debug("Droop: runtime disabled via '%s', output schedule_p=%s", self._enabled_key, schedule_p)
+                logger.debug("Droop: runtime disabled via '{}', output schedule_p={}", self._enabled_key, schedule_p)
                 return Command(p_target=schedule_p, q_target=0.0)
 
         frequency = context.extra.get("frequency")

@@ -342,22 +342,29 @@ class DeviceRegistry:
         其中 ``responsive`` 為變化後的新狀態。僅當實際變化（baseline 已建立
         且新舊狀態不同）時才會觸發；首次 ``notify_status`` 僅建立 baseline。
 
+        Thread-safe：append 在 ``self._lock`` 保護下進行，避免與
+        ``_notify_status_change`` 的 snapshot 或其他執行緒的註冊 race。
+
         Args:
             callback: 狀態變化回呼。例外會被捕獲並記錄，不會影響其他觀察者。
         """
-        self._status_observers.append(callback)
+        with self._lock:
+            self._status_observers.append(callback)
 
     def remove_status_observer(self, callback: StatusChangeCallback) -> None:
         """
         移除已註冊的狀態變化觀察者。
 
+        Thread-safe：remove 在 ``self._lock`` 保護下進行。
+
         Args:
             callback: 欲移除的回呼。未註冊時靜默忽略。
         """
-        try:
-            self._status_observers.remove(callback)
-        except ValueError:
-            pass
+        with self._lock:
+            try:
+                self._status_observers.remove(callback)
+            except ValueError:
+                pass
 
     def notify_status(self, device_id: str) -> None:
         """
@@ -397,14 +404,23 @@ class DeviceRegistry:
         """
         同步呼叫所有 status observers（鎖外執行）。
 
-        單一 observer 例外不影響其他 observer，統一以
-        ``logger.opt(exception=True).warning(...)`` 記錄，避免中斷呼叫鏈。
+        在 ``self._lock`` 內以 ``list(...)`` 取得 observer 的 snapshot，
+        鎖外再逐一呼叫。此作法保證：
+
+        * 與 ``on_status_change`` / ``remove_status_observer`` 的並發
+          append/remove 不會造成 ``list changed size during iteration`` 或
+          漏叫 callback。
+        * callback 在鎖外執行，若 observer 反向存取 Registry 不會重入死鎖。
+        * 單一 observer 例外不影響其他 observer，統一以
+          ``logger.opt(exception=True).warning(...)`` 記錄。
 
         Args:
             device_id: 狀態變化的設備 ID。
             responsive: 變化後的 responsive 狀態。
         """
-        for cb in self._status_observers:
+        with self._lock:
+            observers = list(self._status_observers)
+        for cb in observers:
             try:
                 cb(device_id, responsive)
             except Exception:

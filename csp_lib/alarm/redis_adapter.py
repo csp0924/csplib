@@ -130,12 +130,12 @@ class RedisAlarmPublisher(AsyncLifecycleMixin):
                     asyncio.run_coroutine_threadsafe(self._publish(active), loop)
             except Exception:  # noqa: BLE001
                 logger.opt(exception=True).warning(
-                    "RedisAlarmPublisher: failed to schedule publish for active=%s", active
+                    "RedisAlarmPublisher: failed to schedule publish for active={}", active
                 )
 
         self._observer = _observer
         self._aggregator.on_change(_observer)
-        logger.info("RedisAlarmPublisher started (channel=%s)", self._channel)
+        logger.info("RedisAlarmPublisher started (channel={})", self._channel)
 
     async def _on_stop(self) -> None:
         """解除 observer 並等待進行中的 publish task 結束。"""
@@ -151,7 +151,7 @@ class RedisAlarmPublisher(AsyncLifecycleMixin):
                 logger.warning("RedisAlarmPublisher: pending publish tasks timed out on stop")
             self._pending_tasks.clear()
         self._loop = None
-        logger.info("RedisAlarmPublisher stopped (channel=%s)", self._channel)
+        logger.info("RedisAlarmPublisher stopped (channel={})", self._channel)
 
     async def _publish(self, active: bool) -> None:
         """實際 publish；失敗僅 log warning。"""
@@ -159,10 +159,10 @@ class RedisAlarmPublisher(AsyncLifecycleMixin):
             payload = self._payload_builder(active, self._aggregator)
             message = json.dumps(payload, ensure_ascii=False)
             await self._redis.publish(self._channel, message)
-            logger.debug("RedisAlarmPublisher: published to '%s' (active=%s)", self._channel, active)
+            logger.debug("RedisAlarmPublisher: published to '{}' (active={})", self._channel, active)
         except Exception:  # noqa: BLE001 - publish 失敗不 raise
             logger.opt(exception=True).warning(
-                "RedisAlarmPublisher: publish failed (channel=%s, active=%s)", self._channel, active
+                "RedisAlarmPublisher: publish failed (channel={}, active={})", self._channel, active
             )
 
 
@@ -207,7 +207,7 @@ class RedisAlarmSource(AsyncLifecycleMixin):
         self._pubsub = self._redis.pubsub()
         await self._pubsub.subscribe(self._channel)
         self._task = asyncio.create_task(self._listen_loop(), name=f"alarm_source_{self._name}")
-        logger.info("RedisAlarmSource started (channel=%s, name=%s)", self._channel, self._name)
+        logger.info("RedisAlarmSource started (channel={}, name={})", self._channel, self._name)
 
     async def _on_stop(self) -> None:
         """取消 task 並關閉 pubsub。"""
@@ -224,12 +224,12 @@ class RedisAlarmSource(AsyncLifecycleMixin):
                 await self._pubsub.aclose()
             except Exception:  # noqa: BLE001
                 logger.opt(exception=True).warning(
-                    "RedisAlarmSource: failed to close pubsub (channel=%s)", self._channel
+                    "RedisAlarmSource: failed to close pubsub (channel={})", self._channel
                 )
             self._pubsub = None
         # 清除該 source 的 active 狀態
         self._aggregator.unbind(self._name)
-        logger.info("RedisAlarmSource stopped (channel=%s, name=%s)", self._channel, self._name)
+        logger.info("RedisAlarmSource stopped (channel={}, name={})", self._channel, self._name)
 
     async def _listen_loop(self) -> None:
         """背景 listen loop：解析每筆訊息並注入 aggregator。"""
@@ -249,7 +249,7 @@ class RedisAlarmSource(AsyncLifecycleMixin):
                     active = self._event_parser(payload)
                 except Exception:  # noqa: BLE001 - 解析失敗不應中斷 listen loop
                     logger.opt(exception=True).warning(
-                        "RedisAlarmSource: failed to parse message (channel=%s)", self._channel
+                        "RedisAlarmSource: failed to parse message (channel={})", self._channel
                     )
                     continue
                 # 注入 aggregator
@@ -258,7 +258,7 @@ class RedisAlarmSource(AsyncLifecycleMixin):
             pass
         except Exception:  # noqa: BLE001
             logger.opt(exception=True).warning(
-                "RedisAlarmSource: listen loop terminated unexpectedly (channel=%s)", self._channel
+                "RedisAlarmSource: listen loop terminated unexpectedly (channel={})", self._channel
             )
 
 

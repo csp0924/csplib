@@ -68,7 +68,7 @@ class DeviceDataFeed:
             device = self._registry.get_device(self._mapping.device_id)
             if device is None:
                 logger.warning(
-                    "DeviceDataFeed: device '%s' not found, data feed not attached.", self._mapping.device_id
+                    "DeviceDataFeed: device '{}' not found, data feed not attached.", self._mapping.device_id
                 )
                 return
             self._unsubscribes = [device.on(EVENT_READ_COMPLETE, self._on_read_complete)]
@@ -76,7 +76,7 @@ class DeviceDataFeed:
             devices = self._registry.get_devices_by_trait(self._mapping.trait)  # type: ignore[arg-type]
             if not devices:
                 logger.warning(
-                    "DeviceDataFeed: no devices with trait '%s', data feed not attached.", self._mapping.trait
+                    "DeviceDataFeed: no devices with trait '{}', data feed not attached.", self._mapping.trait
                 )
                 return
             pending: list[Callable[[], None]] = []
@@ -85,7 +85,7 @@ class DeviceDataFeed:
                     pending.append(device.on(EVENT_READ_COMPLETE, self._on_read_complete))
             except Exception:
                 logger.opt(exception=True).warning(
-                    "DeviceDataFeed: partial subscribe failure for trait '%s', rolling back.", self._mapping.trait
+                    "DeviceDataFeed: partial subscribe failure for trait '{}', rolling back.", self._mapping.trait
                 )
                 for unsub in pending:
                     unsub()

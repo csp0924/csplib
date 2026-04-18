@@ -130,7 +130,7 @@ class QVStrategy(Strategy):
         if self._enabled_key is not None:
             enabled = self._resolver.resolve_optional(self._enabled_key, True)
             if not enabled:
-                logger.debug("QV: runtime disabled via '%s', output zero", self._enabled_key)
+                logger.debug("QV: runtime disabled via '{}', output zero", self._enabled_key)
                 return Command(p_target=0.0, q_target=0.0)
 
         voltage = context.extra.get("voltage")

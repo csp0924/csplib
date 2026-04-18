@@ -95,17 +95,17 @@ class AlarmAggregator:
                 unbind_trig()
             except Exception:  # noqa: BLE001 - 解綁失敗不可中斷流程
                 logger.opt(exception=True).warning(
-                    "AlarmAggregator: failed to unbind alarm_triggered for source %s", source_name
+                    "AlarmAggregator: failed to unbind alarm_triggered for source {}", source_name
                 )
             try:
                 unbind_clr()
             except Exception:  # noqa: BLE001
                 logger.opt(exception=True).warning(
-                    "AlarmAggregator: failed to unbind alarm_cleared for source %s", source_name
+                    "AlarmAggregator: failed to unbind alarm_cleared for source {}", source_name
                 )
 
         self._unbinders[source_name] = _combined_unbind
-        logger.debug("AlarmAggregator: bound device source '%s'", source_name)
+        logger.debug("AlarmAggregator: bound device source '{}'", source_name)
 
     def bind_watchdog(self, watchdog: WatchdogProtocol, *, name: str) -> None:
         """訂閱 watchdog 的 timeout / recover 事件。
@@ -149,7 +149,7 @@ class AlarmAggregator:
             alive["value"] = False
 
         self._unbinders[name] = _soft_unbind
-        logger.debug("AlarmAggregator: bound watchdog source '%s'", name)
+        logger.debug("AlarmAggregator: bound watchdog source '{}'", name)
 
     def unbind(self, name: str) -> None:
         """移除指定 source。
@@ -168,7 +168,7 @@ class AlarmAggregator:
             try:
                 unbinder()
             except Exception:  # noqa: BLE001
-                logger.opt(exception=True).warning("AlarmAggregator: unbinder for '%s' raised", name)
+                logger.opt(exception=True).warning("AlarmAggregator: unbinder for '{}' raised", name)
         # 移除該 source 的 active 狀態（可能觸發聚合旗標變化）
         self._set_source_active(name, False)
 
@@ -249,7 +249,7 @@ class AlarmAggregator:
             try:
                 cb(is_aggregated)
             except Exception:  # noqa: BLE001 - observer 失敗不應影響其他 observer
-                logger.opt(exception=True).warning("AlarmAggregator: observer raised (active=%s)", is_aggregated)
+                logger.opt(exception=True).warning("AlarmAggregator: observer raised (active={})", is_aggregated)
 
 
 __all__ = ["AlarmAggregator"]

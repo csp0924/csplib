@@ -138,7 +138,7 @@ class PVSmoothStrategy(Strategy):
         if self._enabled_key is not None:
             enabled = self._resolver.resolve_optional(self._enabled_key, True)
             if not enabled:
-                logger.debug("PVSmoothStrategy: runtime disabled via '%s'", self._enabled_key)
+                logger.debug("PVSmoothStrategy: runtime disabled via '{}'", self._enabled_key)
                 return Command(p_target=0.0, q_target=0.0)
 
         # 前置條件檢查 - PV 資料服務存在性
