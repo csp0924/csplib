@@ -21,6 +21,9 @@ from typing import TYPE_CHECKING, Any, Callable
 if TYPE_CHECKING:
     from csp_lib.equipment.device.capability import Capability
 
+    from .heartbeat_generators import HeartbeatValueGenerator
+    from .heartbeat_targets import HeartbeatTarget
+
 
 def capability_display_name(capability: Any) -> str:
     """取得 capability 的顯示名稱（name 屬性優先，否則 str）"""
@@ -182,16 +185,42 @@ class HeartbeatMapping:
     定義控制器對設備的心跳（看門狗）寫入規格。
     控制器定期寫入心跳值，設備端若超時未收到則進入安全模式。
 
+    **Legacy 路徑**（v0.8.0 行為，完全保留）::
+
+        HeartbeatMapping(point_name="hb", device_id="PCS1", mode=HeartbeatMode.TOGGLE)
+
     ``device_id`` 模式寫入單一設備；``trait`` 模式廣播寫入所有匹配設備。
     兩者必須恰好設定其一。
 
+    **v0.8.1 新 API**（Protocol-driven，可選）::
+
+        HeartbeatMapping(
+            point_name="hb",
+            value_generator=ToggleGenerator(),
+            target=DeviceHeartbeatTarget(pcs1_device, "hb"),
+        )
+
+    ``value_generator`` 與舊欄位 ``mode / constant_value / increment_max`` 互斥；
+    ``target`` 與舊欄位 ``device_id / trait`` 互斥。
+    ``value_generator`` 必須搭配 ``target`` 使用（legacy device/trait 路徑
+    只認 ``mode`` 欄位，不會讀 ``value_generator``）。
+    新舊欄位混用會 raise ``ValueError``。
+
     Attributes:
-        point_name: 心跳寫入點位名稱
-        device_id: 指定單一設備 ID（與 trait 擇一）
-        trait: 指定 trait 標籤，廣播寫入所有匹配設備（與 device_id 擇一）
-        mode: 心跳值模式（toggle / increment / constant）
-        constant_value: CONSTANT 模式的固定寫入值
-        increment_max: INCREMENT 模式的最大計數值（到達後歸零）
+        point_name: 心跳寫入點位名稱（legacy 路徑必填；target 模式下仍建議
+            與 target 的點位名一致以利 log 辨識）。
+        device_id: 指定單一設備 ID（與 trait 擇一；與 target 互斥）。
+        trait: 指定 trait 標籤，廣播寫入所有匹配設備（與 device_id 擇一；
+            與 target 互斥）。
+        mode: 心跳值模式（toggle / increment / constant；與 value_generator 互斥）。
+        constant_value: CONSTANT 模式的固定寫入值（與 value_generator 互斥）。
+        increment_max: INCREMENT 模式的最大計數值，到達後歸零（與
+            value_generator 互斥）。
+        value_generator: 自訂值產生器（符合 ``HeartbeatValueGenerator``
+            Protocol）；設定後 mode / constant_value / increment_max 必須維持預設，
+            且必須同時設定 ``target``。
+        target: 自訂寫入目標（符合 ``HeartbeatTarget`` Protocol）；
+            設定後 device_id / trait 必須留空。
     """
 
     point_name: str
@@ -200,9 +229,28 @@ class HeartbeatMapping:
     mode: HeartbeatMode = HeartbeatMode.TOGGLE
     constant_value: int = 1
     increment_max: int = 65535
+    value_generator: HeartbeatValueGenerator | None = None
+    target: HeartbeatTarget | None = None
 
     def __post_init__(self) -> None:
-        _validate_device_or_trait(self.device_id, self.trait)
+        prefix = "HeartbeatMapping: 'value_generator' 與"
+        if self.value_generator is not None:
+            if self.mode is not HeartbeatMode.TOGGLE:
+                raise ValueError(f"{prefix} 'mode' 互斥，請擇一")
+            if self.constant_value != 1:
+                raise ValueError(f"{prefix} 'constant_value' 互斥")
+            if self.increment_max != 65535:
+                raise ValueError(f"{prefix} 'increment_max' 互斥")
+            # value_generator 僅在 target 路徑被消費；legacy device/trait 路徑
+            # 會走 _counters 並忽略 value_generator。若缺 target 就是誤用 API。
+            if self.target is None:
+                raise ValueError("HeartbeatMapping: 'value_generator' 需搭配 'target' 使用")
+
+        if self.target is not None:
+            if self.device_id is not None or self.trait is not None:
+                raise ValueError("HeartbeatMapping: 'target' 與 'device_id'/'trait' 互斥")
+        else:
+            _validate_device_or_trait(self.device_id, self.trait)
 
 
 @dataclass(frozen=True, slots=True)

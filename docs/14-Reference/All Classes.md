@@ -4,7 +4,7 @@ tags:
   - status/complete
 created: 2026-02-17
 updated: 2026-04-17
-version: ">=0.8.0"
+version: ">=0.8.1"
 
 ---
 
@@ -145,6 +145,21 @@ SORT file.name ASC
 |------|------|
 | [[AggregationResult]] | 聚合結果資料結構（v0.5.0） |
 | [[CapabilityRequirement]] | 能力需求定義（v0.5.0） |
+
+**快速參考（v0.8.1 新增）：**
+
+| 類別 | 說明 |
+|------|------|
+| [[Command Refresh\|CommandRefreshService]] | Reconciler：把 desired state 週期重傳到設備（v0.8.1） |
+| [[SystemController\|CommandRefreshConfig]] | `CommandRefreshService` 的 frozen dataclass 配置（v0.8.1） |
+| [[SystemController\|HeartbeatConfig]] | 心跳服務結構化配置（收攏舊版 6 欄位，v0.8.1） |
+| [[Command Refresh\|HeartbeatValueGenerator]] | 心跳值產生器 `@runtime_checkable` Protocol（v0.8.1） |
+| [[Command Refresh\|ToggleGenerator]] | 0/1 交替的心跳值產生器（v0.8.1） |
+| [[Command Refresh\|IncrementGenerator]] | 遞增計數心跳值產生器，到 `max_value` 後歸零（v0.8.1） |
+| [[Command Refresh\|ConstantGenerator]] | 常數值心跳值產生器（v0.8.1） |
+| [[Command Refresh\|HeartbeatTarget]] | 心跳寫入目標 `@runtime_checkable` Protocol（v0.8.1） |
+| [[Command Refresh\|DeviceHeartbeatTarget]] | `AsyncModbusDevice` 點位的心跳寫入目標（v0.8.1） |
+| [[Command Refresh\|GatewayRegisterHeartbeatTarget]] | Modbus Gateway register 的心跳寫入目標（v0.8.1） |
 
 ### Storage (Mongo / Redis)
 

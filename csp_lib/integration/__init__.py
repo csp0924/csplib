@@ -9,6 +9,7 @@
 #   - DeviceDataFeed: 設備事件 → PVDataService 餵入
 #   - GridControlLoop: 完整控制迴圈編排
 
+from .command_refresh import CommandRefreshService
 from .command_router import CommandRouter
 from .context_builder import ContextBuilder, apply_builtin_aggregate
 from .data_feed import DeviceDataFeed
@@ -29,6 +30,13 @@ from .distributor import (
 )
 from .group_controller import GroupControllerManager, GroupDefinition
 from .heartbeat import HeartbeatService
+from .heartbeat_generators import (
+    ConstantGenerator,
+    HeartbeatValueGenerator,
+    IncrementGenerator,
+    ToggleGenerator,
+)
+from .heartbeat_targets import DeviceHeartbeatTarget, HeartbeatTarget
 from .loop import GridControlLoop, GridControlLoopConfig
 from .orchestrator import (
     CommandStep,
@@ -51,7 +59,12 @@ from .schema import (
     HeartbeatMapping,
     HeartbeatMode,
 )
-from .system_controller import SystemController, SystemControllerConfig
+from .system_controller import (
+    CommandRefreshConfig,
+    HeartbeatConfig,
+    SystemController,
+    SystemControllerConfig,
+)
 
 __all__ = [
     "DeviceRegistry",
@@ -95,4 +108,15 @@ __all__ = [
     "RemoteCommandRouter",
     "DistributedController",
     "RemoteSiteRunner",
+    # 命令刷新（reconciler）
+    "CommandRefreshConfig",
+    "CommandRefreshService",
+    # Protocol-driven heartbeat
+    "HeartbeatConfig",
+    "HeartbeatValueGenerator",
+    "ToggleGenerator",
+    "IncrementGenerator",
+    "ConstantGenerator",
+    "HeartbeatTarget",
+    "DeviceHeartbeatTarget",
 ]

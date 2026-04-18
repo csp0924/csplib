@@ -44,11 +44,13 @@ from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.core.runtime_params import RuntimeParameters
 from csp_lib.equipment.device import EVENT_READ_COMPLETE
 
+from .command_refresh import CommandRefreshService
 from .command_router import CommandRouter
 from .context_builder import ContextBuilder
 from .data_feed import DeviceDataFeed
 from .distributor import DeviceSnapshot, PowerDistributor
 from .heartbeat import HeartbeatService
+from .heartbeat_targets import HeartbeatTarget
 from .orchestrator import SystemCommandOrchestrator
 from .registry import DeviceRegistry
 from .schema import (
@@ -70,6 +72,48 @@ logger = get_logger(__name__)
 
 _AUTO_STOP_MODE = "__auto_stop__"
 _SCHEDULE_MODE = "__schedule__"
+
+
+@dataclass(frozen=True, slots=True)
+class CommandRefreshConfig:
+    """CommandRefreshService 的配置（v0.8.1 新增）
+
+    Attributes:
+        refresh_interval: reconcile 週期（秒）。預設 1.0。
+        enabled: 是否啟用；False 時 SystemController 不建立 service。
+        device_filter: 若提供，只 reconcile 這些 device_id；None 代表全部。
+    """
+
+    refresh_interval: float = 1.0
+    enabled: bool = False
+    device_filter: frozenset[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HeartbeatConfig:
+    """心跳服務的配置（v0.8.1 新增）
+
+    將舊的 6 個 ``heartbeat_*`` 欄位收攏到同一個 config object；新舊欄位
+    並存一段時間，舊欄位在 v1.0.0 將被移除。
+
+    Attributes:
+        mappings: 明確的 ``HeartbeatMapping`` 列表。
+        interval_seconds: 心跳寫入週期（秒）。
+        use_capability: 是否啟用能力發現模式（HEARTBEAT capability）。
+        capability_mode: 能力發現模式使用的值模式。
+        capability_constant_value: CONSTANT 模式的固定寫入值。
+        capability_increment_max: INCREMENT 模式的最大值。
+        targets: 獨立的 ``HeartbeatTarget`` 列表（例如 Modbus Gateway
+            register target），不經 DeviceRegistry。
+    """
+
+    mappings: list[HeartbeatMapping] = field(default_factory=list)
+    interval_seconds: float = 1.0
+    use_capability: bool = False
+    capability_mode: HeartbeatMode = HeartbeatMode.TOGGLE
+    capability_constant_value: int = 1
+    capability_increment_max: int = 65535
+    targets: list[HeartbeatTarget] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +179,14 @@ class SystemControllerConfig:
     避免時間錨式 PERIODIC 與 ReadScheduler 之間的 phase drift。
     """
 
+    heartbeat: HeartbeatConfig | None = None
+    """新版結構化心跳配置。若提供，優先於上方 heartbeat_* 六個舊欄位。
+    舊欄位預計於 v1.0.0 移除。"""
+
+    command_refresh: CommandRefreshConfig | None = None
+    """命令刷新（reconciler）服務配置。``enabled=True`` 時 SystemController
+    會自動建立並隨生命週期啟停 CommandRefreshService。"""
+
     @classmethod
     def builder(cls) -> "SystemControllerConfigBuilder":
         """回傳 fluent builder 以逐步建構配置"""
@@ -189,6 +241,8 @@ class SystemControllerConfigBuilder:
         self._capability_requirements: list[CapabilityRequirement] = []
         self._strict_capability_check: bool = False
         self._trigger_on_read_device_ids: list[str] = []
+        self._heartbeat_config: HeartbeatConfig | None = None
+        self._command_refresh_config: CommandRefreshConfig | None = None
 
     # ─────────────── 系統基準 ───────────────
 
@@ -322,17 +376,61 @@ class SystemControllerConfigBuilder:
 
     def heartbeat(
         self,
-        mappings: list[HeartbeatMapping] | None = None,
+        mappings: list[HeartbeatMapping] | HeartbeatConfig | None = None,
         interval: float = 1.0,
         use_capability: bool = False,
         mode: HeartbeatMode = HeartbeatMode.TOGGLE,
     ) -> "SystemControllerConfigBuilder":
-        """設定心跳服務"""
+        """設定心跳服務
+
+        支援兩種呼叫方式：
+
+        1. **Legacy kwargs**（v0.8.0 行為）::
+
+            builder.heartbeat(mappings=[...], interval=1.0, use_capability=False)
+
+        2. **v0.8.1 新 API — 傳入 ``HeartbeatConfig``**::
+
+            builder.heartbeat(HeartbeatConfig(mappings=[...], targets=[...]))
+
+        兩種方式不可混用（傳入 HeartbeatConfig 時會忽略其他 kwargs）。
+        """
+        if isinstance(mappings, HeartbeatConfig):
+            self._heartbeat_config = mappings
+            return self
+
         if mappings:
             self._heartbeat_mappings = mappings
         self._heartbeat_interval = interval
         self._use_heartbeat_capability = use_capability
         self._heartbeat_capability_mode = mode
+        return self
+
+    # ─────────────── Command Refresh ───────────────
+
+    def command_refresh(
+        self,
+        *,
+        interval_seconds: float = 1.0,
+        enabled: bool = True,
+        devices: list[str] | None = None,
+    ) -> "SystemControllerConfigBuilder":
+        """啟用命令刷新服務
+
+        啟用後，SystemController 會每 ``interval_seconds`` 秒把
+        CommandRouter 追蹤的最新寫入值重新推到設備（reconciler 模型）。
+
+        Args:
+            interval_seconds: reconcile 週期（秒），預設 1.0。
+            enabled: 是否啟用；False 時不建立服務。
+            devices: 若提供，只 reconcile 這些 device_id；None 代表全部。
+        """
+        device_filter: frozenset[str] | None = frozenset(devices) if devices else None
+        self._command_refresh_config = CommandRefreshConfig(
+            refresh_interval=interval_seconds,
+            enabled=enabled,
+            device_filter=device_filter,
+        )
         return self
 
     # ─────────────── 告警模式 ───────────────
@@ -423,6 +521,8 @@ class SystemControllerConfigBuilder:
             capability_requirements=self._capability_requirements,
             strict_capability_check=self._strict_capability_check,
             trigger_on_read_device_ids=self._trigger_on_read_device_ids,
+            heartbeat=self._heartbeat_config,
+            command_refresh=self._command_refresh_config,
         )
 
 
@@ -493,9 +593,22 @@ class SystemController(AsyncLifecycleMixin):
         # 系統指令編排器
         self._orchestrator = SystemCommandOrchestrator(registry)
 
-        # 心跳服務（可選）
+        # 心跳服務（可選）：config.heartbeat 優先，否則 fallback 至舊 6 個 heartbeat_* 欄位
         self._heartbeat: HeartbeatService | None = None
-        if config.heartbeat_mappings or config.use_heartbeat_capability:
+        if config.heartbeat is not None:
+            hb_cfg = config.heartbeat
+            if hb_cfg.mappings or hb_cfg.use_capability or hb_cfg.targets:
+                self._heartbeat = HeartbeatService(
+                    registry,
+                    mappings=hb_cfg.mappings or None,
+                    interval=hb_cfg.interval_seconds,
+                    use_capability=hb_cfg.use_capability,
+                    mode=hb_cfg.capability_mode,
+                    constant_value=hb_cfg.capability_constant_value,
+                    increment_max=hb_cfg.capability_increment_max,
+                    targets=hb_cfg.targets or None,
+                )
+        elif config.heartbeat_mappings or config.use_heartbeat_capability:
             self._heartbeat = HeartbeatService(
                 registry,
                 mappings=config.heartbeat_mappings or None,
@@ -504,6 +617,15 @@ class SystemController(AsyncLifecycleMixin):
                 mode=config.heartbeat_capability_mode,
                 constant_value=config.heartbeat_capability_constant_value,
                 increment_max=config.heartbeat_capability_increment_max,
+            )
+
+        # CommandRefreshService（可選）：enabled 才建立
+        self._command_refresh: CommandRefreshService | None = None
+        if config.command_refresh is not None and config.command_refresh.enabled:
+            self._command_refresh = CommandRefreshService(
+                self._command_router,
+                interval=config.command_refresh.refresh_interval,
+                device_filter=config.command_refresh.device_filter,
             )
 
         # 策略執行器：context_provider 與 on_command 由本控制器管理
@@ -686,9 +808,10 @@ class SystemController(AsyncLifecycleMixin):
     async def _on_start(self) -> None:
         """啟動系統控制器
 
-        中途失敗時呼叫 ``_on_stop()`` 清理已啟動的元件（data_feed、heartbeat、
-        _run_task、auto_trigger_detachers），再 re-raise。避免 PEP 492 ``async with``
-        模式下 ``__aenter__`` 拋異常後 ``__aexit__`` 不會被呼叫所導致的資源洩漏。
+        中途失敗時呼叫 ``_on_stop()`` 清理已啟動的元件（data_feed、command_refresh、
+        heartbeat、_run_task、auto_trigger_detachers），再 re-raise。避免 PEP 492
+        ``async with`` 模式下 ``__aenter__`` 拋異常後 ``__aexit__`` 不會被呼叫所導致
+        的資源洩漏。
         """
         try:
             # Preflight: 驗證能力需求
@@ -700,6 +823,9 @@ class SystemController(AsyncLifecycleMixin):
                     await proc.async_init()
             if self._data_feed is not None:
                 self._data_feed.attach()
+            # command_refresh 先於 heartbeat 啟動：避免 heartbeat pause/resume 干擾首輪 reconcile
+            if self._command_refresh is not None:
+                await self._command_refresh.start()
             if self._heartbeat is not None:
                 self._validate_heartbeat_points()
                 await self._heartbeat.start()
@@ -756,13 +882,29 @@ class SystemController(AsyncLifecycleMixin):
                 if self._heartbeat is not None:
                     await self._heartbeat.stop()
             finally:
-                if self._data_feed is not None:
-                    self._data_feed.detach()
+                try:
+                    # 反向啟動順序：command_refresh 在 heartbeat 之後停止
+                    if self._command_refresh is not None:
+                        await self._command_refresh.stop()
+                finally:
+                    if self._data_feed is not None:
+                        self._data_feed.detach()
         logger.info("SystemController stopped.")
 
     def _validate_heartbeat_points(self) -> None:
-        """驗證心跳映射的 point_name 是否存在於目標設備（僅 warning，不中斷啟動）"""
-        for mapping in self._config.heartbeat_mappings:
+        """驗證心跳映射的 point_name 是否存在於目標設備（僅 warning，不中斷啟動）
+
+        ``target`` 模式的 mapping 跳過設備點位驗證 — target 可寫到非 device 目標
+        （如 Gateway register），不在 DeviceRegistry 範圍內。
+        """
+        if self._config.heartbeat is not None:
+            mappings = self._config.heartbeat.mappings
+        else:
+            mappings = self._config.heartbeat_mappings
+
+        for mapping in mappings:
+            if mapping.target is not None:
+                continue
             if mapping.device_id is not None:
                 device = self._registry.get_device(mapping.device_id)
                 if device is not None and mapping.point_name not in device.all_point_names:
@@ -1042,6 +1184,11 @@ class SystemController(AsyncLifecycleMixin):
     def heartbeat(self) -> HeartbeatService | None:
         """心跳服務"""
         return self._heartbeat
+
+    @property
+    def command_refresh(self) -> CommandRefreshService | None:
+        """命令刷新（reconciler）服務；未啟用時回傳 ``None``"""
+        return self._command_refresh
 
     @property
     def event_overrides(self) -> list[EventDrivenOverride]:
