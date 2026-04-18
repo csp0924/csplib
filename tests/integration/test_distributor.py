@@ -348,3 +348,179 @@ class TestSOCBalancingDistributor:
         total_q = sum(r.q_target for r in result.values())
         assert total_p == pytest.approx(cmd.p_target)
         assert total_q == pytest.approx(cmd.q_target)
+
+
+# ===========================================================================
+# SOCBalancingDistributor.soc_source 注入（WI-PD-01）
+# ===========================================================================
+
+
+class TestSOCBalancingDistributorSOCSource:
+    """驗證 soc_source 參數：替代 / fallback / 例外傳播"""
+
+    def _dist(self, **kw) -> SOCBalancingDistributor:
+        defaults = {
+            "rated_key": "rated_p",
+            "soc_capability": "soc_readable",
+            "soc_slot": "soc",
+            "gain": 2.0,
+        }
+        defaults.update(kw)
+        return SOCBalancingDistributor(**defaults)
+
+    def test_default_soc_source_none_behaves_like_before(self):
+        """soc_source=None（預設）行為 100% 等同改動前：結果逐值等同未指定時"""
+        cmd = Command(p_target=1500.0, q_target=600.0)
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 80.0}}),
+            _snap("d2", metadata={"rated_p": 1000.0}, capabilities={"soc_readable": {"soc": 40.0}}),
+        ]
+
+        dist_default = SOCBalancingDistributor()  # 全預設
+        dist_explicit_none = SOCBalancingDistributor(soc_source=None)
+
+        r1 = dist_default.distribute(cmd, devices)
+        r2 = dist_explicit_none.distribute(cmd, devices)
+
+        assert set(r1.keys()) == set(r2.keys())
+        for did in r1:
+            assert r1[did].p_target == pytest.approx(r2[did].p_target)
+            assert r1[did].q_target == pytest.approx(r2[did].q_target)
+
+    def test_soc_source_uniform_equals_proportional(self):
+        """soc_source 對所有設備回傳相同 SOC → 等同 ProportionalDistributor"""
+        cmd = Command(p_target=1500.0, q_target=600.0)
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}),
+            _snap("d2", metadata={"rated_p": 1000.0}),
+        ]
+        # 所有設備 SOC=50，完全無 capabilities 資料，soc_source 供給同一 SOC
+        dist = self._dist(soc_source=lambda d: 50.0)
+        prop = ProportionalDistributor(rated_key="rated_p")
+
+        soc_result = dist.distribute(cmd, devices)
+        prop_result = prop.distribute(cmd, devices)
+
+        for did in ["d1", "d2"]:
+            assert soc_result[did].p_target == pytest.approx(prop_result[did].p_target)
+            assert soc_result[did].q_target == pytest.approx(prop_result[did].q_target)
+
+    def test_soc_source_returns_none_falls_back_to_capability(self):
+        """soc_source 回 None 的設備走既有 fallback（讀 capability slot），仍參與 avg 計算"""
+        cmd = Command(p_target=1000.0, q_target=0.0)
+        # d1 capability 提供 SOC=80，soc_source 對 d1 回 None（走 fallback）
+        # d2 capability 提供 SOC=40，soc_source 對 d2 回 None（走 fallback）
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 80.0}}),
+            _snap("d2", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 40.0}}),
+        ]
+        dist_inject = self._dist(soc_source=lambda d: None)  # 全 None → 全 fallback
+        dist_default = self._dist()  # 無 soc_source，全走 capability
+
+        r_inject = dist_inject.distribute(cmd, devices)
+        r_default = dist_default.distribute(cmd, devices)
+
+        # 既然全都 fallback，結果應逐值等同預設路徑
+        for did in ["d1", "d2"]:
+            assert r_inject[did].p_target == pytest.approx(r_default[did].p_target)
+            assert r_inject[did].q_target == pytest.approx(r_default[did].q_target)
+
+    def test_soc_source_mixed_none_and_value(self):
+        """soc_source 僅對部分設備回值，其他 fallback，結果應整合兩條路徑"""
+        cmd = Command(p_target=1000.0, q_target=0.0)
+        # d1 走 soc_source=90, d2 走 fallback capability=30
+        devices = [
+            _snap(
+                "d1", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 10.0}}
+            ),  # capability 故意極低
+            _snap("d2", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 30.0}}),
+        ]
+
+        def source(d):
+            return 90.0 if d.device_id == "d1" else None
+
+        dist = self._dist(soc_source=source)
+        result = dist.distribute(cmd, devices)
+
+        # d1 的 SOC 應來自 soc_source（90），不是 capability（10）
+        # 與若 capability=10 時的結果應有差異；高 SOC 放電多放
+        # 驗證 d1 > d2 分配（若用 capability=10 會是 d2 > d1）
+        assert result["d1"].p_target > result["d2"].p_target
+
+    def test_all_soc_source_return_none_with_no_capability_falls_to_proportional(self):
+        """全部 soc_source 回 None 且設備也無 capability → 退化為 Proportional"""
+        cmd = Command(p_target=1500.0, q_target=600.0)
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}),
+            _snap("d2", metadata={"rated_p": 1000.0}),
+        ]
+        dist = self._dist(soc_source=lambda d: None)
+        prop = ProportionalDistributor(rated_key="rated_p")
+
+        soc_result = dist.distribute(cmd, devices)
+        prop_result = prop.distribute(cmd, devices)
+
+        for did in ["d1", "d2"]:
+            assert soc_result[did].p_target == pytest.approx(prop_result[did].p_target)
+            assert soc_result[did].q_target == pytest.approx(prop_result[did].q_target)
+
+    def test_soc_source_exception_propagates(self):
+        """soc_source 拋例外 → 直接傳播給呼叫方（不被攔截）"""
+        cmd = Command(p_target=1000.0, q_target=0.0)
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 80.0}}),
+            _snap("d2", metadata={"rated_p": 500.0}, capabilities={"soc_readable": {"soc": 40.0}}),
+        ]
+
+        def bad_source(d):
+            raise RuntimeError("soc source failure")
+
+        dist = self._dist(soc_source=bad_source)
+
+        with pytest.raises(RuntimeError, match="soc source failure"):
+            dist.distribute(cmd, devices)
+
+    def test_soc_source_int_is_coerced_to_float(self):
+        """soc_source 回 int（非 float）→ 被 float() 轉型，不出錯"""
+        cmd = Command(p_target=1000.0, q_target=0.0)
+        devices = [
+            _snap("d1", metadata={"rated_p": 500.0}),
+            _snap("d2", metadata={"rated_p": 500.0}),
+        ]
+        # 回 int 而非 float
+        dist_int = self._dist(soc_source=lambda d: 60 if d.device_id == "d1" else 40)
+        result_int = dist_int.distribute(cmd, devices)
+
+        # 對照：同數值以 float 提供
+        dist_float = self._dist(soc_source=lambda d: 60.0 if d.device_id == "d1" else 40.0)
+        result_float = dist_float.distribute(cmd, devices)
+
+        for did in ["d1", "d2"]:
+            assert result_int[did].p_target == pytest.approx(result_float[did].p_target)
+            assert result_int[did].q_target == pytest.approx(result_float[did].q_target)
+        # 且值為 float 型別（經過 float() 轉型路徑）
+        assert isinstance(result_int["d1"].p_target, float)
+
+    def test_read_soc_helper_priority_source_over_capability(self):
+        """_read_soc helper: soc_source 回值優先於 capability slot"""
+        dist = self._dist(soc_source=lambda d: 77.0)
+        snap = _snap("d1", capabilities={"soc_readable": {"soc": 10.0}})
+        assert dist._read_soc(snap) == 77.0
+
+    def test_read_soc_helper_fallback_when_source_returns_none(self):
+        """_read_soc helper: soc_source 回 None → fallback 到 capability"""
+        dist = self._dist(soc_source=lambda d: None)
+        snap = _snap("d1", capabilities={"soc_readable": {"soc": 55.0}})
+        assert dist._read_soc(snap) == 55.0
+
+    def test_read_soc_helper_no_source_uses_capability(self):
+        """_read_soc helper: 未提供 soc_source → 直接讀 capability（v0.8.1 前行為）"""
+        dist = self._dist()  # soc_source=None
+        snap = _snap("d1", capabilities={"soc_readable": {"soc": 42.0}})
+        assert dist._read_soc(snap) == 42.0
+
+    def test_read_soc_helper_returns_none_when_all_sources_empty(self):
+        """_read_soc helper: 無 soc_source 且 capability 也無資料 → None"""
+        dist = self._dist()
+        snap = _snap("d1")  # 完全無資料
+        assert dist._read_soc(snap) is None

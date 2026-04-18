@@ -6,6 +6,63 @@
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-04-17
+
+### Fixed
+
+- **`MongoBatchUploader` 高頻 enqueue 導致資料靜默遺失（WI-MB-01/02）**：修復 `enqueue()` 大量堆積時 `BatchQueue.popleft()` 丟棄最舊資料的 bug。新增內部 `_threshold_event: asyncio.Event` 通知機制：`enqueue()` 達到 `batch_size_threshold` 時立即 set；`_flush_loop` 改以 `asyncio.wait()` 同時監聽 `_stop_event` / `_threshold_event` / `flush_interval` timeout 三路觸發，閾值達標立即 flush 對應 collection；停止時正確 cancel 並 await 未完成 waiter task，避免 asyncio task leak。既有 public API signature 與行為語義**未變更**。
+
+### Added
+
+- **`MongoBatchUploader.write_immediate(collection_name, document) -> WriteResult`（WI-MB-03）**：繞過 batch queue 的即時寫入出口，適用告警記錄、命令記錄等必須即時持久化的場景。不做自動重試；回傳 `csp_lib.mongo.WriteResult`（非 `csp_lib.equipment.transport.WriteResult`）。詳見 [[MongoBatchUploader]]。
+- **`MongoBatchUploader.writer` read-only property**：回傳內部 `MongoWriter` 實例，供 `LocalBufferedUploader` replay 路徑使用 `write_batch(ordered=False)` 細粒度介面。
+- **`MongoWriter.write_batch(..., ordered: bool = True)` 新增 `ordered` keyword-only 參數**：`ordered=False` 時捕捉 `pymongo.errors.BulkWriteError` 並將 code=11000（重複鍵）與其他錯誤分離計數；若所有錯誤均為重複鍵，`success` 仍回 `True`（支援 idempotent replay 判定）；既有呼叫者預設 `ordered=True`，零修改相容。
+- **`WriteResult.duplicate_key_count: int = 0` 新增欄位**：dataclass default 欄位，記錄 `ordered=False` 批次寫入中的重複鍵錯誤數量，供 `LocalBufferedUploader` replay 成功判定使用；向後相容（既有建構呼叫無需修改）。
+- **`csp_lib.mongo.local_buffer` 新模組（WI-MB-LB-01/02）**：提供 SQLite WAL 本地緩衝 + 非同步 replay 的 MongoDB 上傳層，確保 WAN/MongoDB 斷線期間資料不遺失。詳見 [[LocalBufferedUploader]]。
+  - **`LocalBufferedUploader(AsyncLifecycleMixin)`**：`async with` 生命週期管理；實作 `BatchUploader` Protocol，可無痛注入 `DataUploadManager.uploader`。Public API：`register_collection()`、`enqueue()`、`write_immediate()`、`ensure_indexes()`、`health_check()`、`get_pending_count()`、`get_sync_cursor()`。背景以 `_replay_loop` / `_cleanup_loop` 兩個 asyncio.Task 執行；replay 以 `ordered=False` 批次寫入下游 `MongoBatchUploader.writer`；`success OR (inserted + duplicates >= len(docs))` 視為全數 mark synced；retention 到期的 synced row 由 cleanup loop 移除。
+  - **`LocalBufferConfig`** frozen dataclass：欄位 `db_path`（預設 `"./csp_lib_buffer.db"`）、`replay_interval=5.0`、`replay_batch_size=500`、`cleanup_interval=3600.0`、`retention_seconds=604800.0`（7 天）、`max_retry_count=100`；`__post_init__` 對所有正數欄位做 `ValueError` 驗證。
+  - **Idempotency key**：文件含 `_idempotency_key` 時優先使用，否則生成 `{collection}:{sha1(json)[:40]}:{uuid4.hex}`；replay 寫入 MongoDB 時依賴 `_idempotency_key` unique sparse index 達成冪等。`ensure_indexes()` 冪等建立最小必要 index。
+  - 依賴 `aiosqlite>=0.19.0`（需手動加入 `pyproject.toml` 的 `[project.optional-dependencies] mongo`）；未安裝時 `from csp_lib.mongo.local_buffer import LocalBufferedUploader` 拋 `ImportError` 提示訊息，`csp_lib.mongo` 頂層 import 不受影響。
+- **`DataUploadManager.__init__(buffered_uploader=None)` 新增 keyword-only 參數**：opt-in 以 `LocalBufferedUploader` 取代底層 uploader；提供時所有 enqueue 改走本地 SQLite buffer；`None` 時行為與 v0.8.1 完全一致（零 breaking）。詳見 [[DataUploadManager]]。
+- **`AlarmPersistenceManager.__init__(buffered_uploader=None)` 新增 keyword-only 參數**（放在 `config` 之後，保 positional 相容）：提供時，`_create_alarm` / `_resolve_alarm` 成功後額外以 `write_immediate` 寫告警快照到 `config.history_collection`；寫入失敗僅 log warning，不影響主流程。詳見 [[AlarmPersistenceManager]]。
+- **`AlarmPersistenceConfig.history_collection: str = "alarm_history"` 新增欄位**：frozen dataclass default；供 `buffered_uploader` 知道寫入哪個 collection；`__post_init__` 驗證非空字串；向後相容（既有建構無需修改）。
+- **Strategy 動態參數化（`DroopStrategy` / `QVStrategy` / `FPStrategy`）**：三個策略 `__init__` 新增 keyword-only 參數 `params: RuntimeParameters | None`、`param_keys: Mapping[str, str] | None`（邏輯欄位 → RuntimeParameters key 映射）、`enabled_key: str | None`（falsy 時跳過策略計算）。`params=None` 時行為 100% 等同舊版（frozen config 路徑保留）；`param_keys` 僅列需動態化的欄位，未列者 fallback config default；`params.get(key)` 回 None 時 fallback config（不拋錯）；`params` 與 `param_keys` 不對稱時 raise `ValueError`。`DroopStrategy` 額外新增 `droop_scale: float = 1.0`（droop 欄位倍率縮放，如 EMS 傳百分比需 × 0.01）與 `schedule_p_key: str | None`（enabled_key 為 0 時仍輸出 schedule_p）。詳見 [[DroopStrategy]] / [[QVStrategy]] / [[FPStrategy]]。
+- **`RegistryAggregatingSource`** (`csp_lib.modbus_gateway`)：`DataSyncSource` 實作，每 `interval` 秒輪詢 `DeviceRegistry.get_devices_by_trait(trait)` 並對 `latest_values[point]` 執行聚合（`AggregateFunc.AVERAGE/SUM/MIN/MAX` 或自訂 `AggregateCallable`），結果寫入 Gateway register。全設備離線時支援 `offline_fallback` 回退值（None 則本週期跳過）；注入 `params` 時支援 `writable_param` 回寫 `RuntimeParameters`，讓 strategy 即時反映聚合值。詳見 [[RegistryAggregatingSource]]。
+- **`RegisterAggregateMapping`** frozen dataclass（`csp_lib.modbus_gateway`）：`RegistryAggregatingSource` 的單一 register 聚合映射定義，欄位：`register`、`trait`、`point`、`aggregate`（預設 `AggregateFunc.AVERAGE`）、`offline_fallback`、`writable_param`。
+- **`AggregateFunc`** enum（`csp_lib.modbus_gateway`）：內建聚合函式列舉，值：`AVERAGE`、`SUM`、`MIN`、`MAX`。
+- **`AggregateCallable`** 型別別名（`csp_lib.modbus_gateway`）：`Callable[[list[float]], float]`，自訂聚合函式的型別簽名。
+- **`RuntimeParameters.__getattr__` / `__setattr__`**：支援 attribute-style 存取（`params.soc_max`、`params.soc_max = 90.0`），等價於 `.get()` / `.set()`，觀察者正常觸發。不存在的 key 拋 `AttributeError`（非 `None`），底線開頭屬性走 `__slots__` 原生路徑。
+- **`DeviceRegistry.StatusChangeCallback` 型別別名** (`Callable[[str, bool], None]`)：設備回應狀態變化通知的回呼簽名，用於 `on_status_change()` / `remove_status_observer()`。
+- **`DeviceRegistry.on_status_change(callback)`**：註冊設備 `is_responsive` 變化觀察者；首次 `notify_status` 僅建立 baseline、不觸發（避免啟動期噪訊）；callback 在鎖外執行，例外隔離（warning log）。
+- **`DeviceRegistry.remove_status_observer(callback)`**：移除已註冊的狀態變化觀察者，未找到時靜默忽略。
+- **`DeviceRegistry.notify_status(device_id)`**：由呼叫方（`DeviceManager` / 輪詢迴圈）主動觸發狀態偵測；未註冊的 device_id 靜默忽略。
+- **`SOCBalancingDistributor.SOCSource` 型別別名** (`Callable[[DeviceSnapshot], float | None]`)：自訂 SOC 取值函式簽名，供 `soc_source` 參數使用。
+- **`SOCBalancingDistributor(soc_source=None)` 建構參數**：注入自訂 SOC 取值函式，適用於 SOC 不在 capability slot、而在 `latest_values` / `metadata` / 外部來源的場景；`None` 時走原路徑（100% 向後相容）；`soc_source` 拋例外**不攔截**，直接傳播給呼叫方（避免 silent corruption）。
+- **`csp_lib.alarm` 新模組（L8 Additional）**（WI-AL-01/02）：提供 in-process 多來源告警聚合與 Redis pub/sub 橋接。
+  - **`AlarmAggregator`**（`csp_lib.alarm.aggregator`）：多 source OR 聚合器；`bind_device(device, *, name=None)` 訂閱設備 `alarm_triggered` / `alarm_cleared` 事件、`bind_watchdog(watchdog, *, name)` 透過 `WatchdogProtocol` 綁定 watchdog timeout/recover、`unbind(name)` 解除並重算旗標、`mark_source(name, active)` 外部直接注入狀態；observer API：`on_change(cb)` / `remove_observer(cb)`；properties：`active: bool`、`active_sources: set[str]`；使用 `threading.Lock` 保護、callback 在 lock 外以快照呼叫（避免重入死鎖）。
+  - **`WatchdogProtocol`**（`csp_lib.alarm.protocols`）：`@runtime_checkable` 結構化協定，要求 `on_timeout(cb)` / `on_recover(cb)`，相容 `CommunicationWatchdog` 及任何自訂 watchdog，避免 alarm 層直接依賴上層模組。
+  - **`AlarmChangeCallback`**（`csp_lib.alarm.protocols`）：`Callable[[bool], None]` 型別別名。
+  - **`RedisAlarmPublisher`** / **`RedisAlarmSource`**（`csp_lib.alarm.redis_adapter`，需 `csp_lib[redis]` extra）：繼承 `AsyncLifecycleMixin`；Publisher 採 `asyncio.create_task` 排程 async publish，publish 失敗僅 log warning；預設 payload schema：`{"type": "aggregated_alarm", "active": bool, "sources": [...], "timestamp": iso}`，相容日本 demo；Source 支援自訂 `event_parser: Callable[[dict], bool]`；停止時呼叫 `aggregator.unbind(name)` 清除遠端 source 狀態。
+- **`PVSmoothStrategy` 動態參數化**（WI-ST-01）：`__init__` 新增 keyword-only `params: RuntimeParameters | None`、`param_keys: Mapping[str, str] | None`、`enabled_key: str | None`；可動態覆蓋欄位：`capacity`、`ramp_rate`、`pv_loss`、`min_history`；`enabled_key` falsy 時輸出 `Command(0, 0)`（PV 離線即停語義）；舊版 ctor 100% 相容。
+- **`LoadSheddingStrategy` 動態參數化**（WI-ST-02）：同上新增 `params` / `param_keys` / `enabled_key`；可動態覆蓋欄位：`evaluation_interval`、`restore_delay`、`auto_restore_on_deactivate`（`stages` 不動態化）；`enabled_key` falsy 時回傳 `context.last_command`（保守，不強制變 0）。
+- **`RampStopStrategy` 動態參數化**（WI-ST-03）：同上新增 `params` / `param_keys` / `enabled_key`；內部引入私有 `_RampStopRuntimeConfig` frozen dataclass；可動態覆蓋欄位：`rated_power`、`ramp_rate_pct`；`enabled_key` falsy 時回傳 `context.last_command`。
+- **`MongoBufferStore`** (`csp_lib.mongo.local_buffer`)：`LocalBufferStore` Protocol 的第二個官方實作，以本地 mongod 作為 buffer backend。ctor：`MongoBufferStore(client, *, database="csp_local_buffer", collection="pending_documents")`（`client` 為 `AsyncIOMotorClient`，lifecycle 由使用者管理）。`open()` 時 ensure 3 個 index：`idempotency_key` unique、`(synced, _id)` compound（加速 `fetch_pending`）、`(synced, synced_at)` compound（加速 `delete_synced_before`）；index 建立失敗僅 log warning，不 raise。`close()` 為 no-op（不關閉 motor client）。`row_id` 以 `str(ObjectId)` 回傳（天然單調遞增）。`health_check()` 以 `admin.command("ping")` 實作。依賴 `csp_lib[mongo]` extra（motor），無需額外安裝。對應「本地 mongod → 遠端 mongod store-and-forward」雙 MongoDB 部署模式。詳見 [[MongoBufferStore]]。
+
+### Changed
+
+- **`LocalBufferedUploader` 重構為 backend-agnostic**（v0.8.2 開發期調整，未對外發佈）：
+  - 新增 `LocalBufferStore` Protocol（`@runtime_checkable`）與 `BufferedRow` frozen dataclass（`csp_lib.mongo.local_buffer`），定義 backend 可插拔的純 CRUD 介面（`open/close/append/fetch_pending/mark_synced/bump_retry/delete_synced_before/count_pending/max_synced_sequence/health_check`）。
+  - `SqliteBufferStore`（aiosqlite 實作）獨立為 `csp_lib.mongo.local_buffer.sqlite_store`，ctor 接受 `db_path`、`wal_mode=True`、`synchronous="NORMAL"`。
+  - **Breaking**：`LocalBufferedUploader.__init__` 新增必填參數 `store: LocalBufferStore`；`LocalBufferConfig` 移除 `db_path` 欄位（移至 `SqliteBufferStore.__init__`）。新用法：`LocalBufferedUploader(downstream, store=SqliteBufferStore("./buf.db"), config=LocalBufferConfig())`。
+  - Import 路徑保持向後相容：`from csp_lib.mongo import LocalBufferedUploader, LocalBufferConfig` 仍有效；新公開 API `LocalBufferStore`、`BufferedRow`、`SqliteBufferStore`、`MongoBufferStore` 亦從同一路徑可 import。
+  - **Optional extras 重劃分**（需手動更新 `pyproject.toml`）：
+    - `csp_lib[mongo]` 瘦身為純 `motor>=3.3.0`（純 Mongo client，含 `MongoBufferStore`）
+    - 新增獨立 `csp_lib[local-buffer]`（`aiosqlite>=0.19.0,<0.21`）— 僅使用 `SqliteBufferStore` 時需要
+    - `csp_lib[all]` 保留含兩者
+    - `SqliteBufferStore` `ImportError` 訊息指向 `csp_lib[local-buffer]`
+- **`BufferedRow.row_id` 與 `LocalBufferStore` Protocol 方法型別鬆綁為 `int | str`**（v0.8.2 開發期調整，未對外發佈）：為支援 `MongoBufferStore`（`row_id` 為 `str(ObjectId)`）與未來其他 backend，`BufferedRow.row_id`、`append()` 回傳、`mark_synced()` / `bump_retry()` 參數、`max_synced_sequence()` 回傳均改為 `int | str`。`SqliteBufferStore` 行為不變（繼續回 `int`），`int` 為 `int | str` 子集，向後相容。
+- **`LocalBufferedUploader._synced_cursor`**：`_replay_once` 改為「記錄最後一筆成功同步的 row_id」（`fetch_pending` ASC 排序下即 `ids[-1]`）；因 ObjectId 字串的 `max()` 語義不明確（字典序 ≠ 時序），改為直接保留最新值；`_synced_cursor` 型別擴寬為 `int | str`，僅作監控用途，Uploader 不做 `>` 比較。
+
 ## [0.8.1] - 2026-04-17
 
 ### Added

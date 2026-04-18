@@ -28,14 +28,15 @@ class TestRampStopConfiguration:
 
     def test_default_ramp_rate(self):
         """預設 ramp_rate_pct 為 5.0"""
+        # v0.8.2: 內部改以 _config (_RampStopRuntimeConfig) 儲存
         strategy = RampStopStrategy(rated_power=1000)
-        assert strategy._ramp_rate == 5.0
-        assert strategy._rated == 1000
+        assert strategy._config.ramp_rate_pct == 5.0
+        assert strategy._config.rated_power == 1000
 
     def test_custom_ramp_rate(self):
         """可自訂 ramp_rate_pct"""
         strategy = RampStopStrategy(rated_power=2000, ramp_rate_pct=10.0)
-        assert strategy._ramp_rate == 10.0
+        assert strategy._config.ramp_rate_pct == 10.0
 
     def test_str_representation(self):
         """__str__ 應包含 rated 和 rate 資訊"""

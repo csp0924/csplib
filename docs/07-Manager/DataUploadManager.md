@@ -4,7 +4,9 @@ tags:
   - layer/manager
   - status/complete
 source: csp_lib/manager/data/upload.py
-updated: 2026-04-04
+created: 2026-02-17
+updated: 2026-04-18
+version: ">=0.8.2"
 ---
 
 # DataUploadManager
@@ -29,6 +31,10 @@ updated: 2026-04-04
 | 參數 | 型別 | 說明 |
 |------|------|------|
 | `uploader` | [[BatchUploader]] | 批次上傳器實例（實作 `BatchUploader` Protocol） |
+| `buffered_uploader` | `LocalBufferedUploader \| None` | 選擇性 SQLite 緩衝層（keyword-only，v0.8.2 新增）。提供時所有 enqueue 改走本地 SQLite buffer，下游 MongoDB 斷線期間資料不遺失；`None` 時行為與舊版完全一致 |
+
+> [!note] v0.8.2 opt-in 本地緩衝
+> `buffered_uploader` 注入時，`DataUploadManager` 內部將 `self._uploader` 替換為 `LocalBufferedUploader`。`uploader` 參數仍需傳入（作為 `LocalBufferedUploader` 的下游），但 `DataUploadManager` 本身只與 `LocalBufferedUploader` 互動。
 
 ## API
 
@@ -71,7 +77,7 @@ updated: 2026-04-04
 from csp_lib.mongo import MongoBatchUploader
 from csp_lib.manager.data import DataUploadManager
 
-# 建立上傳器（MongoBatchUploader 實作 BatchUploader Protocol）
+# 基本使用（不需要 local buffer）
 uploader = MongoBatchUploader(db=mongo_db)
 
 async with uploader:
@@ -85,9 +91,37 @@ async with uploader:
     # 設備斷線時自動上傳空值記錄
 ```
 
+## Common Patterns
+
+### 搭配 LocalBufferedUploader 實現資料不遺失（v0.8.2）
+
+部署於 WAN 不穩定環境（如日本案場）時，可注入 `LocalBufferedUploader` 確保 MongoDB 斷線期間資料不遺失：
+
+```python
+from csp_lib.mongo import MongoBatchUploader
+from csp_lib.mongo.local_buffer import LocalBufferedUploader, LocalBufferConfig
+from csp_lib.manager.data import DataUploadManager
+
+mongo_uploader = MongoBatchUploader(db=mongo_db).start()
+
+buffer_cfg = LocalBufferConfig(
+    db_path="./device_buffer.db",
+    replay_interval=5.0,
+    retention_seconds=86400.0 * 7,  # 保留 7 天
+)
+local = LocalBufferedUploader(downstream=mongo_uploader, config=buffer_cfg)
+
+async with local:
+    # 注入 buffered_uploader，DataUploadManager 的 enqueue 改走本地 SQLite
+    data_manager = DataUploadManager(uploader=mongo_uploader, buffered_uploader=local)
+    data_manager.configure("meter_001", "meter_data", save_interval=5.0)
+    data_manager.subscribe(meter_device)
+```
+
 ## 相關頁面
 
 - [[DeviceEventSubscriber]] — 基底類別
 - [[BatchUploader]] — 上傳器 Protocol 定義
 - [[MongoBatchUploader]] — MongoDB 批次上傳器實作
+- [[LocalBufferedUploader]] — SQLite WAL 本地緩衝層（v0.8.2）
 - [[UnifiedDeviceManager]] — 自動串接資料上傳管理器

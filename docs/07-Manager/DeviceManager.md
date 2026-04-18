@@ -2,9 +2,10 @@
 tags:
   - type/class
   - layer/manager
-  - status/complete
+  - status/stale
 source: csp_lib/manager/device/manager.py
 updated: 2026-04-04
+version: ">=0.5.0"
 ---
 
 # DeviceManager

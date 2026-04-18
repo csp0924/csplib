@@ -15,7 +15,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from csp_lib.core import get_logger
 from csp_lib.mongo.config import UploaderConfig
 from csp_lib.mongo.queue import BatchQueue
-from csp_lib.mongo.writer import MongoWriter
+from csp_lib.mongo.writer import MongoWriter, WriteResult
 
 logger = get_logger(__name__)
 
@@ -28,6 +28,9 @@ class MongoBatchUploader:
     - 管理多個 collection 的 queue
     - 排程定期 flush
     - 處理重試邏輯
+    - threshold 即時喚醒：queue 達到 ``batch_size_threshold`` 時主動通知
+      ``_flush_loop`` 立即 flush，避免等待整個 ``flush_interval`` 期間
+      累積到 ``max_queue_size`` 造成資料被 ``popleft`` 丟棄
 
     Example:
         ```python
@@ -62,7 +65,22 @@ class MongoBatchUploader:
         self._queues: dict[str, BatchQueue] = {}
         self._retry_counts: dict[str, int] = {}  # collection_name -> retry count
         self._stop_event = asyncio.Event()
+        # threshold 達到時立即喚醒 _flush_loop
+        self._threshold_event = asyncio.Event()
         self._flush_task: asyncio.Task[None] | None = None
+
+    @property
+    def writer(self) -> MongoWriter:
+        """
+        取得底層 MongoWriter（唯讀）
+
+        供 ``LocalBufferedUploader`` 等上層模組取得 ``write_batch`` 的
+        細粒度介面（如 ``ordered=False`` / 重複鍵處理）。
+
+        Returns:
+            MongoWriter: 目前使用的 writer 實例
+        """
+        return self._writer
 
     def register_collection(self, collection_name: str) -> None:
         """
@@ -83,6 +101,9 @@ class MongoBatchUploader:
         """
         將資料加入對應 collection 的 queue
 
+        若加入後該 queue 的大小 >= ``batch_size_threshold``，會設定
+        ``_threshold_event`` 立即喚醒 ``_flush_loop``。
+
         Args:
             collection_name: MongoDB collection 名稱
             document: 要加入的文件
@@ -91,6 +112,31 @@ class MongoBatchUploader:
             self.register_collection(collection_name)
 
         await self._queues[collection_name].enqueue(document)
+
+        # 達到閾值 → 主動喚醒 _flush_loop
+        if self._queues[collection_name].size_sync() >= self._config.batch_size_threshold:
+            self._threshold_event.set()
+
+    async def write_immediate(
+        self,
+        collection_name: str,
+        document: dict[str, Any],
+    ) -> WriteResult:
+        """
+        繞過 batch queue，直接將單一文件寫入 MongoDB
+
+        用於 alarm history 等必須即時落庫的關鍵資料。此方法不進入
+        任何 queue，也不會觸發 threshold/flush 機制，成功與否直接
+        由 ``MongoWriter.write_batch`` 的結果決定。
+
+        Args:
+            collection_name: 目標 MongoDB collection 名稱
+            document: 要寫入的單一文件
+
+        Returns:
+            WriteResult: ``csp_lib.mongo.WriteResult`` 寫入結果
+        """
+        return await self._writer.write_batch(collection_name, [document])
 
     def start(self) -> "MongoBatchUploader":
         """
@@ -101,12 +147,14 @@ class MongoBatchUploader:
         """
         if self._flush_task is None or self._flush_task.done():
             self._stop_event.clear()
+            self._threshold_event.clear()
             self._flush_task = asyncio.create_task(self._flush_loop())
             logger.info("MongoBatchUploader: 啟動批次上傳任務")
         return self
 
     async def stop(self) -> None:
         """停止 flush 任務，並確保所有資料都已上傳"""
+        # _wait_for_trigger 已同時監聽 _stop_event；setting it alone 就足以喚醒 waiter
         self._stop_event.set()
         if self._flush_task:
             try:
@@ -159,27 +207,55 @@ class MongoBatchUploader:
             )
             self._retry_counts[collection_name] = 0
 
+    async def _wait_for_trigger(self) -> None:
+        """
+        多事件等待：同時監聽 stop / threshold / timeout 三路訊號
+
+        - ``_stop_event`` 被設定 → 立即返回（停止流程）
+        - ``_threshold_event`` 被設定 → 立即返回（有 queue 達閾值）
+        - ``flush_interval`` 到期 → 返回（定期 flush）
+
+        停止時正確 cancel 未完成的 waiter task，避免 task leak。
+        """
+        stop_task = asyncio.create_task(self._stop_event.wait())
+        threshold_task = asyncio.create_task(self._threshold_event.wait())
+        try:
+            await asyncio.wait(
+                {stop_task, threshold_task},
+                timeout=self._config.flush_interval,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for task in (stop_task, threshold_task):
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
     async def _flush_loop(self) -> None:
-        """定期檢查並上傳所有 collection 的資料"""
+        """
+        定期檢查並上傳所有 collection 的資料
+
+        採用多事件等待（stop / threshold / timeout），threshold 達到
+        時可立即 flush，不必等整個 ``flush_interval``。
+        """
         while not self._stop_event.is_set():
             try:
-                # 檢查達到閾值的 collection 並立即上傳
-                for name, queue in list(self._queues.items()):
-                    if queue.size_sync() >= self._config.batch_size_threshold:
-                        await self._flush_collection(name)
+                # 等待 stop / threshold / timeout 三路任一
+                await self._wait_for_trigger()
 
-                # 等待下一次檢查或收到停止信號
-                try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(),
-                        timeout=self._config.flush_interval,
-                    )
-                    # stop_event 被設定，結束迴圈前 flush 所有資料
+                if self._stop_event.is_set():
+                    # 結束迴圈前 flush 所有資料
                     await self.flush_all()
                     break
-                except asyncio.TimeoutError:
-                    # 定期 flush 所有 queue（無論是否達閾值）
-                    await self.flush_all()
+
+                # 被 threshold 喚醒或 timeout 到期 → flush 所有 queue
+                await self.flush_all()
+
+                # 清除 threshold 旗標等待下次達閾值
+                self._threshold_event.clear()
 
             except asyncio.CancelledError:
                 # 結束前 flush 所有資料
