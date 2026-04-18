@@ -168,12 +168,47 @@ git push origin :refs/tags/v0.8.2-backup
 
 ---
 
+## Multi-File Version Bump（與 bump_version.py 對齊）
+
+`scripts/bump_version.py` 原本會同步更新 **5 個檔、8 個位置**的版本字串。release-please 預設只改一個檔，因此在 `release-please-config.json` 的 `extra-files` 把全部納入：
+
+| 檔案 | 位置 | Marker 形式 |
+|------|------|------------|
+| `csp_lib/__init__.py` | `__version__ = "..."` | `# x-release-please-version` |
+| `README.md` | shields.io version badge (L5) | `<!-- x-release-please-version -->` |
+| `README.md` | bibtex `version = {...}` (L178) | `% x-release-please-version` |
+| `CITATION.cff` | `version: X.Y.Z` | `# x-release-please-version` |
+| `NOTICE` | `(Version X.Y.Z)` | `# x-release-please-version` |
+| `docs/Home.md` | `- **目前版本**: X.Y.Z` | `<!-- x-release-please-version -->` |
+
+release-please 的 `generic` updater 會掃描每個檔案中含有 `x-release-please-version` marker 的行，把該行上的 semver 字串替換成新版本。同一行若有多個 semver，全部替換；不同行無 marker 則完全不動。
+
+### `date-released` 例外
+
+`CITATION.cff` 還有一個 `date-released:` 欄位，bump_version.py 原本會設為執行當下日期。release-please `generic` updater 只能 bump semver，無法改日期。解法：在 `release-please.new.yml` 加 `sync-citation-date` job，當 `release_created=true` 時自動：
+1. checkout main
+2. 用 Python regex 把 `date-released:` 改成今日 UTC
+3. 以 `chore: sync CITATION.cff date-released ...` commit push 回 main
+
+限制：sync commit 是 release tag 之後的 follow-up，**當次 tagged release 的 CITATION.cff 仍是舊日期**。下次 release 會帶入正確日期。追求絕對精確者可手動改後 `git tag --force`（不建議）。
+
+### bump_version.py 的命運
+
+release-please 接管後，`scripts/bump_version.py` 不再主動被呼叫，但**保留不刪**——用途：
+1. 緊急 manual bump（release-please workflow 壞掉時的 fallback）
+2. 本機開發預覽「bump 到 X.Y.Z 會改哪些地方」（`--dry-run` 模式）
+3. CI_MIGRATION 的安全網，Phase 3 切換後的前兩三個 release 若 release-please 漏某個位置，手動跑此 script 補
+
+---
+
 ## 已知相容性風險
 
 1. **BACKLOG.md 是 gitignored**（見 memory）— 切 BACKLOG.new.md → BACKLOG.md 前需先檢查 `.gitignore`。若決定讓 BACKLOG 入版控，在 `.gitignore` 移除該條。
 2. **`uv.lock` 也 gitignored**（見 memory）— 本次遷移不影響，但 CI cache key 用 `uv.lock` hash 可能有波動。
 3. **cluster 模組有 bug 待 v0.10.0 修**（見 memory）— 本次遷移不動 cluster，無衝突。
 4. **pre-commit hook 會同時跑 `check_commit_msg.py`** — 切換 script 時需同步更新 `.pre-commit-config.yaml` 的 hook entry（若有）。
+5. **CITATION.cff `date-released` 一期落差** — 首次 release tagged 的 cff 可能是舊日期，下次 release 修正（見上節）。
+6. **README.md bibtex marker 用 `%`**（bibtex 合法註解字元）— 若 bibtex 解析器嚴格要求某些格式，`% x-release-please-version` 可能被當無效 token；主流解析器（biber / bibtex / pandoc）皆能正確忽略。
 
 ---
 

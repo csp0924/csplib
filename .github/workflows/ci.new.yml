@@ -13,7 +13,7 @@
 #   - 拆分 publish 到 release.new.yml（tag 觸發，此 workflow 不再發 PyPI）
 #   - tag 觸發移除（publish 交給 release.new.yml）
 #   - 加 concurrency control（同 PR 新 push 自動取消舊 run）
-#   - macOS 只在 push main 跑（PR 跑太慢且 astral 已在 ubuntu+windows 覆蓋）
+#   - 3 OS matrix 一律跑（PR + push main 皆然；macOS ~2 min，可接受）
 #   - cache 擴充 .mypy_cache / .ruff_cache
 #   - 所有 actions pin commit SHA（防供應鏈攻擊）
 #   - lint 與 test 併行（removed needs: [lint] from test）
@@ -37,8 +37,10 @@ permissions:
 
 jobs:
   # ============ Lint (並行) ============
+  # job name 保持 "Lint" 以對上 branch protection 的 required status check
+  # (舊 build-wheels.yml 遺留；mypy 也放在此 job 內一起跑)
   lint:
-    name: Lint & Type Check
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -72,27 +74,18 @@ jobs:
       - name: mypy
         run: uv run mypy csp_lib/
 
-  # ============ Test (並行；macOS 只在 push main 跑) ============
+  # ============ Test (並行，3 OS matrix) ============
+  # macOS 跑時約 2 min，PR 也一起跑以求跨平台完整回歸
   test:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        include:
-          - os: macos-latest
-            # macOS 只在 push main 時納入矩陣（PR 跑太慢）
-            condition: push-main
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Skip macOS on PR
-        if: matrix.condition == 'push-main' && github.event_name == 'pull_request'
-        run: |
-          echo "macOS test skipped on PR"
-          exit 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v7.0.0
