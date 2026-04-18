@@ -38,5 +38,5 @@
   "commit-search-depth": 500,
   "pull-request-title-pattern": "chore: release ${version}",
   "pull-request-header": ":robot: 本 Release PR 由 release-please 自動維護。合併後會自動：建立 git tag、觸發 PyPI 發佈、產生 GitHub Release。",
-  "separate-pull-requests": false
+  "separate-pull-requests": true
 }
