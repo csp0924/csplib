@@ -4,6 +4,17 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.3](https://github.com/csp0924/csplib/compare/v0.8.2...v0.8.3) (2026-04-18)
+
+
+### Fixed
+
+* **ci:** last-release-sha 要放 root level 而非 package 內 ([#62](https://github.com/csp0924/csplib/issues/62)) ([f8833bf](https://github.com/csp0924/csplib/commit/f8833bf1168b1f43d406d72870424d21f354e0bb))
+* **ci:** release-please boundary + README 動態 PyPI badge ([#60](https://github.com/csp0924/csplib/issues/60)) ([4bf7815](https://github.com/csp0924/csplib/commit/4bf7815cf55b40b0f89bfcff5adc210084527d63))
+* **ci:** release-please tag format 改用 v{version} 對上既有 tag ([#58](https://github.com/csp0924/csplib/issues/58)) ([bcebe99](https://github.com/csp0924/csplib/commit/bcebe99de26271771ec880f036e87d34ab9ecdf1))
+* **ci:** release-please 全量覆蓋 bump_version.py 的所有版本位置 ([#55](https://github.com/csp0924/csplib/issues/55)) ([0767fe3](https://github.com/csp0924/csplib/commit/0767fe37faeec2f21a98e1ba6cfa0760f7338dd5))
+* **ci:** 為 release-please 指定 last-release-sha 作為 boundary ([#57](https://github.com/csp0924/csplib/issues/57)) ([08f0df5](https://github.com/csp0924/csplib/commit/08f0df549d1cf48ae22074598a0cd727158551e2))
+
 ## [Unreleased]
 
 ## [0.8.2] - 2026-04-17
