@@ -4,6 +4,32 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.0](https://github.com/csp0924/csplib/compare/v0.8.2...v0.9.0) (2026-04-18)
+
+
+### Added
+
+* add CI/CD with stub generation and code protection ([2a69559](https://github.com/csp0924/csplib/commit/2a69559da67cdf3f23ffec3393eff01bb1102c11))
+* Add Modbus numeric and string data types with encoding/decoding support ([#2](https://github.com/csp0924/csplib/issues/2)) ([bcbcc9b](https://github.com/csp0924/csplib/commit/bcbcc9bc964a21d8c5abce44eda3e4d68de3aceb))
+* Implement initial controller module with core components, strategies, executors, services, and unit tests, adding pytest dev dependencies. ([ed33215](https://github.com/csp0924/csplib/commit/ed332150a85ad1dccd7614e6613b3e2b45fae9fa))
+* Initialize `csp_lib` Python library with core utilities and MongoDB integration, including project configuration and dependency management. ([e2d7fe1](https://github.com/csp0924/csplib/commit/e2d7fe16426d81345e89691371c48448bb45e556))
+
+
+### Fixed
+
+* CI/CD workflow ([95c843e](https://github.com/csp0924/csplib/commit/95c843e0368d8c7693093dfe133d285785f49c3c))
+* **ci:** release-please tag format 改用 v{version} 對上既有 tag ([#58](https://github.com/csp0924/csplib/issues/58)) ([bcebe99](https://github.com/csp0924/csplib/commit/bcebe99de26271771ec880f036e87d34ab9ecdf1))
+* **ci:** release-please 全量覆蓋 bump_version.py 的所有版本位置 ([#55](https://github.com/csp0924/csplib/issues/55)) ([0767fe3](https://github.com/csp0924/csplib/commit/0767fe37faeec2f21a98e1ba6cfa0760f7338dd5))
+* **ci:** 為 release-please 指定 last-release-sha 作為 boundary ([#57](https://github.com/csp0924/csplib/issues/57)) ([08f0df5](https://github.com/csp0924/csplib/commit/08f0df549d1cf48ae22074598a0cd727158551e2))
+* csp_lib already exist in pypl ([b5e85d8](https://github.com/csp0924/csplib/commit/b5e85d8535ed90e8e7c33b4a7151e3784c0d077a))
+* encode character ([b61dafa](https://github.com/csp0924/csplib/commit/b61dafab3b8047e8968516e0c3d0a589ec6a5171))
+* hot fix cluster dependency problem. ([#31](https://github.com/csp0924/csplib/issues/31)) ([5baced4](https://github.com/csp0924/csplib/commit/5baced4a443aaac853c57ee8b351f2a66a159ff3))
+* hot fix installation fail problem ([#15](https://github.com/csp0924/csplib/issues/15)) ([8e84927](https://github.com/csp0924/csplib/commit/8e8492715ece03bad93dda74e4ddf205f5ecde58))
+* only build linux wheel via cibuildwheel (manylinux) ([7b0a87f](https://github.com/csp0924/csplib/commit/7b0a87ff7553267f288515622de02087ef04cb81))
+* rename package to csp0924_lib ([07ee0c0](https://github.com/csp0924/csplib/commit/07ee0c04dee759826060ed899669b1808ed8c61c))
+* resource reference counting ([#6](https://github.com/csp0924/csplib/issues/6)) ([19f7c46](https://github.com/csp0924/csplib/commit/19f7c469b29681f8b8a647cc1b49cd5956763a30))
+* test on source code, not compiled wheel ([685de0c](https://github.com/csp0924/csplib/commit/685de0c3b46e506b0e536198b26ccb08491e889f))
+
 ## [Unreleased]
 
 ## [0.8.2] - 2026-04-17
