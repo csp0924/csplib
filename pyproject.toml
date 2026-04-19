@@ -18,7 +18,7 @@ mongo = [
     "motor>=3.0.0,<4.0",
 ]
 local-buffer = [
-    "aiosqlite>=0.19.0,<0.21"
+    "aiosqlite>=0.19.0,<0.23"
 ]
 redis = [
     "redis>=5.0.0,<8.0",
@@ -36,11 +36,11 @@ cluster = [
     "etcetra>=0.1.0,<0.2",
     "grpcio>=1.64.0,<2.0",
     "grpcio-tools>=1.64.0,<2.0",
-    "protobuf>=4.25.3,<5.0",
+    "protobuf>=4.25.3,<8.0",
 ]
 gui = [
-    "fastapi>=0.115.0,<0.136",
-    "uvicorn[standard]>=0.30.0,<0.42",
+    "fastapi>=0.115.0,<0.137",
+    "uvicorn[standard]>=0.30.0,<0.45",
     "pyyaml>=6.0,<7.0",
     "python-multipart>=0.0.20,<1.0",
 ]
@@ -87,7 +87,7 @@ dev = [
 override-dependencies = [
     "grpcio>=1.64.0,<2.0",
     "grpcio-tools>=1.64.0,<2.0",
-    "protobuf>=4.25.3,<5.0",
+    "protobuf>=4.25.3,<8.0",
 ]
 
 # =============== Ruff (Linting + Formatting) ===============

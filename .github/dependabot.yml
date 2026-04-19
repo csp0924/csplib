@@ -10,6 +10,16 @@ updates:
       interval: "weekly"
     labels: ["dependencies", "skip-changelog"]
     open-pull-requests-limit: 5
+    ignore:
+      # pymodbus 3.13 移除了 pymodbus.datastore.store.BaseModbusDataBlock，
+      # 與 csp_lib 的 modbus_server / modbus_gateway 實作不相容。
+      # 現階段（v0.7.x ~ v0.9.x）維持 pymodbus<3.13，不追 minor/major 升級。
+      # v1.0 時重新評估 pymodbus 依賴（含是否自行實作 Modbus server 以移除依賴）。
+      # 細節見 BACKLOG.md「Exploring / pymodbus 依賴重新評估」。
+      - dependency-name: "pymodbus"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
 
   # GitHub Actions 版本 bump
   # commit message 改用 ci(deps): 而非預設的 build(deps):
