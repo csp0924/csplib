@@ -60,8 +60,10 @@ permissions:
   contents: read
 
 # 避免同個 tag 同時被 tag-push 與 workflow_dispatch 觸發造成重複 publish。
+# 用 effective tag 而非 github.ref 當 group key：tag push (github.ref_name=v0.8.4)
+# 與 rescue dispatch (inputs.tag=v0.8.4, github.ref=refs/heads/main) 都落到同一 group。
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -88,12 +90,14 @@ jobs:
               *) echo "::error::release.yml must run on a tag ref or be dispatched with 'tag' input, got $GITHUB_REF"; exit 1 ;;
             esac
           fi
-          case "$TAG" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::Tag must match v<X>.<Y>.<Z>[-rcN], got $TAG"; exit 1 ;;
-          esac
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Tag must match v<X>.<Y>.<Z>[-rcN], got $TAG"
+            exit 1
+          fi
           VERSION="${TAG#v}"
-          if [[ "$VERSION" == *"-rc"* ]]; then
+          # 從同一 regex 的 capture group 決定 is_rc，避免 substring match 誤判
+          # （e.g. v1.0.0-rc-foo 這種被鬆散 case glob 放行、又被 *-rc* 誤判的情況）
+          if [[ -n "${BASH_REMATCH[1]}" ]]; then
             echo "is_rc=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_rc=false" >> "$GITHUB_OUTPUT"
@@ -296,6 +300,8 @@ jobs:
       - name: Create GitHub Release with assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 此 job 不 checkout，沒有 local git remote 可推斷 repo；顯式提供。
+          GH_REPO: ${{ github.repository }}
           TAG: v${{ needs.preflight.outputs.version }}
         run: |
           set -e
