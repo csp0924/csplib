@@ -1,14 +1,27 @@
 version: 2
 updates:
+  # Python production / dev dependencies
+  # commit message 預設是 build(deps): / build(deps-dev):
+  # release-please-config.json 把 build type 顯示在 "Dependencies" section
+  # → user 從 CHANGELOG 能看到 pymodbus / fastapi / aiosqlite 等實際裝進去的套件版本變動
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
     labels: ["dependencies", "skip-changelog"]
     open-pull-requests-limit: 5
+
+  # GitHub Actions 版本 bump
+  # commit message 改用 ci(deps): 而非預設的 build(deps):
+  # 理由：actions bump（setup-python / setup-uv / cache 等）只影響 CI，
+  # user 裝套件感覺不到，沒必要進 user-facing CHANGELOG。
+  # release-please-config.json 把 ci type 設為 hidden:true → 不出現在 CHANGELOG。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     labels: ["dependencies", "skip-changelog"]
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
