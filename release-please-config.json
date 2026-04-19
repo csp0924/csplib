@@ -30,7 +30,7 @@
         { "type": "test",     "section": "Tests",      "hidden": true },
         { "type": "ci",       "section": "CI",         "hidden": true },
         { "type": "chore",    "section": "Chore",      "hidden": true },
-        { "type": "build",    "section": "Build",      "hidden": true }
+        { "type": "build",    "section": "Dependencies","hidden": false }
       ]
     }
   },
