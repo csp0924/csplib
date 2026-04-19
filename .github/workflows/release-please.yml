@@ -27,6 +27,7 @@ permissions:
   contents: write       # 需要寫 CHANGELOG、__init__.py、推 tag
   pull-requests: write  # 需要開/更新 Release PR
   issues: write         # 需要標 label（release-please 會標 `autorelease: pending`）
+  actions: write        # 需要 dispatch release.yml（workaround GITHUB_TOKEN tag-push 不觸發）
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -49,6 +50,17 @@ jobs:
           manifest-file: .release-please-manifest.json
           # 預設 token 即 GITHUB_TOKEN，足以在同 repo 開 PR
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # GitHub 規則：GITHUB_TOKEN 推的 tag 不會觸發其他 workflow。
+      # release-please 用 GITHUB_TOKEN 打 tag，導致 release.yml 不會因 tag push 觸發
+      # （v0.8.4 踩到這坑：PyPI 沒發、GH Release 沒 asset）。
+      # workflow_dispatch 是 GITHUB_TOKEN 觸發限制的例外，主動呼叫即可。
+      - name: Dispatch release.yml
+        if: steps.rp.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: gh workflow run release.yml --ref "$TAG"
 
   # ========== CITATION.cff date-released 同步 ==========
   # release-please 的 generic updater 只能 bump semver，不能改日期。
