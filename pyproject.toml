@@ -39,7 +39,7 @@ cluster = [
     "protobuf>=4.25.3,<5.0",
 ]
 gui = [
-    "fastapi>=0.115.0,<0.136",
+    "fastapi>=0.115.0,<0.137",
     "uvicorn[standard]>=0.30.0,<0.42",
     "pyyaml>=6.0,<7.0",
     "python-multipart>=0.0.20,<1.0",
