@@ -2,20 +2,34 @@
 # GitHub Actions: Release (tag 觸發 → PyPI + GitHub Release)
 #
 # 目的：release-please merge Release PR 後會自動建立 tag，此 workflow
-#       由 tag push 觸發，完成 PyPI 發佈與 GitHub Release 製作。
+#       由 tag push 觸發，完成「發版前最後驗證 → PyPI 發佈 → GitHub Release」。
 #
 # 觸發策略：
 #   - tag push `v[0-9]+.[0-9]+.[0-9]+`（正式版）
 #   - tag push `v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+`（預發佈→ TestPyPI）
 #   - 其他 tag（例如 `v0.8.2-backup`）不觸發
 #
+# Job 拓樸（needs 鏈）：
+#   preflight ──┬─▶ test (3 OS matrix)  ──┐
+#               ├─▶ build dist            ├─▶ publish-pypi / publish-testpypi
+#               └─▶ notes                 ┘            │
+#                                                     ▼
+#                                          create-gh-release
+#
+# 為何 publish 前還跑一次 3 OS test：
+#   - PyPI 版本號 immutable（用過就燒掉，即使 yank 也不能重發同一個 X.Y.Z）
+#   - test fail → publish 不跑 → 沒燒版本號，可開 fix PR 後 release-please 自動推下個 patch
+#   - 詳細失敗恢復流程見 docs/15-Development/Release Recovery.md
+#
+# 為何 publish-pypi 用 environment: pypi：
+#   - 在 GitHub repo Settings → Environments → pypi 設 Required reviewers = 自己
+#   - tag 推上去後 test/build 都綠才會 prompt 你 approve，最後一道人工關卡
+#
 # 改動摘要 vs build-wheels.yml 原 publish job：
 #   - 從 CI 拆出（獨立檔案，權限範圍收窄）
 #   - tag pattern 從 `v*` 改為嚴格語意版本（backup / draft tag 不誤觸）
 #   - RC tag 走 TestPyPI（dry run），正式 tag 走 PyPI
 #   - 用 OIDC trusted publishing（`id-token: write`），不再需要 PyPI token secret
-#   - 移除「build 跑兩次」問題：預設重新 build（因 tag commit 可能與 CI 跑的 commit 不同），
-#     若確定 tag 指向 main HEAD 可改 artifact reuse
 # ======================================================================
 
 name: Release
@@ -69,6 +83,37 @@ jobs:
             echo "::error::Tag $TAG_VERSION does not match __version__=$PKG_VERSION (expected $EXPECTED)"
             exit 1
           fi
+
+  # ============ Pre-publish test (3 OS matrix，發版前最後一道驗證) ============
+  # 為何 tag 後又跑一次 test：
+  #   - PyPI 版本號 immutable，publish 出去後不能撤回，必須在 publish 前確保綠燈
+  #   - 即使 Release PR 階段已驗過，這裡再跑能擋：sync-citation-date 後追 commit
+  #     造成 tag commit 與 PR 驗證 commit 不同的邊界情況
+  #   - 失敗→ publish 不會跑（needs gate），可開 fix PR 後 release-please 自動推下個 patch
+  #     詳見 docs/15-Development/Release Recovery.md
+  test:
+    name: Test on ${{ matrix.os }}
+    needs: [preflight]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba  # v7.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --group dev --all-extras
+
+      - name: Run tests
+        run: uv run python -m pytest tests/ -v -n auto
 
   # ============ Build sdist + wheel ============
   build:
@@ -140,7 +185,7 @@ jobs:
   # ============ Publish RC → TestPyPI ============
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [preflight, build, notes]
+    needs: [preflight, test, build, notes]
     if: needs.preflight.outputs.is_rc == 'true'
     runs-on: ubuntu-latest
     environment:
@@ -162,9 +207,15 @@ jobs:
           packages-dir: dist/
 
   # ============ Publish Release → PyPI + GitHub Release ============
+  # 雙重 gating：
+  #   1. needs: [preflight, test, build, notes] — 任一 fail 就不會跑
+  #   2. environment: pypi — 在 GitHub repo Settings → Environments → pypi 設
+  #      "Required reviewers" = 自己，可在 publish 前人工 approve（防止 PyPI 燒版本號）
+  #
+  # 失敗恢復流程：見 docs/15-Development/Release Recovery.md
   publish-pypi:
     name: Publish to PyPI
-    needs: [preflight, build, notes]
+    needs: [preflight, test, build, notes]
     if: needs.preflight.outputs.is_rc == 'false'
     runs-on: ubuntu-latest
     environment:
