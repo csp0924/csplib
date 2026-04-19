@@ -38,8 +38,21 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Skip if PR author is a bot
+        id: bot-check
+        if: github.event_name == 'pull_request'
+        run: |
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          if [ "$AUTHOR" = "dependabot[bot]" ] || [ "$AUTHOR" = "release-please[bot]" ]; then
+            echo "PR author '$AUTHOR' is a bot — skipping commitlint"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Determine commit range
         id: range
+        if: steps.bot-check.outputs.skip != 'true'
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
@@ -51,14 +64,21 @@ jobs:
           fi
 
       - name: Lint each commit
+        if: steps.bot-check.outputs.skip != 'true'
         run: |
           set -e
           FAIL=0
           for sha in $(git rev-list --no-merges ${{ steps.range.outputs.range }}); do
             MSG=$(git log --format=%B -n 1 "$sha")
+            AUTHOR_EMAIL=$(git log --format=%ae -n 1 "$sha")
             # release-please bot commit / backup tag commit 自動放行
             if echo "$MSG" | head -n1 | grep -qE '^chore: release'; then
               echo "[skip] $sha release-please bot commit"
+              continue
+            fi
+            # dependabot 個別 commit 層級放行（push main 掃 HEAD~1 時也能放行 squash 進來的）
+            if echo "$AUTHOR_EMAIL" | grep -qE '(dependabot|release-please)\[bot\]@'; then
+              echo "[skip] $sha bot commit ($AUTHOR_EMAIL)"
               continue
             fi
             TMP=$(mktemp)
