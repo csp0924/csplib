@@ -8,6 +8,9 @@
 #   - tag push `v[0-9]+.[0-9]+.[0-9]+`（正式版）
 #   - tag push `v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+`（預發佈→ TestPyPI）
 #   - 其他 tag（例如 `v0.8.2-backup`）不觸發
+#   - workflow_dispatch（手動 / release-please.yml 呼叫）：用來繞過
+#     「GITHUB_TOKEN 推 tag 不觸發 workflow」的 GitHub 限制。release-please
+#     merge Release PR 後會用 gh CLI 以該 tag 的 ref 呼叫此 workflow。
 #
 # Job 拓樸（needs 鏈）：
 #   preflight ──┬─▶ test (3 OS matrix)  ──┐
@@ -40,9 +43,17 @@ on:
       # 嚴格語意版本 + 可選 RC 後綴
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"
+  # 手動觸發：呼叫時請指定 `--ref v<X.Y.Z>`（tag name），讓 preflight 的
+  # `${GITHUB_REF#refs/tags/}` 仍能正確解析版本。
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# 避免同個 tag 同時被 tag-push 與 workflow_dispatch 觸發造成重複 publish。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # ============ 預檢：tag 與 __version__ 一致性 ============
@@ -55,6 +66,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Guard non-tag refs
+        # workflow_dispatch 可能被誤從 branch 觸發；提早 fail 比到 verify 步驟才報錯清楚。
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) ;;
+            *) echo "::error::release.yml must run on a tag ref (refs/tags/vX.Y.Z), got $GITHUB_REF"; exit 1 ;;
+          esac
 
       - name: Parse tag
         id: parse

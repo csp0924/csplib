@@ -27,6 +27,7 @@ permissions:
   contents: write       # 需要寫 CHANGELOG、__init__.py、推 tag
   pull-requests: write  # 需要開/更新 Release PR
   issues: write         # 需要標 label（release-please 會標 `autorelease: pending`）
+  actions: write        # 需要 dispatch release.yml（workaround GITHUB_TOKEN tag-push 不觸發）
 
 concurrency:
   group: release-please-${{ github.ref }}
@@ -50,44 +51,83 @@ jobs:
           # 預設 token 即 GITHUB_TOKEN，足以在同 repo 開 PR
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ========== CITATION.cff date-released 後處理 ==========
+      # GitHub 規則：GITHUB_TOKEN 推的 tag 不會觸發其他 workflow。
+      # release-please 用 GITHUB_TOKEN 打 tag，導致 release.yml 不會因 tag push 觸發
+      # （v0.8.4 踩到這坑：PyPI 沒發、GH Release 沒 asset）。
+      # workflow_dispatch 是 GITHUB_TOKEN 觸發限制的例外，主動呼叫即可。
+      - name: Dispatch release.yml
+        if: steps.rp.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+        run: gh workflow run release.yml --ref "$TAG"
+
+  # ========== CITATION.cff date-released 同步 ==========
   # release-please 的 generic updater 只能 bump semver，不能改日期。
-  # release-please 自建完 tag 後，這個 job 把 date-released 同步到今天（UTC），
-  # 並 push 到 main（HEAD 的「後追」commit）。
+  # 這個 job 在 release-please 開/更新 Release PR 之後，把 date-released 同步到今天（UTC），
+  # commit 進 Release PR branch（不是 main），user merge Release PR 時一起帶進 main。
+  #
+  # 為何不在 tag 後 push main？main 是 protected branch，bot 無法直接 push（GH006 拒絕）。
+  # 改在 PR branch 上疊 commit 可以完全繞開 branch protection。
   sync-citation-date:
-    name: Sync CITATION.cff date-released
+    name: Sync CITATION.cff date on Release PR
     needs: [release-please]
-    if: needs.release-please.outputs.release_created == 'true'
+    if: needs.release-please.outputs.prs_created == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout main
+      - name: Extract Release PR branch name
+        id: pr
+        env:
+          PRS_JSON: ${{ needs.release-please.outputs.prs }}
+        run: |
+          # PRS_JSON 若為空字串 / "[]" / null，視為沒有 PR 要處理
+          if [ -z "$PRS_JSON" ] || [ "$PRS_JSON" = "[]" ] || [ "$PRS_JSON" = "null" ]; then
+            echo "No Release PR found — skipping downstream steps"
+            echo "branch=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BRANCH=$(printf '%s' "$PRS_JSON" | jq -r '.[0].headBranchName // empty')
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "Release PR branch: $BRANCH"
+
+      - name: Checkout Release PR branch
+        if: steps.pr.outputs.branch != ''
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
-          ref: main
+          ref: ${{ steps.pr.outputs.branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update date-released
+      - name: Update date-released to today (UTC)
+        if: steps.pr.outputs.branch != ''
         run: |
-          TODAY=$(date -u +%Y-%m-%d)
-          python3 -c "
-          import re, pathlib
-          p = pathlib.Path('CITATION.cff')
-          s = p.read_text(encoding='utf-8')
-          new = re.sub(r'^(date-released:\s*\")[^\"]+(\")', r'\1$TODAY\2', s, count=1, flags=re.MULTILINE)
-          p.write_text(new, encoding='utf-8')
-          "
-          git diff CITATION.cff
+          export TODAY=$(date -u +%Y-%m-%d)
+          python3 <<'PY'
+          import os, re, pathlib
+          today = os.environ["TODAY"]
+          p = pathlib.Path("CITATION.cff")
+          s = p.read_text(encoding="utf-8")
+          new = re.sub(r'^(date-released:\s*")[^"]+(")', rf'\1{today}\2', s, count=1, flags=re.MULTILINE)
+          p.write_text(new, encoding="utf-8")
+          PY
+          git diff CITATION.cff || true
 
-      - name: Commit & push if changed
+      - name: Commit & push to Release PR branch if changed
+        if: steps.pr.outputs.branch != ''
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
         run: |
-          if ! git diff --quiet CITATION.cff; then
-            git config user.name "release-please[bot]"
-            git config user.email "release-please[bot]@users.noreply.github.com"
-            git add CITATION.cff
-            git commit -m "chore: sync CITATION.cff date-released to ${{ needs.release-please.outputs.version }} release date"
-            git push origin main
-          else
+          if git diff --quiet CITATION.cff; then
             echo "CITATION.cff date-released already up to date"
+            exit 0
           fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CITATION.cff
+          git commit -m "chore: sync CITATION.cff date-released"
+          # release-please 會對 PR branch force-push，checkout 後 push 前可能發生 race。
+          # 先 pull --rebase 吸收新版本的 release-please 基底，再 push，避免把 release-please
+          # 的新 commit 覆蓋掉或被 non-fast-forward 拒絕。
+          git pull --rebase origin "$BRANCH" || true
+          git push origin "HEAD:$BRANCH"
