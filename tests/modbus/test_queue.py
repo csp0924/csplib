@@ -677,9 +677,15 @@ class TestModbusRequestQueue:
                         timeout=0.6,
                     )
 
-            # CB should now be OPEN
+            # CB should become OPEN once worker finishes recording failures.
+            # Caller timeout 與 worker timeout 幾乎同時 fire；caller 先 raise 時
+            # worker 尚未執行 record_failure()，因此不可直接 assert，需等 CB 狀態轉換。
             cb = queue._get_circuit_breaker(1)
-            assert cb.state == CircuitBreakerState.OPEN
+            await wait_for_condition(
+                lambda: cb.state == CircuitBreakerState.OPEN,
+                timeout=2.0,
+                message="circuit breaker should OPEN after 2 worker timeouts",
+            )
 
             with pytest.raises(ModbusCircuitBreakerError):
                 await queue.submit(
