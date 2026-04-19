@@ -4,6 +4,29 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.4](https://github.com/csp0924/csplib/compare/v0.8.3...v0.8.4) (2026-04-19)
+
+
+### Fixed
+
+* **ci:** commitlint 放行 dependabot（deps-dev scope + bot bypass） ([#77](https://github.com/csp0924/csplib/issues/77)) ([f5d1d2e](https://github.com/csp0924/csplib/commit/f5d1d2e7f9cdacde366315bf702e17c2ff65dee8))
+* **ci:** release-please 改用 separate-pull-requests ([#65](https://github.com/csp0924/csplib/issues/65)) ([dac984e](https://github.com/csp0924/csplib/commit/dac984effcc980d3e834faad4b992d0a23c77b82))
+* **modbus:** 區分 pymodbus 未安裝與版本不相容的錯誤訊息 ([#81](https://github.com/csp0924/csplib/issues/81)) ([fc6837e](https://github.com/csp0924/csplib/commit/fc6837e868bc6ad1793d6b6585c09908774cdf6a))
+* **tests:** test_worker_timeout_triggers_circuit_breaker 改用 wait_for_condition 消除 CB 狀態 race ([#78](https://github.com/csp0924/csplib/issues/78)) ([fd88849](https://github.com/csp0924/csplib/commit/fd88849a4f51ed7ea1bcfe7ef3cd4c16cdcbaba6))
+
+
+### Dependencies
+
+* **deps-dev:** update aiosqlite requirement ([#72](https://github.com/csp0924/csplib/issues/72)) ([0748755](https://github.com/csp0924/csplib/commit/0748755a6a1e4b71b486a2c220c42eab2b3d657f))
+* **deps-dev:** update fastapi requirement ([#76](https://github.com/csp0924/csplib/issues/76)) ([08aab0d](https://github.com/csp0924/csplib/commit/08aab0dc863a6073986a3701c1237509aca4acee))
+* **deps-dev:** update protobuf requirement ([#73](https://github.com/csp0924/csplib/issues/73)) ([837af14](https://github.com/csp0924/csplib/commit/837af14a54f4591cf55818adef0fcabb9673ba31))
+* **deps-dev:** update uvicorn requirement ([#75](https://github.com/csp0924/csplib/issues/75)) ([162f451](https://github.com/csp0924/csplib/commit/162f451f9831a47e1e32a08661edb0a83186396c))
+* **deps:** bump actions/cache from 4.2.0 to 5.0.5 ([#71](https://github.com/csp0924/csplib/issues/71)) ([e1af877](https://github.com/csp0924/csplib/commit/e1af87704809bf85302978ef3a85695eaad1c20c))
+* **deps:** bump actions/download-artifact from 4.1.8 to 8.0.1 ([#68](https://github.com/csp0924/csplib/issues/68)) ([5865f67](https://github.com/csp0924/csplib/commit/5865f6751fa8fe6fdf0fd1265f05b565493af81e))
+* **deps:** bump actions/setup-python from 5.3.0 to 6.2.0 ([#70](https://github.com/csp0924/csplib/issues/70)) ([0966bfd](https://github.com/csp0924/csplib/commit/0966bfd6977133433c243217757ac06e7db17de6))
+* **deps:** bump astral-sh/setup-uv from 6.3.1 to 8.1.0 ([#67](https://github.com/csp0924/csplib/issues/67)) ([ab9382c](https://github.com/csp0924/csplib/commit/ab9382c2b95cd4014d583ad8295b960793be75ac))
+* **deps:** bump pypa/gh-action-pypi-publish from 1.12.4 to 1.14.0 ([#69](https://github.com/csp0924/csplib/issues/69)) ([f8b4133](https://github.com/csp0924/csplib/commit/f8b41338c6f3b517b917dabadde88260b7c92671))
+
 ## [0.8.3](https://github.com/csp0924/csplib/compare/v0.8.2...v0.8.3) (2026-04-18)
 
 
