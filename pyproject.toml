@@ -24,7 +24,7 @@ redis = [
     "redis>=5.0.0,<8.0",
 ]
 modbus = [
-    "pymodbus>=3.0.0,<3.13",
+    "pymodbus>=3.0.0,<3.14",
 ]
 can = [
     "python-can>=4.0,<5.0",
