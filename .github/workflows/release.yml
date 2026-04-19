@@ -43,16 +43,27 @@ on:
       # 嚴格語意版本 + 可選 RC 後綴
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"
-  # 手動觸發：呼叫時請指定 `--ref v<X.Y.Z>`（tag name），讓 preflight 的
-  # `${GITHUB_REF#refs/tags/}` 仍能正確解析版本。
+  # 手動觸發：
+  #   - 預設：`gh workflow run release.yml --ref v<X.Y.Z>`（workflow 檔與 source 都從 tag 讀）
+  #   - 救舊 release：若該 tag commit 的 workflow 檔不含 workflow_dispatch
+  #     （e.g. v0.8.4 rescue），可改成
+  #     `gh workflow run release.yml --ref main -f tag=v0.8.4`
+  #     —— workflow 檔從 main 讀（有 workflow_dispatch），source 則 checkout 到 input.tag。
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.8.4). 留空則用觸發的 ref（必為 tag ref）。"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 # 避免同個 tag 同時被 tag-push 與 workflow_dispatch 觸發造成重複 publish。
+# 用 effective tag 而非 github.ref 當 group key：tag push (github.ref_name=v0.8.4)
+# 與 rescue dispatch (inputs.tag=v0.8.4, github.ref=refs/heads/main) 都落到同一 group。
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -63,30 +74,42 @@ jobs:
     outputs:
       version: ${{ steps.parse.outputs.version }}
       is_rc: ${{ steps.parse.outputs.is_rc }}
+      ref: ${{ steps.parse.outputs.ref }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Guard non-tag refs
-        # workflow_dispatch 可能被誤從 branch 觸發；提早 fail 比到 verify 步驟才報錯清楚。
-        run: |
-          case "$GITHUB_REF" in
-            refs/tags/v*) ;;
-            *) echo "::error::release.yml must run on a tag ref (refs/tags/vX.Y.Z), got $GITHUB_REF"; exit 1 ;;
-          esac
-
-      - name: Parse tag
+      - name: Resolve & validate release ref
         id: parse
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          # 優先用 input.tag；否則從 GITHUB_REF 解析（必為 tag ref）。
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            case "$GITHUB_REF" in
+              refs/tags/v*) TAG="${GITHUB_REF#refs/tags/}" ;;
+              *) echo "::error::release.yml must run on a tag ref or be dispatched with 'tag' input, got $GITHUB_REF"; exit 1 ;;
+            esac
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Tag must match v<X>.<Y>.<Z>[-rcN], got $TAG"
+            exit 1
+          fi
           VERSION="${TAG#v}"
-          if [[ "$VERSION" == *"-rc"* ]]; then
+          # 從同一 regex 的 capture group 決定 is_rc，避免 substring match 誤判
+          # （e.g. v1.0.0-rc-foo 這種被鬆散 case glob 放行、又被 *-rc* 誤判的情況）
+          if [[ -n "${BASH_REMATCH[1]}" ]]; then
             echo "is_rc=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_rc=false" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
           echo "Tag: $TAG | Version: $VERSION"
+
+      - name: Checkout source at release ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ steps.parse.outputs.ref }}
 
       - name: Verify tag matches __version__
         run: |
@@ -121,6 +144,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v7.0.0
@@ -142,6 +167,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
@@ -172,6 +199,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
 
       - name: Extract notes
         id: extract
@@ -265,13 +294,21 @@ jobs:
       # 兩階段流程：GitHub Immutable Releases 會讓 release 建出來就 immutable，
       # 導致後續 upload asset 失敗（v0.8.3 首次 release 踩到這個坑）。
       # gh release create 把 assets 當成 positional args 一併帶入 create 請求。
+      #
+      # 救舊 release 情境（release 已存在且 immutable）：create 會 fail，
+      # 這個 step 會 log 警告並放行，讓 PyPI publish 成功的事實成立。
       - name: Create GitHub Release with assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 此 job 不 checkout，沒有 local git remote 可推斷 repo；顯式提供。
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: v${{ needs.preflight.outputs.version }}
         run: |
           set -e
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::warning::Release $TAG already exists (likely rescue dispatch); skipping create — immutable releases cannot accept new assets."
+            exit 0
+          fi
           # attestation 檔已隨 PyPI publish 上 sigstore，GH Release 只附 wheel + sdist
           gh release create "$TAG" \
             dist/*.whl dist/*.tar.gz \
