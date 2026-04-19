@@ -68,6 +68,7 @@ ALLOWED_SCOPES = {
     "grpc",
     # Meta scopes
     "deps",
+    "deps-dev",  # dependabot 對 dev dependency groups 使用此 scope
     "release",
     "ci",
     "docs",
