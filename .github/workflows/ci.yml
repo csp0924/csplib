@@ -1,22 +1,25 @@
 # ======================================================================
-# GitHub Actions: CI (PR + push main)
+# GitHub Actions: CI (PR gating + main lint smoke)
 #
-# 目的：對 main 和所有 PR 跑快速回饋（lint / type / test / build-check）
-# 不負責發版 — 發版由 release.new.yml 處理（tag 觸發）
+# 目的：PR 階段做完整 gating（lint + 3 OS test + build-check），
+#       push main 後只做精簡 lint（防 squash race / parallel merge 後格式漂移）。
+#       發版由 release.yml 處理（tag 觸發），它會在 PyPI publish 前再跑一次 3 OS test。
 #
 # 觸發策略：
-#   - PR → lint + test + build-check
-#   - push main（release-please bot merge 或 hotfix）→ lint + test + build-check
-#   - 手動觸發 → 完整流程
+#   - PR                      → lint + 3 OS test + build-check（gating，必須）
+#   - push main（squash merge / Release PR merge / hotfix）→ lint only（~30s）
+#   - 手動觸發（workflow_dispatch）→ 完整流程（同 PR）
 #
-# 改動摘要 vs build-wheels.yml：
-#   - 拆分 publish 到 release.new.yml（tag 觸發，此 workflow 不再發 PyPI）
-#   - tag 觸發移除（publish 交給 release.new.yml）
-#   - 加 concurrency control（同 PR 新 push 自動取消舊 run）
-#   - 3 OS matrix 一律跑（PR + push main 皆然；macOS ~2 min，可接受）
-#   - cache 擴充 .mypy_cache / .ruff_cache
-#   - 所有 actions pin commit SHA（防供應鏈攻擊）
-#   - lint 與 test 併行（removed needs: [lint] from test）
+# 為何 push main 不重跑 test/build：
+#   - PR up-to-date 才能 merge，PR CI 跑的就是合進 main 後的內容
+#   - Release PR 只改 CHANGELOG/__version__，無 source 變動
+#   - 真正的 release safety net 在 release.yml 的 test job（publish 前）
+#   - 省下 macOS+win+ubuntu test ~6 分鐘 / 每次 push main
+#
+# 注意事項：
+#   - branch protection required status check 仍以 PR 階段的綠燈為準
+#   - test/build-check job 在 push main 時會被 skip（顯示為 skipped status）
+#   - lint 在 main 跑很便宜，且能擋 parallel merge 後的格式衝突
 # ======================================================================
 
 name: CI
@@ -75,9 +78,11 @@ jobs:
         run: uv run mypy csp_lib/
 
   # ============ Test (並行，3 OS matrix) ============
-  # macOS 跑時約 2 min，PR 也一起跑以求跨平台完整回歸
+  # 只在 PR / 手動觸發時跑（PR gating + 跨平台回歸）。
+  # push main 不跑：PR up-to-date 已驗證；release safety net 在 release.yml。
   test:
     name: Test on ${{ matrix.os }}
+    if: github.event_name != 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -119,9 +124,11 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
-  # ============ Build Check (PR + push main，不發佈) ============
+  # ============ Build Check (PR / 手動觸發，不發佈) ============
+  # 只在 PR / 手動觸發時跑；push main 後 release.yml 會在 publish 前再 build 一次。
   build-check:
     name: Build Check
+    if: github.event_name != 'push'
     needs: [lint, test]
     runs-on: ubuntu-latest
     steps:

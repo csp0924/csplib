@@ -3,8 +3,7 @@ tags:
   - type/moc
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
-version: 0.6.1
+updated: 2026-04-20
 ---
 
 # Development
@@ -19,6 +18,7 @@ version: 0.6.1
 | [[Testing]] | 測試指南 |
 | [[Linting]] | Linting 與格式化 |
 | [[CI-CD Pipeline]] | CI/CD 流程 |
+| [[Release Recovery]] | release.yml 失敗恢復 SOP |
 
 ## 相關資源
 
