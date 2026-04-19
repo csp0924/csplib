@@ -4,6 +4,14 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.5](https://github.com/csp0924/csplib/compare/v0.8.4...v0.8.5) (2026-04-19)
+
+
+### Fixed
+
+* **ci:** CITATION.cff date 同步改推 Release PR branch 避開 main protection ([#83](https://github.com/csp0924/csplib/issues/83)) ([928fd64](https://github.com/csp0924/csplib/commit/928fd646a18e533b429d6528bb188382be149959))
+* **ci:** release.yml 支援 dispatch 舊 tag（救 v0.8.4 情境） ([#86](https://github.com/csp0924/csplib/issues/86)) ([9f622ff](https://github.com/csp0924/csplib/commit/9f622ff36bc140a791d32f5312c34c11777051ee))
+
 ## [0.8.4](https://github.com/csp0924/csplib/compare/v0.8.3...v0.8.4) (2026-04-19)
 
 
