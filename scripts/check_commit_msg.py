@@ -8,7 +8,7 @@ Format: <type>(<scope>)?: <description>
   - type: feat|fix|docs|style|refactor|test|ci|chore|perf|build|revert
   - `!` 後綴表 breaking change（如 `feat!:` 或 `feat(controller)!:`）
   - scope: optional，必須為模組名（白名單），禁止版號
-  - description: 1-72 chars total for first line
+  - description: 首行最長 100 chars（見下方 MAX_LENGTH 註解）
 
 差異 vs 舊版：
   1. scope 白名單化 — 禁用版號 scope（`feat(v0.8.0):` 會被 release-please 當成
@@ -25,7 +25,14 @@ import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-MAX_LENGTH = 72
+# 首行長度上限。Git 社群傳統是 72（配合 `git log --oneline` 單行顯示），
+# 但中文 commit message 一個中文字在 `len()` 下即占 1 char，
+# 實務上 `fix(ci): commitlint 加入 deps-dev scope + ...` 這類中英混寫很容易破 72。
+# 取 Angular / commitlint 慣例的 100 作折衷：
+#   - 仍足夠短到 GitHub PR 標題不折行（GitHub 約於 72 才視覺截斷，但可滑看全）
+#   - 留給中文描述 + 英文識別符混寫的合理空間
+#   - 超過 100 通常代表該把細節移到 body
+MAX_LENGTH = 100
 
 ALLOWED_TYPES = [
     "feat",
