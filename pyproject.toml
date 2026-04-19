@@ -36,7 +36,7 @@ cluster = [
     "etcetra>=0.1.0,<0.2",
     "grpcio>=1.64.0,<2.0",
     "grpcio-tools>=1.64.0,<2.0",
-    "protobuf>=4.25.3,<5.0",
+    "protobuf>=4.25.3,<8.0",
 ]
 gui = [
     "fastapi>=0.115.0,<0.137",
@@ -87,7 +87,7 @@ dev = [
 override-dependencies = [
     "grpcio>=1.64.0,<2.0",
     "grpcio-tools>=1.64.0,<2.0",
-    "protobuf>=4.25.3,<5.0",
+    "protobuf>=4.25.3,<8.0",
 ]
 
 # =============== Ruff (Linting + Formatting) ===============
