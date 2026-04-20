@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -26,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 from csp_lib.core import get_logger
 from csp_lib.core.errors import ConfigurationError
 
-from .reconciler import ReconcilerStatus
+from .reconciler import ReconcilerMixin
 
 if TYPE_CHECKING:
     from .command_router import CommandRouter
@@ -53,7 +51,7 @@ class DriftTolerance:
 _DEFAULT_TOLERANCE: DriftTolerance = DriftTolerance(absolute=0.0, relative=0.01)
 
 
-class SetpointDriftReconciler:
+class SetpointDriftReconciler(ReconcilerMixin):
     """偵測 command setpoint 被外部覆蓋並自動復原。
 
     實作 Reconciler Protocol（``name`` / ``status`` / ``reconcile_once``）。
@@ -90,74 +88,45 @@ class SetpointDriftReconciler:
         self._registry = registry
         self._tolerance = tolerance
         self._per_device: Mapping[str, DriftTolerance] = MappingProxyType(dict(per_device_tolerance or {}))
-        self._name = name
-        self._run_count = 0
-        self._status: ReconcilerStatus = ReconcilerStatus.empty(name)
+        self._init_reconciler(name)
 
     # ---- Reconciler Protocol ----
+    #
+    # name / status / reconcile_once 由 ReconcilerMixin 提供。
 
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def status(self) -> ReconcilerStatus:
-        return self._status
-
-    async def reconcile_once(self) -> ReconcilerStatus:
-        """掃描所有被追蹤 device，偵測 drift 並重寫。
-
-        契約：不得 raise（例外一律 catch 並記錄於 ``status.last_error``）。
-        """
-        self._run_count += 1
+    async def _reconcile_work(self) -> Mapping[str, Any] | None:
+        """掃描所有被追蹤 device，偵測 drift 並重寫。回傳 detail dict。"""
         drift_count = 0
         devices_fixed: list[str] = []
-        last_error: str | None = None
 
-        try:
-            for device_id in self._router.get_tracked_device_ids():
-                snapshot = self._router.get_last_written(device_id)
-                if not snapshot:
+        for device_id in self._router.get_tracked_device_ids():
+            snapshot = self._router.get_last_written(device_id)
+            if not snapshot:
+                continue
+            device = self._registry.get_device(device_id)
+            if device is None or not device.is_responsive:
+                continue
+            latest = device.latest_values
+            tol = self._per_device.get(device_id, self._tolerance)
+            for point_name, desired in snapshot.items():
+                if point_name not in latest:
+                    # 尚未讀到值，skip 本輪
                     continue
-                device = self._registry.get_device(device_id)
-                if device is None or not device.is_responsive:
+                actual = latest[point_name]
+                if not self._is_drift(desired, actual, tol):
                     continue
-                latest = device.latest_values
-                tol = self._per_device.get(device_id, self._tolerance)
-                for point_name, desired in snapshot.items():
-                    if point_name not in latest:
-                        # 尚未讀到值，skip 本輪
-                        continue
-                    actual = latest[point_name]
-                    if not self._is_drift(desired, actual, tol):
-                        continue
-                    drift_count += 1
-                    ok = await self._router.try_write_single(device_id, point_name, desired)
-                    if ok:
-                        devices_fixed.append(f"{device_id}.{point_name}")
-                        logger.info(
-                            f"Setpoint drift fixed: {device_id}.{point_name} actual={actual!r} -> desired={desired!r}"
-                        )
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            last_error = repr(e)
-            logger.opt(exception=True).warning("SetpointDriftReconciler.reconcile_once raised, captured in status")
+                drift_count += 1
+                ok = await self._router.try_write_single(device_id, point_name, desired)
+                if ok:
+                    devices_fixed.append(f"{device_id}.{point_name}")
+                    logger.info(
+                        f"Setpoint drift fixed: {device_id}.{point_name} actual={actual!r} -> desired={desired!r}"
+                    )
 
-        self._status = ReconcilerStatus(
-            name=self._name,
-            last_run_at=time.monotonic(),
-            last_error=last_error,
-            run_count=self._run_count,
-            healthy=last_error is None,
-            detail=MappingProxyType(
-                {
-                    "drift_count": drift_count,
-                    "devices_fixed": tuple(devices_fixed),
-                }
-            ),
-        )
-        return self._status
+        return {
+            "drift_count": drift_count,
+            "devices_fixed": tuple(devices_fixed),
+        }
 
     @staticmethod
     def _is_drift(desired: Any, actual: Any, tol: DriftTolerance) -> bool:

@@ -12,10 +12,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+import time
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
+
+from csp_lib.core import get_logger
+
+logger = get_logger(__name__)
 
 
 def _empty_mapping() -> Mapping[str, Any]:
@@ -97,7 +103,81 @@ class Reconciler(Protocol):
         ...
 
 
+class ReconcilerMixin:
+    """共用 ``reconcile_once`` scaffold：
+
+      - 遞增 ``_run_count``
+      - 執行子類 ``_reconcile_work()``（可選回傳 detail dict）
+      - 吞 Exception 並記錄於 ``last_error``；CancelledError 仍傳播
+      - 組裝 ``ReconcilerStatus`` 寫入 ``self._status``
+
+    子類約定：
+      - ``__init__`` 呼叫 ``self._init_reconciler(name)``
+      - 實作 ``async def _reconcile_work() -> Mapping[str, Any] | None``
+        回傳的 dict 會放進 ``status.detail``；None → 空 detail
+
+    契約：``reconcile_once`` 不得 raise（CancelledError 除外）。
+    """
+
+    _name: str
+    _run_count: int
+    _status: ReconcilerStatus
+
+    def _init_reconciler(self, name: str) -> None:
+        self._name = name
+        self._run_count = 0
+        self._status = ReconcilerStatus.empty(name)
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def status(self) -> ReconcilerStatus:
+        return self._status
+
+    async def _reconcile_work(self) -> Mapping[str, Any] | None:
+        """子類必須覆寫；可選回傳 detail dict 寫入 status.detail。"""
+        raise NotImplementedError
+
+    async def reconcile_once(self) -> ReconcilerStatus:
+        return await _run_reconcile_scaffold(
+            self,
+            self._reconcile_work,
+        )
+
+
+async def _run_reconcile_scaffold(
+    holder: ReconcilerMixin,
+    work: Callable[[], Awaitable[Mapping[str, Any] | None]],
+) -> ReconcilerStatus:
+    """ReconcilerMixin.reconcile_once 的純實作（獨立函式便於 unit test）。"""
+    holder._run_count += 1
+    last_error: str | None = None
+    detail: Mapping[str, Any] = {}
+    try:
+        result = await work()
+        if result is not None:
+            detail = result
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        last_error = repr(e)
+        logger.opt(exception=True).warning(f"{type(holder).__name__}.reconcile_once raised, captured in status")
+
+    holder._status = ReconcilerStatus(
+        name=holder._name,
+        last_run_at=time.monotonic(),
+        last_error=last_error,
+        run_count=holder._run_count,
+        healthy=last_error is None,
+        detail=MappingProxyType(dict(detail)),
+    )
+    return holder._status
+
+
 __all__ = [
     "Reconciler",
+    "ReconcilerMixin",
     "ReconcilerStatus",
 ]

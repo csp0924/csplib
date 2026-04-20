@@ -28,13 +28,13 @@ from __future__ import annotations
 
 import asyncio
 import time
-from types import MappingProxyType
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core._time_anchor import next_tick_delay
 
-from .reconciler import ReconcilerStatus
+from .reconciler import ReconcilerMixin
 
 if TYPE_CHECKING:
     from .command_router import CommandRouter
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class CommandRefreshService(AsyncLifecycleMixin):
+class CommandRefreshService(ReconcilerMixin, AsyncLifecycleMixin):
     """命令刷新（reconciler）服務
 
     每 ``interval`` 秒從 ``CommandRouter`` 讀取 desired state，並對每個
@@ -72,14 +72,11 @@ class CommandRefreshService(AsyncLifecycleMixin):
         self._router = router
         self._interval = interval
         self._device_filter = device_filter
-        self._name = name
 
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
 
-        # Reconciler Protocol 狀態
-        self._run_count = 0
-        self._status: ReconcilerStatus = ReconcilerStatus.empty(name)
+        self._init_reconciler(name)
 
     # ---- Lifecycle ----
 
@@ -108,41 +105,13 @@ class CommandRefreshService(AsyncLifecycleMixin):
         return self._task is not None and not self._task.done()
 
     # ---- Reconciler Protocol ----
+    #
+    # name / status / reconcile_once 由 ReconcilerMixin 提供；本類只覆寫 work。
 
-    @property
-    def name(self) -> str:
-        """Reconciler 穩定識別名。"""
-        return self._name
-
-    @property
-    def status(self) -> ReconcilerStatus:
-        """最新的 ReconcilerStatus 唯讀視圖。"""
-        return self._status
-
-    async def reconcile_once(self) -> ReconcilerStatus:
-        """執行一次 desired → actual 收斂，回傳本次 status。
-
-        契約：不得 raise（例外一律 catch 並記錄於 ``status.last_error``）。
-        """
-        self._run_count += 1
-        last_error: str | None = None
-        try:
-            await self._refresh_once()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            last_error = repr(e)
-            logger.opt(exception=True).warning("CommandRefreshService.reconcile_once raised, captured in status")
-
-        self._status = ReconcilerStatus(
-            name=self._name,
-            last_run_at=time.monotonic(),
-            last_error=last_error,
-            run_count=self._run_count,
-            healthy=last_error is None,
-            detail=MappingProxyType({}),
-        )
-        return self._status
+    async def _reconcile_work(self) -> Mapping[str, Any] | None:
+        """執行一次 desired → actual 收斂；無 detail。"""
+        await self._refresh_once()
+        return None
 
     # ---- 內部實作 ----
 
