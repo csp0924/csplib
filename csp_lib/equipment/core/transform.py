@@ -254,9 +254,9 @@ class ByteExtractTransform:
 @dataclass(frozen=True, slots=True)
 class PowerFactorTransform:
     """
-    功率因數解碼轉換（Schneider PM5350 專用）
+    功率因數解碼轉換（部分電錶採用此四象限編碼）
 
-    PM5350 使用特殊編碼表示功率因數與相位：
+    部分電錶使用特殊編碼表示功率因數與相位：
         - Q1 (0° ~ 90°):   0 < x < 1   → PF = x, lagging
         - Q2 (90° ~ 180°): -2 < x < -1 → PF = -2 - x, leading
         - Q3 (180° ~ 270°): -1 < x < 0 → PF = x, lagging

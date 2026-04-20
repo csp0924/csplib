@@ -95,7 +95,7 @@ async with uploader:
 
 ### 搭配 LocalBufferedUploader 實現資料不遺失（v0.8.2）
 
-部署於 WAN 不穩定環境（如日本案場）時，可注入 `LocalBufferedUploader` 確保 MongoDB 斷線期間資料不遺失：
+部署於 WAN 不穩定環境時，可注入 `LocalBufferedUploader` 確保 MongoDB 斷線期間資料不遺失：
 
 ```python
 from csp_lib.mongo import MongoBatchUploader

@@ -24,6 +24,7 @@ CSP Common Library 是一個模組化的 Python 工具集，專為**能源管理
 - **Event-driven Trigger**：`SystemController.attach_read_trigger(device_id)` 綁定設備讀完即觸發策略，搭配 TRIGGERED/HYBRID 模式消除 phase drift（v0.8.0）
 - **ContextMapping param_key**：直接從 `RuntimeParameters` 注入 context 欄位，不需手動搬入 extra（v0.8.0）
 - **Fluent Builder**：`SystemControllerConfig.builder()` 鏈式配置
+- **Operator Pattern**：`Reconciler` Protocol + `TypeRegistry` + YAML Site Manifest，K8s 風宣告式站點配置與自我修復調和迴圈（v0.9.0）
 - **按需安裝**：Optional dependencies 避免引入不必要的套件
 
 ## 安裝
@@ -40,6 +41,7 @@ pip install csp0924_lib[redis]      # Redis（含 Sentinel + TLS）
 pip install csp0924_lib[monitor]    # 系統監控
 pip install csp0924_lib[cluster]    # 分散式叢集
 pip install csp0924_lib[gui]        # FastAPI Web GUI
+pip install csp0924_lib[manifest]   # YAML Site Manifest（pyyaml）
 pip install csp0924_lib[all]        # 所有功能
 ```
 

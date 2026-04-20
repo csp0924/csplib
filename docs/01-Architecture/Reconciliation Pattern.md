@@ -4,8 +4,8 @@ tags:
   - layer/integration
   - status/complete
 created: 2026-04-17
-updated: 2026-04-17
-version: ">=0.8.1"
+updated: 2026-04-20
+version: ">=0.9.0"
 ---
 
 # Reconciliation Pattern（調和器模式）
@@ -83,26 +83,33 @@ async def _run(self) -> None:
 
 Work-first 語義（與 `StrategyExecutor` v0.8.0 相同）：服務啟動後**立即**執行第一次 reconcile，再排程後續週期。這確保 `SystemController._on_start` 完成後立即恢復 desired state，而不是等一個 interval 後才開始。
 
-## 為 v0.9.x Reconciler Protocol 鋪路
+## v0.9.0 Reconciler Protocol（已實作）
 
-`CommandRefreshService` 是第一個 reconciler，但未來可能需要更多：
-
-| 潛在 Reconciler | Desired State | 說明 |
-|----------------|---------------|------|
-| `CommandRefreshService`（v0.8.1）| `CommandRouter._last_written` | setpoint 維持 |
-| `AlarmStateReconciler`（規劃中） | AlarmDB 中的告警記錄 | 與設備端告警位元同步 |
-| `ConfigReconciler`（規劃中） | `RuntimeParameters` snapshot | 運行期參數持久化恢復 |
-
-v0.9.x 計畫抽取 `Reconciler` Protocol，讓 `SystemController` 以統一的生命週期管理多個 reconciler：
+v0.9.0 正式抽取 `Reconciler` Protocol，讓 `SystemController` 以統一的生命週期管理多個 reconciler。`CommandRefreshService` 與 `HeartbeatService` 均已實作此 Protocol（相容保留舊 API）：
 
 ```python
-# 規劃中（v0.9.x）
-class Reconciler(Protocol):
-    async def reconcile_once(self) -> None: ...
+from csp_lib.integration import Reconciler, ReconcilerStatus
 
-class ReconcilerManager(AsyncLifecycleMixin):
-    def register(self, reconciler: Reconciler, interval: float) -> None: ...
+# @runtime_checkable Protocol
+class Reconciler(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def status(self) -> ReconcilerStatus: ...
+
+    async def reconcile_once(self) -> ReconcilerStatus: ...
 ```
+
+三個現行 Reconciler 實作：
+
+| Reconciler | Desired State | 引入版本 |
+|-----------|---------------|---------|
+| `CommandRefreshService` | `CommandRouter._last_written`（setpoint 維持）| v0.8.1（Protocol: v0.9.0）|
+| `HeartbeatService` | `HeartbeatConfig`（心跳值）| v0.8.1（Protocol: v0.9.0）|
+| `SetpointDriftReconciler` | `device.latest_values`（drift 偵測修正）| v0.9.0 |
+
+詳見 [[Operator Pattern]]（K8s 風 Operator Pattern 完整說明）與 [[Site Manifest]]（YAML 驅動配置）。
 
 ## 與 csp_lib 其他時間錨定元件的一致性
 

@@ -93,7 +93,7 @@ asyncio.run(main())
 }
 ```
 
-- `type`：固定值 `"aggregated_alarm"`（相容日本 demo）
+- `type`：固定值 `"aggregated_alarm"`
 - `active`：布林，聚合後的告警旗標
 - `sources`：目前 active 的 source 名稱列表（排序後）
 - `timestamp`：UTC ISO 8601 格式

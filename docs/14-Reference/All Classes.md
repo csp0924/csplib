@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-18
-version: ">=0.8.2"
+updated: 2026-04-20
+version: ">=0.9.0"
 
 ---
 
@@ -167,6 +167,28 @@ SORT file.name ASC
 |------|------|
 | [[DeviceRegistry\|StatusChangeCallback]] | `Callable[[str, bool], None]`：設備回應狀態變化回呼簽名（v0.8.2） |
 | [[PowerDistributor\|SOCSource]] | `Callable[[DeviceSnapshot], float \| None]`：自訂 SOC 取值函式簽名（v0.8.2） |
+
+**快速參考（v0.9.0 新增）：**
+
+| 名稱 | 說明 |
+|------|------|
+| [[Operator Pattern\|Reconciler]] | `@runtime_checkable` Reconciler Protocol — name / status / reconcile_once（v0.9.0） |
+| [[Operator Pattern\|ReconcilerStatus]] | reconcile 執行狀態 frozen dataclass，含 `.empty(name)` classmethod（v0.9.0） |
+| [[Operator Pattern\|SetpointDriftReconciler]] | 偵測 desired vs actual setpoint drift 並修正寫入的 Reconciler（v0.9.0） |
+| [[Operator Pattern\|DriftTolerance]] | setpoint drift 容忍範圍配置 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|TypeRegistry]] | Generic[T] kind → class 映射表，Thread-safe（v0.9.0） |
+| [[Site Manifest\|device_type_registry]] | 全域設備型別 TypeRegistry singleton（v0.9.0） |
+| [[Site Manifest\|strategy_type_registry]] | 全域策略型別 TypeRegistry singleton（v0.9.0） |
+| [[Site Manifest\|SiteManifest]] | 站點宣告式配置頂層 frozen dataclass（apiVersion: csp_lib/v1，v0.9.0） |
+| [[Site Manifest\|ManifestMetadata]] | manifest metadata 段落 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|SiteSpec]] | manifest spec 段落 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|DeviceSpec]] | 單一設備規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|StrategySpec]] | 單一策略規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|ReconcilerSpec]] | 單一 reconciler 規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|BoundDeviceSpec]] | 繫結到 class 後的設備規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|BoundStrategySpec]] | 繫結到 class 後的策略規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|BoundReconcilerSpec]] | 繫結到 class 後的 reconciler 規格 frozen dataclass（v0.9.0） |
+| [[Site Manifest\|ManifestBindResult]] | `apply_manifest_to_builder` 回傳結果 frozen dataclass（v0.9.0） |
 
 ### Alarm（v0.8.2）
 

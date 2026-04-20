@@ -21,7 +21,7 @@ In-process 事件驅動告警聚合器，多 source OR 聚合。
 
 典型使用情境：
 
-- **日本 demo 多 node 聯動停機**：本機任何設備告警或 gateway watchdog timeout → `AlarmAggregator` 偵測到 → `RedisAlarmPublisher` 發佈到 `channel:gateway:alarm` → 其他 node 的 `RedisAlarmSource` 注入 → 各自 `AlarmAggregator` 旗標變化 → 整廠停機
+- **多站聯動停機**：本機任何設備告警或 gateway watchdog timeout → `AlarmAggregator` 偵測到 → `RedisAlarmPublisher` 發佈到 `channel:gateway:alarm` → 其他 node 的 `RedisAlarmSource` 注入 → 各自 `AlarmAggregator` 旗標變化 → 整廠停機
 - **本機 in-process 策略鎖定**：`on_change` 直接呼叫 `mode_manager.push_override(...)` 強制 RampStop
 
 ### Thread Safety
@@ -69,7 +69,7 @@ agg.unbind("pcs_b")
 
 ## Common Patterns
 
-### 日本 demo：單廠本機 + Redis 跨 node
+### 多站同步範例：單廠本機 + Redis 跨 node
 
 ```python
 from csp_lib.alarm import AlarmAggregator, WatchdogProtocol

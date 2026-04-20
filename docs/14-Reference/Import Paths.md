@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-18
-version: ">=0.8.2"
+updated: 2026-04-20
+version: ">=0.9.0"
 
 ---
 
@@ -367,6 +367,32 @@ from csp_lib.integration import (
     # 命令刷新（v0.8.1）
     CommandRefreshService,                    # v0.8.1 — reconciler 服務
     CommandRefreshConfig,                     # v0.8.1 — reconciler 配置
+    # Reconciler Protocol（v0.9.0）
+    Reconciler,                               # v0.9.0 — @runtime_checkable Reconciler Protocol
+    ReconcilerStatus,                         # v0.9.0 — reconcile 執行狀態 frozen dataclass
+    # TypeRegistry（v0.9.0）
+    TypeRegistry,                             # v0.9.0 — Generic[T] kind → class 映射表
+    device_type_registry,                     # v0.9.0 — 全域設備型別 singleton
+    strategy_type_registry,                   # v0.9.0 — 全域策略型別 singleton
+    register_device_type,                     # v0.9.0 — @register_device_type("kind") decorator
+    register_strategy_type,                   # v0.9.0 — @register_strategy_type("kind") decorator
+    # Site Manifest（v0.9.0）
+    SiteManifest,                             # v0.9.0 — 站點宣告式配置 frozen dataclass
+    ManifestMetadata,                         # v0.9.0 — metadata 段落 frozen dataclass
+    SiteSpec,                                 # v0.9.0 — spec 段落 frozen dataclass
+    DeviceSpec,                               # v0.9.0 — 單一設備規格 frozen dataclass
+    StrategySpec,                             # v0.9.0 — 單一策略規格 frozen dataclass
+    ReconcilerSpec,                           # v0.9.0 — 單一 reconciler 規格 frozen dataclass
+    load_manifest,                            # v0.9.0 — 載入 YAML/dict 回傳 SiteManifest
+    # ManifestBinder（v0.9.0）
+    BoundDeviceSpec,                          # v0.9.0 — 繫結後的設備規格 frozen dataclass
+    BoundStrategySpec,                        # v0.9.0 — 繫結後的策略規格 frozen dataclass
+    BoundReconcilerSpec,                      # v0.9.0 — 繫結後的 reconciler 規格 frozen dataclass
+    ManifestBindResult,                       # v0.9.0 — apply_manifest_to_builder 回傳結果
+    apply_manifest_to_builder,                # v0.9.0 — 把 SiteManifest 繫結到 Builder
+    # SetpointDriftReconciler（v0.9.0）
+    DriftTolerance,                           # v0.9.0 — setpoint drift 容忍範圍 frozen dataclass
+    SetpointDriftReconciler,                  # v0.9.0 — 偵測並修正 setpoint drift 的 Reconciler
     # 功率分配器（v0.4.2）
     DeviceSnapshot,
     PowerDistributor,
