@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -32,13 +31,16 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# Bound*Spec 只保留「解析後才出現」的資訊（cls）與原始 spec（source），
+# 避免把 source.name / source.config 再複製一份造成雙來源真相。
+# 呼叫端如需 name / config 請透過 bound.source.name / bound.source.config 取用。
+
+
 @dataclass(frozen=True, slots=True)
 class BoundDeviceSpec:
     """解析後的 device spec：kind 已對映到 class，但尚未 instantiate。"""
 
-    name: str
     cls: type["AsyncModbusDevice"]
-    config: Mapping[str, Any]
     source: DeviceSpec
 
 
@@ -46,9 +48,7 @@ class BoundDeviceSpec:
 class BoundStrategySpec:
     """解析後的 strategy spec：kind 已對映到 class，但尚未 instantiate。"""
 
-    name: str
     cls: type["Strategy"]
-    config: Mapping[str, Any]
     source: StrategySpec
 
 
@@ -56,13 +56,10 @@ class BoundStrategySpec:
 class BoundReconcilerSpec:
     """未被 builder fluent method 消化的 reconciler spec。
 
-    SystemController 啟動流程可依 ``kind`` 自行實例化（例如 Heartbeat、
+    SystemController 啟動流程可依 ``source.kind`` 自行實例化（例如 Heartbeat、
     SetpointDrift 等進階 reconciler）。
     """
 
-    kind: str
-    name: str
-    config: Mapping[str, Any]
     source: ReconcilerSpec
 
 
@@ -114,7 +111,7 @@ def apply_manifest_to_builder(
     for rec in manifest.spec.reconcilers:
         builder_method_name = _BUILTIN_RECONCILER_DISPATCH.get(rec.kind)
         if builder_method_name is None:
-            unbound_reconcilers.append(BoundReconcilerSpec(kind=rec.kind, name=rec.name, config=rec.config, source=rec))
+            unbound_reconcilers.append(BoundReconcilerSpec(source=rec))
             continue
         method = getattr(builder, builder_method_name, None)
         if method is None:
@@ -142,7 +139,7 @@ def _resolve_device(spec: DeviceSpec, registry: TypeRegistry["AsyncModbusDevice"
         cls = registry.get(spec.kind)
     except ConfigurationError as e:
         raise ConfigurationError(f"Manifest device[{spec.name!r}]: {e}") from e
-    return BoundDeviceSpec(name=spec.name, cls=cls, config=spec.config, source=spec)
+    return BoundDeviceSpec(cls=cls, source=spec)
 
 
 def _resolve_strategy(spec: StrategySpec, registry: TypeRegistry["Strategy"]) -> BoundStrategySpec:
@@ -150,7 +147,7 @@ def _resolve_strategy(spec: StrategySpec, registry: TypeRegistry["Strategy"]) ->
         cls = registry.get(spec.kind)
     except ConfigurationError as e:
         raise ConfigurationError(f"Manifest strategy[{spec.name!r}]: {e}") from e
-    return BoundStrategySpec(name=spec.name, cls=cls, config=spec.config, source=spec)
+    return BoundStrategySpec(cls=cls, source=spec)
 
 
 __all__ = [

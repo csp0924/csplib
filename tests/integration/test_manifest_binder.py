@@ -105,9 +105,9 @@ class TestResolveDevices:
         assert len(result.devices) == 1
         bound = result.devices[0]
         assert isinstance(bound, BoundDeviceSpec)
-        assert bound.name == "dev1"
+        assert bound.source.name == "dev1"
         assert bound.cls is _DummyDevice
-        assert bound.config["host"] == "1.2.3.4"
+        assert bound.source.config["host"] == "1.2.3.4"
         assert bound.source.kind == "MyDev"
 
     def test_unknown_device_kind_raises_with_device_name(self):
@@ -144,7 +144,7 @@ class TestResolveDevices:
             device_registry=dev_reg,
             strategy_registry=strat_reg,
         )
-        assert [d.name for d in result.devices] == ["a1", "b1", "a2"]
+        assert [d.source.name for d in result.devices] == ["a1", "b1", "a2"]
         assert result.devices[0].cls is _DummyDevice
         assert result.devices[1].cls is _DummyStrategy
         assert result.devices[2].cls is _DummyDevice
@@ -167,9 +167,9 @@ class TestResolveStrategies:
         assert len(result.strategies) == 1
         bound = result.strategies[0]
         assert isinstance(bound, BoundStrategySpec)
-        assert bound.name == "strat1"
+        assert bound.source.name == "strat1"
         assert bound.cls is _DummyStrategy
-        assert bound.config["p"] == 100
+        assert bound.source.config["p"] == 100
 
     def test_unknown_strategy_kind_raises_with_strategy_name(self):
         dev_reg, strat_reg = _mk_registries()
@@ -278,7 +278,7 @@ class TestUnknownReconcilerKind:
             strategy_registry=strat_reg,
         )
         assert len(result.reconcilers) == 2
-        kinds = [r.kind for r in result.reconcilers]
+        kinds = [r.source.kind for r in result.reconcilers]
         assert "Heartbeat" in kinds
         assert "SetpointDrift" in kinds
         # 未知 kind 不會呼叫 builder.command_refresh
@@ -298,9 +298,9 @@ class TestUnknownReconcilerKind:
         assert len(result.reconcilers) == 1
         bound = result.reconcilers[0]
         assert isinstance(bound, BoundReconcilerSpec)
-        assert bound.kind == "Custom"
-        assert bound.name == "c1"
-        assert dict(bound.config) == cfg
+        assert bound.source.kind == "Custom"
+        assert bound.source.name == "c1"
+        assert dict(bound.source.config) == cfg
 
     def test_mix_builtin_and_unknown(self):
         """builtin 呼 builder method；unknown 保留於 unbound。"""
@@ -319,7 +319,7 @@ class TestUnknownReconcilerKind:
             strategy_registry=strat_reg,
         )
         assert len(builder.command_refresh_calls) == 1
-        assert [r.kind for r in result.reconcilers] == ["MysteryRec"]
+        assert [r.source.kind for r in result.reconcilers] == ["MysteryRec"]
 
 
 # ─────────────── Default registry fallback ───────────────
@@ -362,21 +362,21 @@ class TestBindResultFrozen:
 
     def test_bound_device_spec_frozen(self):
         spec = DeviceSpec(kind="A", name="a")
-        bound = BoundDeviceSpec(name="a", cls=_DummyDevice, config={}, source=spec)
+        bound = BoundDeviceSpec(cls=_DummyDevice, source=spec)
         with pytest.raises(FrozenInstanceError):
-            bound.name = "b"  # type: ignore[misc]
+            bound.cls = _DummyStrategy  # type: ignore[misc]
 
     def test_bound_strategy_spec_frozen(self):
         spec = StrategySpec(kind="A", name="a")
-        bound = BoundStrategySpec(name="a", cls=_DummyStrategy, config={}, source=spec)
+        bound = BoundStrategySpec(cls=_DummyStrategy, source=spec)
         with pytest.raises(FrozenInstanceError):
             bound.cls = _DummyDevice  # type: ignore[misc]
 
     def test_bound_reconciler_spec_frozen(self):
         spec = ReconcilerSpec(kind="K", name="n")
-        bound = BoundReconcilerSpec(kind="K", name="n", config={}, source=spec)
+        bound = BoundReconcilerSpec(source=spec)
         with pytest.raises(FrozenInstanceError):
-            bound.kind = "other"  # type: ignore[misc]
+            bound.source = spec  # type: ignore[misc]
 
 
 # ─────────────── 空 manifest ───────────────

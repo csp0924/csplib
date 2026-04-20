@@ -90,7 +90,7 @@ class TestFromManifestDict:
         assert len(builder.manifest_devices) == 1
         bound_dev = builder.manifest_devices[0]
         assert isinstance(bound_dev, BoundDeviceSpec)
-        assert bound_dev.name == "dev1"
+        assert bound_dev.source.name == "dev1"
         assert bound_dev.cls is _DummyDevice
 
         assert len(builder.manifest_strategies) == 1
@@ -225,7 +225,7 @@ class TestPropertiesAreTuples:
         assert len(builder.manifest_reconcilers) == 1
         bound = builder.manifest_reconcilers[0]
         assert isinstance(bound, BoundReconcilerSpec)
-        assert bound.kind == "Heartbeat"
+        assert bound.source.kind == "Heartbeat"
 
 
 # ─────────────── 不合法 manifest propagation ───────────────
@@ -300,7 +300,7 @@ spec:
         )
         assert builder.manifest_source is not None
         assert builder.manifest_source.metadata.name == "yaml-site"
-        assert builder.manifest_devices[0].name == "d-from-yaml"
+        assert builder.manifest_devices[0].source.name == "d-from-yaml"
 
 
 # ─────────────── ReconcilerSpec 不合法 kwargs ───────────────
