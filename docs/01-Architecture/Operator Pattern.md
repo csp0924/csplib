@@ -86,7 +86,7 @@ class ReconcilerStatus:
     last_error: str | None             # 最近一次錯誤訊息；None 表示成功
     run_count: int                     # 總執行次數
     healthy: bool                      # True = 最近一次執行無錯誤
-    detail: str                        # 可選的補充說明（如「skipped: paused」）
+    detail: Mapping[str, Any]          # reconciler-specific 唯讀 metadata（預設空 MappingProxyType）
 ```
 
 工廠方法：

@@ -36,50 +36,53 @@ metadata:
 
 spec:
   devices:
-    - id: pcs_main
+    - name: pcs_main
       kind: ExamplePCS            # 對應 TypeRegistry 中 @register_device_type("ExamplePCS")
-      host: 192.168.1.10
-      port: 502
-      unit_id: 1
       config:
+        host: 192.168.1.10
+        port: 502
+        unit_id: 1
         read_interval: 1.0
         reconnect_delay: 5.0
 
-    - id: bms_rack1
+    - name: bms_rack1
       kind: CustomBMS
-      host: 192.168.1.20
-      port: 502
-      unit_id: 2
       config:
+        host: 192.168.1.20
+        port: 502
+        unit_id: 2
         read_interval: 2.0
 
-    - id: meter_grid
+    - name: meter_grid
       kind: ExampleMeter         # 對應 TypeRegistry 中 @register_device_type("ExampleMeter")
-      host: 192.168.1.30
-      port: 502
-      unit_id: 3
+      config:
+        host: 192.168.1.30
+        port: 502
+        unit_id: 3
 
   strategies:
-    - mode: pq_control
+    - name: pq_control
       kind: PQModeStrategy    # 對應 TypeRegistry 中 @register_strategy_type("PQModeStrategy")
-      priority: 100
       config:
+        priority: 100
         p_kw: 0.0
         q_kvar: 0.0
 
-    - mode: droop_control
+    - name: droop_control
       kind: DroopStrategy
-      priority: 80
       config:
+        priority: 80
         droop_gain: 0.05
 
   reconcilers:
-    - kind: CommandRefresh    # 內建 kind，直接映射 builder.command_refresh(...)
+    - name: command_refresh
+      kind: CommandRefresh    # 內建 kind，直接映射 builder.command_refresh(...)
       config:
         interval_seconds: 1.0
         enabled: true
 
-    - kind: SetpointDrift     # 自訂 Reconciler kind
+    - name: setpoint_drift
+      kind: SetpointDrift     # 自訂 Reconciler kind
       config:
         tolerance_absolute: 5.0
         tolerance_relative: 0.02
@@ -213,10 +216,10 @@ config = (
 
 | Property | 型別 | 說明 |
 |----------|------|------|
-| `manifest_source` | `str \| None` | manifest 檔案路徑（若從 Path 載入）|
-| `manifest_devices` | `list[BoundDeviceSpec]` | 已成功繫結到 class 的設備規格 |
-| `manifest_strategies` | `list[BoundStrategySpec]` | 已成功繫結到 class 的策略規格 |
-| `manifest_reconcilers` | `list[BoundReconcilerSpec]` | 未被內建處理的自訂 Reconciler 規格 |
+| `manifest_source` | `SiteManifest \| None` | 已 parse 的 manifest（未透過 `from_manifest` 建構時為 `None`）|
+| `manifest_devices` | `tuple[BoundDeviceSpec, ...]` | 已成功繫結到 class 的設備規格 |
+| `manifest_strategies` | `tuple[BoundStrategySpec, ...]` | 已成功繫結到 class 的策略規格 |
+| `manifest_reconcilers` | `tuple[BoundReconcilerSpec, ...]` | 未被內建處理的自訂 Reconciler 規格 |
 
 ## ManifestBindResult：繫結結果
 
@@ -225,10 +228,9 @@ from csp_lib.integration import apply_manifest_to_builder, ManifestBindResult
 
 result: ManifestBindResult = apply_manifest_to_builder(builder, manifest)
 
-print(result.bound_devices)       # list[BoundDeviceSpec]
-print(result.bound_strategies)    # list[BoundStrategySpec]
-print(result.bound_reconcilers)   # list[BoundReconcilerSpec]（已被 builder 消化的 built-in）
-print(result.manifest_reconcilers)  # list[BoundReconcilerSpec]（留給使用者自行處理）
+print(result.devices)       # tuple[BoundDeviceSpec, ...]
+print(result.strategies)    # tuple[BoundStrategySpec, ...]
+print(result.reconcilers)   # tuple[BoundReconcilerSpec, ...]（未被內建處理的自訂 kind）
 ```
 
 ### 內建 Reconciler kind
@@ -274,9 +276,9 @@ builder = SystemControllerConfigBuilder.from_manifest(manifest)
 config = builder.protect(...).build()
 
 # 3. 取得未處理的 reconciler specs，自行實例化
-result = builder.manifest_reconcilers  # list[BoundReconcilerSpec]
+unbound_specs = builder.manifest_reconcilers  # tuple[BoundReconcilerSpec, ...]
 reconcilers = []
-for spec in result:
+for spec in unbound_specs:
     if spec.kind == "SetpointDrift":
         reconcilers.append(
             SetpointDriftReconciler(
@@ -304,7 +306,7 @@ asyncio.run(main())
 ```python
 @dataclass(frozen=True, slots=True)
 class SiteManifest:
-    api_version: str          # 必須為 "csp_lib/v1"
+    apiVersion: str           # 必須為 "csp_lib/v1"（camelCase 對齊 K8s 慣例）
     kind: str                 # 必須為 "Site"
     metadata: ManifestMetadata
     spec: SiteSpec
@@ -330,24 +332,21 @@ class SiteSpec:
 
 @dataclass(frozen=True, slots=True)
 class DeviceSpec:
-    id: str
-    kind: str
-    host: str
-    port: int
-    unit_id: int
-    config: dict[str, Any]    # 傳遞給設備類別 __init__ 的額外 kwargs
+    kind: str                 # TypeRegistry 中的設備 kind
+    name: str                 # 站內唯一識別
+    config: Mapping[str, Any] # 傳遞給設備類別 __init__ 的 kwargs（host / port / unit_id / ...）
 
 @dataclass(frozen=True, slots=True)
 class StrategySpec:
-    mode: str                 # ModeManager 中的模式名稱
     kind: str                 # TypeRegistry 中的策略 kind
-    priority: int
-    config: dict[str, Any]
+    name: str
+    config: Mapping[str, Any] # 傳遞給策略類別 __init__ 的 kwargs（priority / gains / ...）
 
 @dataclass(frozen=True, slots=True)
 class ReconcilerSpec:
-    kind: str
-    config: dict[str, Any]
+    kind: str                 # CommandRefresh（內建）或自訂 kind
+    name: str
+    config: Mapping[str, Any]
 ```
 
 ## 與 Fluent Builder 的定位比較

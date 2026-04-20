@@ -91,6 +91,8 @@ class HeartbeatService:
                 （例如 Modbus Gateway register target）。每個 target 預設
                 以共用的 ToggleGenerator 產生值。
         """
+        if interval <= 0:
+            raise ValueError(f"HeartbeatService: interval must be > 0, got {interval}")
         self._registry = registry
         self._mappings = mappings or []
         self._interval = interval

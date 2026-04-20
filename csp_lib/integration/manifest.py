@@ -21,11 +21,11 @@
 #     reconcilers:
 #       - kind: CommandRefresh
 #         name: cmd-refresh
-#         config: {interval: 1.0}
+#         config: {interval_seconds: 1.0}
 #
 # 安全：
 #   - 一律使用 yaml.safe_load（禁用 yaml.load）
-#   - pyyaml 走 lazy import（optional extra：csp_lib[manifest]）
+#   - pyyaml 走 lazy import（optional extra：csp0924_lib[manifest]）
 
 from __future__ import annotations
 
@@ -150,7 +150,7 @@ def load_manifest(source: str | Path | Mapping[str, Any]) -> SiteManifest:
         SiteManifest frozen dataclass
 
     Raises:
-        ImportError:        pyyaml 未安裝（提示 ``csp_lib[manifest]``）
+        ImportError:        pyyaml 未安裝（提示 ``csp0924_lib[manifest]``）
         ConfigurationError: apiVersion/kind 不合法、必要欄位缺失
         FileNotFoundError:  source 是 path 但檔案不存在
     """
