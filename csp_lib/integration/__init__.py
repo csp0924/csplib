@@ -62,7 +62,7 @@ from .orchestrator import (
     SystemCommandOrchestrator,
     SystemCommandResult,
 )
-from .reconciler import Reconciler, ReconcilerStatus
+from .reconciler import Reconciler, ReconcilerMixin, ReconcilerStatus
 from .registry import DeviceRegistry
 from .schema import (
     AggregateFunc,
@@ -146,6 +146,7 @@ __all__ = [
     "DeviceHeartbeatTarget",
     # Operator Pattern — Reconciler Protocol
     "Reconciler",
+    "ReconcilerMixin",
     "ReconcilerStatus",
     # Operator Pattern — TypeRegistry
     "TypeRegistry",
