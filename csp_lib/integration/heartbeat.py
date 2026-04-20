@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
@@ -172,10 +171,11 @@ class HeartbeatService(ReconcilerMixin):
     # paused 狀態視為 healthy（explicit design）：skip 實際寫入，
     # ``detail["paused"]`` 為 True 供外部觀察。
 
-    async def _reconcile_work(self) -> Mapping[str, Any] | None:
+    async def _reconcile_work(self, detail: dict[str, Any]) -> None:
+        # paused 先寫 detail，確保即使 _send_heartbeats 拋例外也保留此 flag
+        detail["paused"] = self._paused
         if not self._paused:
             await self._send_heartbeats()
-        return {"paused": self._paused}
 
     async def _run(self) -> None:
         """心跳主迴圈：work-first + 絕對時間錨定（與 CommandRefreshService 對齊）。"""

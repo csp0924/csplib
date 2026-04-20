@@ -107,14 +107,17 @@ class ReconcilerMixin:
     """共用 ``reconcile_once`` scaffold：
 
       - 遞增 ``_run_count``
-      - 執行子類 ``_reconcile_work()``（可選回傳 detail dict）
+      - 呼叫子類 ``_reconcile_work(detail)``；把 mutable dict 傳進去，
+        子類邊做邊寫入（例如 drift_count / devices_fixed / paused）
       - 吞 Exception 並記錄於 ``last_error``；CancelledError 仍傳播
+      - **detail 無論 work 成功或失敗都會快照**，子類在 raise 前寫入的
+        部分進度不會被丟掉（支援偵錯與 partial failure 觀察）
       - 組裝 ``ReconcilerStatus`` 寫入 ``self._status``
 
     子類約定：
       - ``__init__`` 呼叫 ``self._init_reconciler(name)``
-      - 實作 ``async def _reconcile_work() -> Mapping[str, Any] | None``
-        回傳的 dict 會放進 ``status.detail``；None → 空 detail
+      - 實作 ``async def _reconcile_work(detail: dict[str, Any]) -> None``
+        在 ``detail`` 內記錄本次 diagnostic metadata
 
     契約：``reconcile_once`` 不得 raise（CancelledError 除外）。
     """
@@ -136,35 +139,33 @@ class ReconcilerMixin:
     def status(self) -> ReconcilerStatus:
         return self._status
 
-    async def _reconcile_work(self) -> Mapping[str, Any] | None:
-        """子類必須覆寫；可選回傳 detail dict 寫入 status.detail。"""
+    async def _reconcile_work(self, detail: dict[str, Any]) -> None:
+        """子類必須覆寫；把 diagnostic metadata 寫入傳入的 detail dict。"""
         raise NotImplementedError
 
     async def reconcile_once(self) -> ReconcilerStatus:
-        return await _run_reconcile_scaffold(
-            self,
-            self._reconcile_work,
-        )
+        return await _run_reconcile_scaffold(self, self._reconcile_work)
 
 
 async def _run_reconcile_scaffold(
     holder: ReconcilerMixin,
-    work: Callable[[], Awaitable[Mapping[str, Any] | None]],
+    work: Callable[[dict[str, Any]], Awaitable[None]],
 ) -> ReconcilerStatus:
     """ReconcilerMixin.reconcile_once 的純實作（獨立函式便於 unit test）。"""
     holder._run_count += 1
     last_error: str | None = None
-    detail: Mapping[str, Any] = {}
+    detail: dict[str, Any] = {}
     try:
-        result = await work()
-        if result is not None:
-            detail = result
+        await work(detail)
     except asyncio.CancelledError:
+        # 不更新 status（對齊原行為）；CancelledError 必須傳播
         raise
     except Exception as e:
         last_error = repr(e)
         logger.opt(exception=True).warning(f"{type(holder).__name__}.reconcile_once raised, captured in status")
 
+    # 成功或 non-cancel 失敗都會到這；detail 是子類在 work 執行過程（含 raise 前）
+    # 寫入的 diagnostic metadata，失敗時保留部分進度供偵錯
     holder._status = ReconcilerStatus(
         name=holder._name,
         last_run_at=time.monotonic(),

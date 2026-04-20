@@ -94,10 +94,13 @@ class SetpointDriftReconciler(ReconcilerMixin):
     #
     # name / status / reconcile_once 由 ReconcilerMixin 提供。
 
-    async def _reconcile_work(self) -> Mapping[str, Any] | None:
-        """掃描所有被追蹤 device，偵測 drift 並重寫。回傳 detail dict。"""
+    async def _reconcile_work(self, detail: dict[str, Any]) -> None:
+        """掃描所有被追蹤 device，偵測 drift 並重寫；隨時更新 detail 以保留部分進度。"""
         drift_count = 0
         devices_fixed: list[str] = []
+        # 先寫初值，確保即使迴圈中途 raise 也能從 detail 看到 0/空
+        detail["drift_count"] = 0
+        detail["devices_fixed"] = ()
 
         for device_id in self._router.get_tracked_device_ids():
             snapshot = self._router.get_last_written(device_id)
@@ -122,11 +125,9 @@ class SetpointDriftReconciler(ReconcilerMixin):
                     logger.info(
                         f"Setpoint drift fixed: {device_id}.{point_name} actual={actual!r} -> desired={desired!r}"
                     )
-
-        return {
-            "drift_count": drift_count,
-            "devices_fixed": tuple(devices_fixed),
-        }
+                # 每次進度都更新 detail，讓 raise 前的部分結果仍能從 status 觀察到
+                detail["drift_count"] = drift_count
+                detail["devices_fixed"] = tuple(devices_fixed)
 
     @staticmethod
     def _is_drift(desired: Any, actual: Any, tol: DriftTolerance) -> bool:

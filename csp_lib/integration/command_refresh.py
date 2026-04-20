@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
@@ -108,10 +107,9 @@ class CommandRefreshService(ReconcilerMixin, AsyncLifecycleMixin):
     #
     # name / status / reconcile_once 由 ReconcilerMixin 提供；本類只覆寫 work。
 
-    async def _reconcile_work(self) -> Mapping[str, Any] | None:
-        """執行一次 desired → actual 收斂；無 detail。"""
+    async def _reconcile_work(self, detail: dict[str, Any]) -> None:
+        """執行一次 desired → actual 收斂；本類無額外 diagnostic detail。"""
         await self._refresh_once()
-        return None
 
     # ---- 內部實作 ----
 
