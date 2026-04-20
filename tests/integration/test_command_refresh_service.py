@@ -22,6 +22,7 @@ import pytest
 
 from csp_lib.integration.command_refresh import CommandRefreshService
 from csp_lib.integration.command_router import CommandRouter
+from csp_lib.integration.reconciler import Reconciler, ReconcilerStatus
 from csp_lib.integration.registry import DeviceRegistry
 
 
@@ -308,3 +309,115 @@ class TestRefreshExceptionResilience:
 
         # 至少第二次後恢復 → 寫入應有發生
         assert dev.write.await_count >= 1
+
+
+# ─────────────── Reconciler Protocol（Operator Pattern 基礎）──────────
+
+
+class TestReconcilerProtocolIntegration:
+    """v0.8.2+：CommandRefreshService 實作 Reconciler Protocol。"""
+
+    def test_isinstance_of_reconciler(self):
+        """CommandRefreshService 應通過 isinstance(service, Reconciler) check。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=0.05)
+        assert isinstance(svc, Reconciler)
+
+    def test_name_default(self):
+        """預設 name 為 'command_refresh'。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=1.0)
+        assert svc.name == "command_refresh"
+
+    def test_name_custom(self):
+        """可透過 name kwarg 覆寫。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=1.0, name="cr-primary")
+        assert svc.name == "cr-primary"
+
+    def test_initial_status_empty(self):
+        """status 初始為 empty（run_count=0, last_run_at=None, healthy=True）。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=1.0)
+        status = svc.status
+        assert isinstance(status, ReconcilerStatus)
+        assert status.name == "command_refresh"
+        assert status.run_count == 0
+        assert status.last_run_at is None
+        assert status.last_error is None
+        assert status.healthy is True
+
+
+class TestReconcileOnceDirectCall:
+    """reconcile_once 可獨立呼叫（不經主迴圈）。"""
+
+    async def test_reconcile_once_updates_status_on_success(self):
+        """成功執行後 status.run_count 增加、healthy=True、last_error=None。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=10.0)  # interval 大避免主迴圈跑
+
+        assert svc.status.run_count == 0
+        result = await svc.reconcile_once()
+        assert result.run_count == 1
+        assert result.healthy is True
+        assert result.last_error is None
+        assert result.last_run_at is not None
+
+        # 再呼叫一次 → run_count 遞增
+        result2 = await svc.reconcile_once()
+        assert result2.run_count == 2
+
+    async def test_reconcile_once_exception_captured_not_raised(self):
+        """_refresh_once 拋例外 → status.last_error 有值、status.healthy=False，不對外 raise。"""
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+
+        def bad_get_tracked() -> frozenset[str]:
+            raise RuntimeError("deliberate failure in reconcile_once test")
+
+        router.get_tracked_device_ids = bad_get_tracked  # type: ignore[method-assign]
+
+        svc = CommandRefreshService(router, interval=10.0)
+        # 關鍵：不該對外 raise
+        status = await svc.reconcile_once()
+        assert status.last_error is not None
+        assert "deliberate failure" in status.last_error.lower() or "runtimeerror" in status.last_error.lower()
+        assert status.healthy is False
+        assert status.run_count == 1
+
+    async def test_reconcile_once_idempotent_shape(self):
+        """重複呼叫 reconcile_once 不會造成額外副作用（除了 run_count/last_run_at）。"""
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+        router = CommandRouter(reg, mappings=[])
+        await router.try_write_single("pcs1", "p_set", 10.0)
+        dev.write.reset_mock()
+
+        svc = CommandRefreshService(router, interval=10.0)
+        await svc.reconcile_once()
+        call_count_after_first = dev.write.await_count
+
+        await svc.reconcile_once()
+        call_count_after_second = dev.write.await_count
+
+        # 每次 reconcile_once 寫一次（一個 device, 一個 point）
+        assert call_count_after_second == call_count_after_first + 1
+
+    async def test_isinstance_after_status_updated(self):
+        """status 更新後仍是 ReconcilerStatus frozen instance。"""
+        from dataclasses import FrozenInstanceError
+
+        reg = DeviceRegistry()
+        router = CommandRouter(reg, mappings=[])
+        svc = CommandRefreshService(router, interval=10.0)
+        await svc.reconcile_once()
+        assert isinstance(svc.status, ReconcilerStatus)
+        # frozen：不能直接 mutate
+        with pytest.raises(FrozenInstanceError):
+            svc.status.run_count = 99  # type: ignore[misc]

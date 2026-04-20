@@ -15,9 +15,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from csp_lib.core import get_logger
+from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.core.errors import DeviceError
 from csp_lib.equipment.device.capability import HEARTBEAT
 
@@ -28,6 +31,7 @@ from .heartbeat_generators import (
     ToggleGenerator,
 )
 from .heartbeat_targets import HeartbeatTarget
+from .reconciler import ReconcilerStatus
 from .schema import HeartbeatMapping, HeartbeatMode
 
 if TYPE_CHECKING:
@@ -70,6 +74,7 @@ class HeartbeatService:
         increment_max: int = 65535,
         *,
         targets: list[HeartbeatTarget] | None = None,
+        name: str = "heartbeat",
     ) -> None:
         """
         初始化心跳服務
@@ -94,6 +99,11 @@ class HeartbeatService:
         self._cap_constant_value = constant_value
         self._cap_increment_max = increment_max
         self._targets: list[HeartbeatTarget] = list(targets) if targets else []
+        self._name = name
+
+        # Reconciler Protocol 狀態
+        self._run_count = 0
+        self._status: ReconcilerStatus = ReconcilerStatus.empty(name)
 
         # 三組 per-path 狀態：
         #   _counters              — legacy device/trait mapping 的計數器
@@ -157,17 +167,66 @@ class HeartbeatService:
             generator.reset()
         self._targets_generator.reset()
 
-    async def _run(self) -> None:
-        """心跳主迴圈"""
-        while not self._stop_event.is_set():
-            if not self._paused:
+    # ---- Reconciler Protocol ----
+
+    @property
+    def name(self) -> str:
+        """Reconciler 穩定識別名。"""
+        return self._name
+
+    @property
+    def status(self) -> ReconcilerStatus:
+        """最新的 ReconcilerStatus 唯讀視圖。"""
+        return self._status
+
+    async def reconcile_once(self) -> ReconcilerStatus:
+        """執行一次心跳寫入並回傳 status。
+
+        契約：不得 raise（例外一律 catch 並記錄於 ``status.last_error``）。
+        paused 狀態視為 healthy（explicit design），skip 實際寫入，
+        ``detail["paused"]`` 為 True 供外部觀察。
+        """
+        self._run_count += 1
+        last_error: str | None = None
+        if not self._paused:
+            try:
                 await self._send_heartbeats()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                last_error = repr(e)
+                logger.opt(exception=True).warning("HeartbeatService.reconcile_once raised, captured in status")
+
+        self._status = ReconcilerStatus(
+            name=self._name,
+            last_run_at=time.monotonic(),
+            last_error=last_error,
+            run_count=self._run_count,
+            healthy=last_error is None,
+            detail=MappingProxyType({"paused": self._paused}),
+        )
+        return self._status
+
+    async def _run(self) -> None:
+        """心跳主迴圈：work-first + 絕對時間錨定（與 CommandRefreshService 對齊）。"""
+        anchor = time.monotonic()
+        completed = 0
+
+        while not self._stop_event.is_set():
+            await self.reconcile_once()
+
+            delay, anchor, completed = next_tick_delay(anchor, completed, self._interval)
+            if delay <= 0:
+                await asyncio.sleep(0)
+                if self._stop_event.is_set():
+                    break
+                continue
 
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self._interval)
-                break  # stop_event was set
+                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
+                break  # stop_event 被設定 → 離開
             except asyncio.TimeoutError:
-                pass  # normal interval elapsed
+                pass  # 正常 tick 時間到
 
     async def _send_heartbeats(self) -> None:
         """對所有設備寫入心跳值"""
