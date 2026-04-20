@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from csp_lib.controller.core import (
@@ -67,6 +69,9 @@ from .schema import (
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
     from csp_lib.equipment.device import AsyncModbusDevice
+
+    from .manifest import SiteManifest
+    from .type_registry import TypeRegistry
 
 logger = get_logger(__name__)
 
@@ -243,6 +248,12 @@ class SystemControllerConfigBuilder:
         self._trigger_on_read_device_ids: list[str] = []
         self._heartbeat_config: HeartbeatConfig | None = None
         self._command_refresh_config: CommandRefreshConfig | None = None
+
+        # Operator Pattern — 由 from_manifest 填入，否則保持初始空值
+        self._manifest_source: SiteManifest | None = None
+        self._manifest_devices: tuple[Any, ...] = ()
+        self._manifest_strategies: tuple[Any, ...] = ()
+        self._manifest_reconcilers: tuple[Any, ...] = ()
 
     # ─────────────── 系統基準 ───────────────
 
@@ -489,6 +500,85 @@ class SystemControllerConfigBuilder:
         """
         self._trigger_on_read_device_ids.append(device_id)
         return self
+
+    # ─────────────── Manifest ───────────────
+
+    @classmethod
+    def from_manifest(
+        cls,
+        manifest: "SiteManifest | str | Path | Mapping[str, Any]",
+        *,
+        device_registry: "TypeRegistry[AsyncModbusDevice] | None" = None,
+        strategy_registry: "TypeRegistry[Strategy] | None" = None,
+    ) -> "SystemControllerConfigBuilder":
+        """從 SiteManifest 建構 builder（可再 chain 既有 fluent methods 覆寫）。
+
+        此 classmethod 是 Operator Pattern 基礎的 YAML-driven 入口。
+        解析後的 devices / strategies / 未處理的 reconcilers 儲存在 builder
+        的 ``manifest_devices`` / ``manifest_strategies`` / ``manifest_reconcilers``
+        唯讀 properties，供 SystemController 啟動流程或後續 fluent chain 使用。
+
+        已知的 builtin reconciler kind（例如 ``CommandRefresh``）會直接呼叫
+        對應的 fluent method（``self.command_refresh(**config)``）；未知 kind
+        保留在 ``manifest_reconcilers`` 留給後續處理。
+
+        Args:
+            manifest:          SiteManifest 實例、YAML 路徑、或已 parse 的 dict
+            device_registry:   未傳時用 module-level ``device_type_registry``
+            strategy_registry: 同上（strategy）
+
+        Returns:
+            已依 manifest 預填的 SystemControllerConfigBuilder 實例
+
+        Raises:
+            ConfigurationError: manifest 內 kind 查無對應 class，或 builtin
+                                reconciler 的 config kwargs 不被 builder 接受
+
+        Example::
+
+            builder = SystemControllerConfigBuilder.from_manifest("site.yaml")
+            config = builder.protect(extra_rule).build()  # 可再 chain
+        """
+        # Lazy import 避免 module-level 循環（manifest / manifest_binder →
+        # type_registry → TYPE_CHECKING 回引本模組）
+        from .manifest import SiteManifest, load_manifest
+        from .manifest_binder import apply_manifest_to_builder
+
+        if not isinstance(manifest, SiteManifest):
+            manifest = load_manifest(manifest)
+
+        builder = cls()
+        result = apply_manifest_to_builder(
+            builder,
+            manifest,
+            device_registry=device_registry,
+            strategy_registry=strategy_registry,
+        )
+        builder._manifest_source = manifest
+        builder._manifest_devices = result.devices
+        builder._manifest_strategies = result.strategies
+        builder._manifest_reconcilers = result.reconcilers
+        return builder
+
+    @property
+    def manifest_source(self) -> "SiteManifest | None":
+        """若此 builder 由 ``from_manifest`` 建立，回傳原始 manifest。"""
+        return self._manifest_source
+
+    @property
+    def manifest_devices(self) -> tuple[Any, ...]:
+        """manifest 解析出的 BoundDeviceSpec 序列（可能為空）。"""
+        return self._manifest_devices
+
+    @property
+    def manifest_strategies(self) -> tuple[Any, ...]:
+        """manifest 解析出的 BoundStrategySpec 序列（可能為空）。"""
+        return self._manifest_strategies
+
+    @property
+    def manifest_reconcilers(self) -> tuple[Any, ...]:
+        """manifest 中未被 builder builtin 消化的 BoundReconcilerSpec 序列。"""
+        return self._manifest_reconcilers
 
     # ─────────────── Build ───────────────
 
