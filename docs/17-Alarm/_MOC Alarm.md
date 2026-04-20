@@ -63,7 +63,7 @@ graph TB
 
 ## 常見使用場景
 
-### 日本 demo：整廠多 node 聯動停機
+### 多站聯動停機範例：整廠多 node 同步
 
 ```
 本機 AlarmAggregator

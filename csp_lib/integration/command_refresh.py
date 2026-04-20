@@ -27,10 +27,14 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core._time_anchor import next_tick_delay
+
+from .reconciler import ReconcilerStatus
 
 if TYPE_CHECKING:
     from .command_router import CommandRouter
@@ -61,15 +65,21 @@ class CommandRefreshService(AsyncLifecycleMixin):
         *,
         interval: float = 1.0,
         device_filter: frozenset[str] | None = None,
+        name: str = "command_refresh",
     ) -> None:
         if interval <= 0:
             raise ValueError(f"CommandRefreshService: interval must be > 0, got {interval}")
         self._router = router
         self._interval = interval
         self._device_filter = device_filter
+        self._name = name
 
         self._task: asyncio.Task[None] | None = None
         self._stop_event = asyncio.Event()
+
+        # Reconciler Protocol 狀態
+        self._run_count = 0
+        self._status: ReconcilerStatus = ReconcilerStatus.empty(name)
 
     # ---- Lifecycle ----
 
@@ -97,25 +107,58 @@ class CommandRefreshService(AsyncLifecycleMixin):
         """reconcile task 是否正在執行"""
         return self._task is not None and not self._task.done()
 
+    # ---- Reconciler Protocol ----
+
+    @property
+    def name(self) -> str:
+        """Reconciler 穩定識別名。"""
+        return self._name
+
+    @property
+    def status(self) -> ReconcilerStatus:
+        """最新的 ReconcilerStatus 唯讀視圖。"""
+        return self._status
+
+    async def reconcile_once(self) -> ReconcilerStatus:
+        """執行一次 desired → actual 收斂，回傳本次 status。
+
+        契約：不得 raise（例外一律 catch 並記錄於 ``status.last_error``）。
+        """
+        self._run_count += 1
+        last_error: str | None = None
+        try:
+            await self._refresh_once()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            last_error = repr(e)
+            logger.opt(exception=True).warning("CommandRefreshService.reconcile_once raised, captured in status")
+
+        self._status = ReconcilerStatus(
+            name=self._name,
+            last_run_at=time.monotonic(),
+            last_error=last_error,
+            run_count=self._run_count,
+            healthy=last_error is None,
+            detail=MappingProxyType({}),
+        )
+        return self._status
+
     # ---- 內部實作 ----
 
     async def _run(self) -> None:
         """主迴圈：work-first + 絕對時間錨定
 
-        每個 tick 先執行 ``_refresh_once``（work），再用 ``next_tick_delay``
-        計算到下個 tick 的 sleep 量。遇到 stop_event 立即中斷。
+        每個 tick 先執行 ``reconcile_once``（work + 更新 status），再用
+        ``next_tick_delay`` 計算到下個 tick 的 sleep 量。遇到 stop_event
+        立即中斷。
         """
-        import time
-
         anchor = time.monotonic()
         completed = 0
 
         while not self._stop_event.is_set():
-            try:
-                await self._refresh_once()
-            except Exception:
-                # reconcile 是背景維護性質，單次失敗不應殺掉整個服務
-                logger.opt(exception=True).warning("CommandRefreshService._refresh_once raised, continuing")
+            # reconcile_once 契約：不得對外拋例外
+            await self.reconcile_once()
 
             delay, anchor, completed = next_tick_delay(anchor, completed, self._interval)
             if delay <= 0:

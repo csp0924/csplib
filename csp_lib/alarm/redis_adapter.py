@@ -33,7 +33,7 @@ EventParser = Callable[[dict[str, Any]], bool]
 
 
 def _default_payload_builder(active: bool, aggregator: AlarmAggregator) -> dict[str, Any]:
-    """預設 payload schema（相容日本 demo）。
+    """預設 payload schema。
 
     Returns:
         ``{"type": "aggregated_alarm", "active": bool, "sources": [...], "timestamp": "..."}``

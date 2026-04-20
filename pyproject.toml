@@ -44,8 +44,11 @@ gui = [
     "pyyaml>=6.0,<7.0",
     "python-multipart>=0.0.20,<1.0",
 ]
+manifest = [
+    "pyyaml>=6.0,<7.0",
+]
 all = [
-    "csp0924_lib[mongo,redis,modbus,can,monitor,gui,local-buffer]",
+    "csp0924_lib[mongo,redis,modbus,can,monitor,gui,local-buffer,manifest]",
 ]
 
 # =============== Build System ===============

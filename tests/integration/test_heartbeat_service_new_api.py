@@ -16,9 +16,12 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
+import pytest
+
 from csp_lib.integration.heartbeat import HeartbeatService
 from csp_lib.integration.heartbeat_generators import ConstantGenerator, ToggleGenerator
 from csp_lib.integration.heartbeat_targets import HeartbeatTarget
+from csp_lib.integration.reconciler import Reconciler, ReconcilerStatus
 from csp_lib.integration.registry import DeviceRegistry
 from csp_lib.integration.schema import HeartbeatMapping, HeartbeatMode
 
@@ -305,3 +308,123 @@ class TestResetCountersIncludesNewCache:
 
         assert len(t.calls) >= 1
         assert t.calls[0] == 1, f"_targets_generator reset 後首次應回 1，實際：{t.calls[0]}"
+
+
+# ─────────────── Reconciler Protocol（Operator Pattern 基礎）──────────
+
+
+class TestHeartbeatReconcilerProtocol:
+    """v0.8.2+：HeartbeatService 實作 Reconciler Protocol。"""
+
+    def test_isinstance_of_reconciler(self):
+        """HeartbeatService 應通過 isinstance(service, Reconciler) check。"""
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=1.0)
+        assert isinstance(svc, Reconciler)
+
+    def test_name_default(self):
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=1.0)
+        assert svc.name == "heartbeat"
+
+    def test_name_custom(self):
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=1.0, name="hb-master")
+        assert svc.name == "hb-master"
+
+    def test_initial_status_empty(self):
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=1.0)
+        status = svc.status
+        assert isinstance(status, ReconcilerStatus)
+        assert status.run_count == 0
+        assert status.last_run_at is None
+        assert status.healthy is True
+        assert status.last_error is None
+
+
+class TestHeartbeatReconcileOnceDirectCall:
+    """reconcile_once 獨立呼叫行為。"""
+
+    async def test_reconcile_once_updates_status(self):
+        """成功執行後 status.run_count 遞增、healthy=True、paused=False。"""
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=10.0)
+        result = await svc.reconcile_once()
+        assert result.run_count == 1
+        assert result.healthy is True
+        assert result.last_error is None
+        assert result.last_run_at is not None
+        assert result.detail["paused"] is False
+
+    async def test_reconcile_once_paused_skips_send_but_stays_healthy(self):
+        """paused 狀態：skip _send_heartbeats，但 status.healthy=True、detail[paused]=True。"""
+        dev = _make_device("pcs_01")
+        reg = DeviceRegistry()
+        reg.register(dev)
+        mapping = HeartbeatMapping(point_name="hb", device_id="pcs_01", mode=HeartbeatMode.TOGGLE)
+        svc = HeartbeatService(reg, mappings=[mapping], interval=10.0)
+
+        svc.pause()
+        assert svc.is_paused is True
+
+        status = await svc.reconcile_once()
+        # 核心：paused 下不寫設備
+        dev.write.assert_not_awaited()
+        # 但 status 仍然 healthy（設計：paused 是 explicit 狀態）
+        assert status.healthy is True
+        assert status.last_error is None
+        assert status.detail["paused"] is True
+        assert status.run_count == 1
+
+    async def test_reconcile_once_resume_resumes_writes(self):
+        """pause 後 resume，下次 reconcile_once 應恢復寫入。"""
+        dev = _make_device("pcs_01")
+        reg = DeviceRegistry()
+        reg.register(dev)
+        mapping = HeartbeatMapping(point_name="hb", device_id="pcs_01", mode=HeartbeatMode.TOGGLE)
+        svc = HeartbeatService(reg, mappings=[mapping], interval=10.0)
+
+        svc.pause()
+        await svc.reconcile_once()
+        dev.write.assert_not_awaited()
+
+        svc.resume()
+        status = await svc.reconcile_once()
+        # 恢復後應有寫入
+        assert dev.write.await_count == 1
+        assert status.detail["paused"] is False
+
+    async def test_reconcile_once_exception_captured_not_raised(self):
+        """_send_heartbeats 內部例外 → status.last_error 有值、不對外 raise。"""
+        # _send_heartbeats 很穩定（try/except 已在 _safe_write），
+        # 故以 monkey-patch 強制拋出非 DeviceError 未被 _safe_write 吞下的例外。
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=10.0)
+
+        async def bad_send() -> None:
+            raise RuntimeError("deliberate heartbeat failure")
+
+        svc._send_heartbeats = bad_send  # type: ignore[method-assign]
+
+        status = await svc.reconcile_once()
+        # 關鍵：不對外 raise
+        assert status.last_error is not None
+        assert (
+            "deliberate heartbeat failure" in status.last_error.lower() or "runtimeerror" in status.last_error.lower()
+        )
+        assert status.healthy is False
+        assert status.run_count == 1
+
+    async def test_reconcile_once_idempotent_run_count(self):
+        """連續呼叫 reconcile_once，run_count 正確遞增。"""
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=10.0)
+        s1 = await svc.reconcile_once()
+        s2 = await svc.reconcile_once()
+        s3 = await svc.reconcile_once()
+        assert s1.run_count == 1
+        assert s2.run_count == 2
+        assert s3.run_count == 3
+
+    def test_status_is_frozen(self):
+        """回傳的 status 不可 mutate。"""
+        from dataclasses import FrozenInstanceError
+
+        svc = HeartbeatService(DeviceRegistry(), mappings=[], interval=10.0)
+        status = svc.status
+        with pytest.raises(FrozenInstanceError):
+            status.run_count = 99  # type: ignore[misc]

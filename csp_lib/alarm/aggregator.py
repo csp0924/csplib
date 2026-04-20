@@ -30,7 +30,7 @@ class AlarmAggregator:
     ``on_change`` 訂閱者。
 
     使用場景：
-        * 日本 demo：任一設備告警 / gateway watchdog timeout → publish
+        * 多站聯動停機：任一設備告警 / gateway watchdog timeout → publish
           到 Redis channel → 其他 node 立即停機
         * 本機 in-process：策略鎖定、Modbus gateway coil 同步等
 
