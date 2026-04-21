@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/device/base.py
-updated: 2026-04-17
-version: ">=0.8.0"
+updated: 2026-04-22
+version: ">=0.9.0"
 ---
 
 # AsyncModbusDevice
@@ -96,6 +96,7 @@ await device.disconnect()
 | `latest_values` | `dict` | 最新讀取值字典 |
 | `active_alarms` | `list` | 目前啟用的告警列表 |
 | `device_id` | `str` | 設備 ID |
+| `used_unit_ids` | `frozenset[int]` | v0.9.0+：此設備實際觸及的 Modbus unit_id 集合（見 [[Multi-UnitID Device]]） |
 
 ---
 
