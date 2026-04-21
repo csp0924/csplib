@@ -148,6 +148,4 @@ filterwarnings = [
     "ignore::DeprecationWarning:pymodbus.*",
     "ignore::DeprecationWarning:motor.*",
     "ignore::DeprecationWarning:redis.*",
-    # GridControlLoop 已 deprecated（UL-D），測試沿用既有實例化避免 warning spam
-    "ignore:GridControlLoop:DeprecationWarning",
 ]
