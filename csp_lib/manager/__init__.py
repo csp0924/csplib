@@ -35,7 +35,7 @@ from .command import (
     WriteCommand,
     WriteCommandManager,
 )
-from .data import DataUploadManager
+from .data import DataUploadManager, UploadTarget, WritePolicy
 from .device import (
     DeviceGroup,
     DeviceManager,
@@ -84,6 +84,8 @@ __all__ = [
     "RedisCommandAdapter",
     # Data
     "DataUploadManager",
+    "UploadTarget",
+    "WritePolicy",
     # Device
     "DeviceGroup",
     "DeviceManager",

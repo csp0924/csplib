@@ -235,8 +235,9 @@ class TestDataUploadManagerReadComplete:
         )
         await device.emit(EVENT_READ_COMPLETE, payload)
 
-        # 檢查快取
-        assert manager._last_values["device_001"] == {"temperature": 25.5}
+        # 檢查 legacy 快取
+        rt = manager._device_targets["device_001"][0]
+        assert rt.last_raw_values == {"temperature": 25.5}
 
 
 # ======================== Disconnected Event Tests ========================
@@ -445,7 +446,9 @@ class TestDataUploadManagerSaveInterval:
             await device.emit(EVENT_READ_COMPLETE, payload2)
 
             assert uploader.enqueue.call_count == 1  # 只存了一次
-            assert manager._last_values["device_001"]["temperature"] == 30.0  # 快取已更新
+            rt = manager._device_targets["device_001"][0]
+            assert rt.last_raw_values is not None
+            assert rt.last_raw_values["temperature"] == 30.0  # 快取已更新
 
     @pytest.mark.asyncio
     async def test_different_devices_independent_intervals(self, manager: DataUploadManager, uploader: MockUploader):
@@ -483,12 +486,12 @@ class TestDataUploadManagerSaveInterval:
         manager.configure(device.device_id, "data", save_interval=30)
         manager.subscribe(device)
 
-        assert "device_001" in manager._save_intervals
+        rt = manager._device_targets["device_001"][0]
+        assert rt.save_interval == 30
 
         manager.unsubscribe(device)
 
-        assert "device_001" not in manager._save_intervals
-        assert "device_001" not in manager._last_save_times
+        assert "device_001" not in manager._device_targets
 
 
 # ======================== v0.8.2: buffered_uploader 注入 ========================

@@ -8,12 +8,16 @@
 # 設計模式：
 #   - 觀察者模式：訂閱 AsyncModbusDevice 的 read_complete/disconnected 事件
 #   - 事件驅動：讀取完成 → 上傳資料，斷線 → 上傳空值記錄
-#   - 降頻儲存：透過 save_interval 控制每台設備的儲存頻率
+#   - Fan-out：同一設備可綁多個 UploadTarget，輸出到多個 collection
+#   - Transform：每個 target 可帶自訂 transform（raw values → target schema）
+#   - WritePolicy：ALWAYS / ON_CHANGE / INTERVAL（INTERVAL 尚未實作）
 
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Callable
+import warnings
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 from csp_lib.core import get_logger
 from csp_lib.equipment.device.events import (
@@ -23,6 +27,8 @@ from csp_lib.equipment.device.events import (
     ReadCompletePayload,
 )
 from csp_lib.manager.base import DeviceEventSubscriber
+
+from .targets import TransformFn, TransformResult, UploadTarget, WritePolicy
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device import AsyncModbusDevice
@@ -62,6 +68,58 @@ def nullify_nested(value: Any) -> Any:
         return None
 
 
+# ================ 內部 runtime 容器 ================
+
+
+@dataclass
+class _TargetRuntime:
+    """每個 (device_id, target) 配對的執行期狀態。
+
+    Attributes:
+        target: 對應的 ``UploadTarget``。
+        legacy: 是否為 legacy（舊 1:1）配置路徑；True 時走 ``{device_id, timestamp, **values}`` 舊 schema
+                並忽略 ``target.transform``。
+        save_interval: legacy 節流秒數；``None`` 代表每次都寫。僅 legacy 路徑使用。
+        last_raw_values: legacy 斷線空值記錄用的上次原始 values。僅 legacy 路徑使用。
+        last_result: 上次 transform 的正規化輸出（用於 ON_CHANGE 比對）。
+        last_shape_cache: 上次 ALWAYS 寫入的文件快取（斷線時拿來 nullify）。
+        last_save_time: 上次寫入的 ``time.monotonic()``（legacy save_interval 節流用）。
+    """
+
+    target: UploadTarget
+    legacy: bool = False
+    save_interval: float | None = None
+    last_raw_values: dict[str, Any] | None = None
+    last_result: list[dict[str, Any]] | None = None
+    last_shape_cache: list[dict[str, Any]] | None = None
+    last_save_time: float | None = None
+
+
+def _noop_transform(values: dict[str, Any]) -> dict[str, Any]:
+    # Legacy runtime 的 placeholder；legacy 路徑直接組 document，不會呼叫此函式。
+    return values
+
+
+# ================ 正規化工具 ================
+
+
+def _normalize_result(result: TransformResult) -> list[dict[str, Any]] | None:
+    """將 transform 結果正規化為 ``list[dict]`` 或 ``None``。
+
+    - ``None`` → ``None``（跳過）
+    - ``dict`` → ``[dict]``
+    - ``list[dict]`` → 原樣
+    """
+    if result is None:
+        return None
+    if isinstance(result, dict):
+        return [result]
+    return list(result)
+
+
+# ================ DataUploadManager ================
+
+
 class DataUploadManager(DeviceEventSubscriber):
     """
     資料上傳管理器
@@ -69,15 +127,32 @@ class DataUploadManager(DeviceEventSubscriber):
     自動將設備讀取資料上傳至 MongoDB。採用觀察者模式訂閱 AsyncModbusDevice
     的 read_complete 與 disconnected 事件，實現事件驅動的資料上傳。
 
+    支援兩種配置模式：
+
+    1. **Legacy 模式**（向後相容）::
+
+        manager.configure(device_id, collection_name, save_interval=30)
+
+       會把設備資料以 ``{device_id, timestamp, **values}`` 的形式寫入
+       單一 collection，行為與 v0.8 之前完全一致。
+
+    2. **Fan-out 模式**（新）::
+
+        manager.configure(device_id, outputs=[
+            UploadTarget(collection="summary", transform=summary_transform,
+                         policy=WritePolicy.ON_CHANGE),
+            UploadTarget(collection="detail",  transform=detail_transform,
+                         policy=WritePolicy.ALWAYS),
+        ])
+
+       同一次讀取會 fan-out 到多個 target，每個 target 可以有獨立的
+       transform 與 WritePolicy。
+
     職責：
         1. 訂閱多個 AsyncModbusDevice 的事件
-        2. read_complete → 上傳讀取資料並快取結構
-        3. disconnected → 上傳空值記錄（保留巢狀結構，讓前端圖表正確顯示斷線區間）
-
-    Attributes:
-        _uploader: MongoDB 批次上傳器
-        _device_collection: 設備對應的 collection 名稱
-        _last_values: 最後讀取值（用於推斷巢狀結構）
+        2. read_complete → 依 target 列表 transform + 寫入
+        3. disconnected → 針對 ALWAYS target 上傳空值記錄（保留結構，
+           讓前端圖表正確顯示斷線區間）
 
     Example:
         ```python
@@ -87,12 +162,9 @@ class DataUploadManager(DeviceEventSubscriber):
         uploader = MongoBatchUploader(db).start()
         data_manager = DataUploadManager(uploader)
 
-        # 配置並訂閱設備
+        # 舊式配置（單一 collection）
         data_manager.configure(device.device_id, collection_name="device_data")
         data_manager.subscribe(device)
-
-        # 設備讀取時資料自動上傳
-        # 設備斷線時自動上傳空值記錄
         ```
     """
 
@@ -114,38 +186,110 @@ class DataUploadManager(DeviceEventSubscriber):
         super().__init__()
         # 優先使用 buffered_uploader 以啟用 local buffer fail-safe
         self._uploader: BatchUploader = buffered_uploader if buffered_uploader is not None else uploader
-        self._device_collection: dict[str, str] = {}  # device_id -> collection_name
-        self._last_values: dict[str, dict[str, Any]] = {}  # device_id -> last values
-        self._save_intervals: dict[str, float] = {}  # device_id -> save_interval (seconds)
-        self._last_save_times: dict[str, float] = {}  # device_id -> monotonic timestamp
+
+        # 主要狀態：device_id -> 多個 target runtime
+        self._device_targets: dict[str, list[_TargetRuntime]] = {}
 
     # ================ 訂閱管理 ================
 
+    @overload
     def configure(
         self,
         device_id: str,
         collection_name: str,
+        save_interval: float | None = ...,
+    ) -> None: ...
+
+    @overload
+    def configure(
+        self,
+        device_id: str,
+        *,
+        outputs: list[UploadTarget],
+    ) -> None: ...
+
+    def configure(
+        self,
+        device_id: str,
+        collection_name: str | None = None,
         save_interval: float | None = None,
+        *,
+        outputs: list[UploadTarget] | None = None,
     ) -> None:
         """
         預先配置設備的上傳參數
 
-        必須在 ``subscribe()`` 之前呼叫，設定該設備對應的 MongoDB collection
-        與儲存間隔。若未呼叫 ``configure()`` 就直接 ``subscribe()``，將使用
-        預設 collection ``"device_data"``。
+        必須在 ``subscribe()`` 之前呼叫。支援兩種模式（二擇一，不可同時提供）：
+
+        **Legacy 模式**（位置參數 ``collection_name``）：
+            把設備資料以 ``{device_id, timestamp, **values}`` 寫到單一 collection。
+            可選 ``save_interval`` 做降頻。
+
+        **Fan-out 模式**（keyword ``outputs``）：
+            提供一組 ``UploadTarget``，同一次讀取會 fan-out 到多個 collection。
+            每個 target 可帶自訂 transform 與 ``WritePolicy``。
 
         Args:
             device_id: 設備 ID
-            collection_name: 資料上傳的 MongoDB collection 名稱
-            save_interval: 最小儲存間隔（秒）。``None`` 或 ``0`` 表示每次讀取都儲存。
+            collection_name: Legacy 模式的 collection 名稱
+            save_interval: Legacy 模式的最小儲存間隔（秒）
+            outputs: Fan-out 模式的 target 列表（keyword-only）
+
+        Raises:
+            ValueError: 同時提供 ``collection_name`` 與 ``outputs``，或兩者皆未提供。
+            NotImplementedError: 任一 target 使用 ``WritePolicy.INTERVAL``。
         """
-        self._device_collection[device_id] = collection_name
+        # ----- 參數互斥驗證 -----
+        if collection_name is not None and outputs is not None:
+            raise ValueError("configure(): collection_name 與 outputs 不可同時提供")
+        if collection_name is None and outputs is None:
+            raise ValueError("configure(): 必須提供 collection_name（legacy）或 outputs（fan-out）其中一個")
+
+        # ----- Fan-out 模式 -----
+        if outputs is not None:
+            if not outputs:
+                raise ValueError("configure(): outputs 不可為空 list")
+            # 拒絕尚未實作的 INTERVAL policy
+            for target in outputs:
+                if target.policy is WritePolicy.INTERVAL:
+                    raise NotImplementedError(f"WritePolicy.INTERVAL 尚未實作（target collection={target.collection}）")
+
+            runtimes = [_TargetRuntime(target=t) for t in outputs]
+            self._device_targets[device_id] = runtimes
+            for target in outputs:
+                self._uploader.register_collection(target.collection)
+
+            logger.debug(
+                "資料上傳管理器: 已配置設備 {} fan-out 到 {} 個 target: {}",
+                device_id,
+                len(outputs),
+                [t.collection for t in outputs],
+            )
+            return
+
+        assert collection_name is not None  # narrow type for mypy
+        warnings.warn(
+            "configure(device_id, collection_name, save_interval=...) 將在 1.0 移除，"
+            "請改用 configure(device_id, outputs=[UploadTarget(...)])。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        legacy_target = UploadTarget(
+            collection=collection_name,
+            transform=_noop_transform,
+            policy=WritePolicy.ALWAYS,
+        )
+        normalized_interval = save_interval if save_interval and save_interval > 0 else None
+        self._device_targets[device_id] = [
+            _TargetRuntime(target=legacy_target, legacy=True, save_interval=normalized_interval)
+        ]
         self._uploader.register_collection(collection_name)
-        if save_interval and save_interval > 0:
-            self._save_intervals[device_id] = save_interval
-        else:
-            self._save_intervals.pop(device_id, None)
-        logger.debug(f"資料上傳管理器: 已配置設備 {device_id} -> {collection_name} (save_interval={save_interval})")
+        logger.debug(
+            "資料上傳管理器: 已配置設備 {} -> {} (save_interval={})",
+            device_id,
+            collection_name,
+            save_interval,
+        )
 
     def subscribe(self, device: AsyncModbusDevice) -> None:
         """
@@ -154,7 +298,8 @@ class DataUploadManager(DeviceEventSubscriber):
         訂閱設備的 read_complete 與 disconnected 事件。
         若已訂閱則不重複訂閱。
 
-        需先呼叫 ``configure()`` 設定 collection_name，否則使用預設值 ``"device_data"``。
+        若未呼叫 ``configure()`` 先行設定，會使用 legacy 模式的預設 collection
+        ``"device_data"``。
 
         Args:
             device: 要訂閱的 Modbus 設備
@@ -163,16 +308,19 @@ class DataUploadManager(DeviceEventSubscriber):
         if device_id in self._unsubscribes:
             return
 
-        # 若未 configure，使用預設 collection
-        collection_name = self._device_collection.get(device_id)
-        if not collection_name:
-            collection_name = "device_data"
-            self._device_collection[device_id] = collection_name
-            self._uploader.register_collection(collection_name)
+        # 若未 configure，建立 legacy 預設 target
+        if device_id not in self._device_targets:
+            self.configure(device_id, "device_data")
 
-        save_interval = self._save_intervals.get(device_id, 0)
         self._unsubscribes[device_id] = self._register_events(device)
-        logger.info(f"資料上傳管理器已訂閱設備: {device_id} -> {collection_name} (save_interval={save_interval}s)")
+
+        runtimes = self._device_targets[device_id]
+        collections = [rt.target.collection for rt in runtimes]
+        logger.info(
+            "資料上傳管理器已訂閱設備: {} -> {}",
+            device_id,
+            collections,
+        )
 
     def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
         """註冊設備的 read_complete 與 disconnected 事件"""
@@ -182,11 +330,21 @@ class DataUploadManager(DeviceEventSubscriber):
         ]
 
     def _on_unsubscribe(self, device_id: str) -> None:
-        self._device_collection.pop(device_id, None)
-        self._last_values.pop(device_id, None)
-        self._save_intervals.pop(device_id, None)
-        self._last_save_times.pop(device_id, None)
-        logger.info(f"資料上傳管理器已取消訂閱設備: {device_id}")
+        self._device_targets.pop(device_id, None)
+        logger.info("資料上傳管理器已取消訂閱設備: {}", device_id)
+
+    # ================ 內部工具 ================
+
+    async def _safe_enqueue(self, collection: str, document: dict[str, Any], device_id: str) -> None:
+        # 任何 enqueue 錯誤都不應影響其他 target；以 logger.exception 記錄 traceback 並吞掉。
+        try:
+            await self._uploader.enqueue(collection, document)
+        except Exception:
+            logger.exception(
+                "資料上傳管理器: enqueue 失敗 device={} collection={}",
+                device_id,
+                collection,
+            )
 
     # ================ 事件處理器 ================
 
@@ -194,70 +352,121 @@ class DataUploadManager(DeviceEventSubscriber):
         """
         處理讀取完成事件
 
-        將讀取資料加入上傳佇列，並快取值結構供斷線時使用。
-        若設有 save_interval，僅在距上次儲存超過指定秒數時才上傳。
+        依據設備綁定的 target 列表 fan-out：每個 target 各自 transform、
+        套用 ``WritePolicy``、寫入對應 collection。
+        Transform / enqueue 均以 per-target try/except 隔離，單一 target 失敗
+        不影響其他 target。
 
         Args:
             payload: 讀取完成事件資料
         """
         device_id = payload.device_id
-        collection_name = self._device_collection.get(device_id)
-        if not collection_name:
+        runtimes = self._device_targets.get(device_id)
+        if not runtimes:
             return
 
-        # 快取結構供斷線時使用（無論是否降頻都要更新）
-        self._last_values[device_id] = payload.values
+        for rt in runtimes:
+            if rt.legacy:
+                await self._handle_legacy_read(rt, payload)
+                continue
 
-        # 降頻檢查
-        interval = self._save_intervals.get(device_id)
+            target = rt.target
+            try:
+                result = target.transform(payload.values)
+            except Exception:
+                logger.exception(
+                    "資料上傳管理器: target transform 失敗 device={} collection={}",
+                    device_id,
+                    target.collection,
+                )
+                continue
+
+            docs = _normalize_result(result)
+            if not docs:
+                continue
+
+            if target.policy is WritePolicy.ON_CHANGE:
+                if rt.last_result == docs:
+                    continue
+                rt.last_result = docs
+            elif target.policy is WritePolicy.ALWAYS:
+                # 快取 shape 供斷線時 nullify 用
+                rt.last_shape_cache = docs
+
+            for doc in docs:
+                await self._safe_enqueue(target.collection, doc, device_id)
+
+    async def _handle_legacy_read(self, rt: _TargetRuntime, payload: ReadCompletePayload) -> None:
+        # 保留舊 1:1 配置的 wire output：{device_id, timestamp, **values} + save_interval 節流。
+        device_id = payload.device_id
+        rt.last_raw_values = payload.values
+
+        interval = rt.save_interval
         if interval is not None:
             now = time.monotonic()
-            last_save = self._last_save_times.get(device_id)
+            last_save = rt.last_save_time
             if last_save is not None and (now - last_save) < interval:
                 return
-            self._last_save_times[device_id] = now
+            rt.last_save_time = now
 
-        # 建立文件並上傳
         document = {
             "device_id": device_id,
             "timestamp": payload.timestamp,
             **payload.values,
         }
-        await self._uploader.enqueue(collection_name, document)
+        await self._safe_enqueue(rt.target.collection, document, device_id)
 
     async def _on_disconnected(self, payload: DisconnectPayload) -> None:
         """
         處理斷線事件
 
-        使用快取的結構產生空值記錄並上傳，讓前端圖表能正確顯示斷線區間。
+        針對 ``WritePolicy.ALWAYS`` 的 target：使用最後一次寫入的文件 shape
+        產生空值記錄並上傳，讓前端圖表能正確顯示斷線區間。
+        ``ON_CHANGE`` / ``INTERVAL`` target 不上傳空值（避免污染去重/節流語意）。
+
+        Legacy target 走特別路徑：nullify values 部分，但保留
+        ``device_id`` / ``timestamp`` 為真實值（維持 v0.8 之前的行為）。
 
         Args:
             payload: 斷線事件資料
         """
         device_id = payload.device_id
-        collection_name = self._device_collection.get(device_id)
-        if not collection_name:
+        runtimes = self._device_targets.get(device_id)
+        if not runtimes:
             return
 
-        # 從快取取得結構，產生空值
-        last_values = self._last_values.get(device_id)
-        if last_values:
-            null_values = {k: nullify_nested(v) for k, v in last_values.items()}
-        else:
-            # 無快取時，無法產生空值記錄
-            logger.warning(f"資料上傳管理器: 設備 {device_id} 斷線但無快取結構，跳過空值記錄")
-            return
+        for rt in runtimes:
+            if rt.legacy:
+                if not rt.last_raw_values:
+                    logger.warning(
+                        "資料上傳管理器: 設備 {} 斷線但無快取結構，跳過空值記錄",
+                        device_id,
+                    )
+                    continue
+                null_values = {k: nullify_nested(v) for k, v in rt.last_raw_values.items()}
+                document = {
+                    "device_id": device_id,
+                    "timestamp": payload.timestamp,
+                    **null_values,
+                }
+                await self._safe_enqueue(rt.target.collection, document, device_id)
+                continue
 
-        document = {
-            "device_id": device_id,
-            "timestamp": payload.timestamp,
-            **null_values,
-        }
-        await self._uploader.enqueue(collection_name, document)
-        logger.debug(f"資料上傳管理器: 已上傳設備 {device_id} 斷線空值記錄")
+            if rt.target.policy is not WritePolicy.ALWAYS:
+                continue
+            if not rt.last_shape_cache:
+                continue
+
+            for cached_doc in rt.last_shape_cache:
+                null_doc = nullify_nested(cached_doc)
+                await self._safe_enqueue(rt.target.collection, null_doc, device_id)
 
 
 __all__ = [
     "DataUploadManager",
+    "TransformFn",
+    "TransformResult",
+    "UploadTarget",
+    "WritePolicy",
     "nullify_nested",
 ]
