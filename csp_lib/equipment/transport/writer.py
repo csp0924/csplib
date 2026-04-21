@@ -52,7 +52,7 @@ class ValidatedWriter:
 
     def __init__(self, client: AsyncModbusClientBase, unit_id: int = 1, address_offset: int = 0):
         self._client = client
-        self._unit_id = unit_id
+        self._default_unit_id = unit_id
         self._address_offset = address_offset
 
     async def write(self, point: WritePoint, value: Any, verify: bool = False) -> WriteResult:
@@ -149,34 +149,37 @@ class ValidatedWriter:
             return registers[0]
         return registers
 
+    def _resolve_unit_id(self, point: WritePoint) -> int:
+        """解析此次寫入要用的 unit_id：優先 point.unit_id，fallback default。"""
+        return point.unit_id if point.unit_id is not None else self._default_unit_id
+
     async def _write_to_device(self, point: WritePoint, encoded: list[int] | int | bool) -> None:
         """寫入暫存器"""
         address = point.address + self._address_offset
         function_code = point.function_code
+        unit_id = self._resolve_unit_id(point)
         logger.trace(
             f"[ValidatedWriter] _write_to_device: point={point.name}, address={address} "
             f"(base={point.address}+offset={self._address_offset}), fc={function_code}, "
-            f"unit_id={self._unit_id}, encoded={encoded}"
+            f"unit_id={unit_id}, encoded={encoded}"
         )
 
         if function_code == FunctionCode.WRITE_SINGLE_COIL:
-            await self._client.write_single_coil(address=address, value=bool(encoded), unit_id=self._unit_id)
+            await self._client.write_single_coil(address=address, value=bool(encoded), unit_id=unit_id)
         elif function_code == FunctionCode.WRITE_SINGLE_REGISTER:
-            await self._client.write_single_register(address=address, value=int(encoded), unit_id=self._unit_id)  # type: ignore[arg-type]
+            await self._client.write_single_register(address=address, value=int(encoded), unit_id=unit_id)  # type: ignore[arg-type]
         elif function_code == FunctionCode.WRITE_MULTIPLE_COILS:
             if isinstance(encoded, list):
                 await self._client.write_multiple_coils(
-                    address=address, values=[bool(v) for v in encoded], unit_id=self._unit_id
+                    address=address, values=[bool(v) for v in encoded], unit_id=unit_id
                 )
             else:
-                await self._client.write_multiple_coils(address=address, values=[bool(encoded)], unit_id=self._unit_id)
+                await self._client.write_multiple_coils(address=address, values=[bool(encoded)], unit_id=unit_id)
         elif function_code == FunctionCode.WRITE_MULTIPLE_REGISTERS:
             if isinstance(encoded, list):
-                await self._client.write_multiple_registers(address=address, values=encoded, unit_id=self._unit_id)
+                await self._client.write_multiple_registers(address=address, values=encoded, unit_id=unit_id)
             else:
-                await self._client.write_multiple_registers(
-                    address=address, values=[int(encoded)], unit_id=self._unit_id
-                )
+                await self._client.write_multiple_registers(address=address, values=[int(encoded)], unit_id=unit_id)
         else:
             raise ConfigurationError(f"不支援的 Function Code: {function_code}")
 
@@ -185,12 +188,13 @@ class ValidatedWriter:
         address = point.address + self._address_offset
         register_count = point.data_type.register_count
         function_code = point.function_code
+        unit_id = self._resolve_unit_id(point)
 
         # 根據寫入功能碼選擇對應的讀取功能碼
         if function_code in [FunctionCode.WRITE_SINGLE_COIL, FunctionCode.WRITE_MULTIPLE_COILS]:
-            data = await self._client.read_coils(address, register_count, self._unit_id)
+            data = await self._client.read_coils(address, register_count, unit_id)
         elif function_code in [FunctionCode.WRITE_SINGLE_REGISTER, FunctionCode.WRITE_MULTIPLE_REGISTERS]:
-            data = await self._client.read_holding_registers(address, register_count, self._unit_id)  # type: ignore[assignment]
+            data = await self._client.read_holding_registers(address, register_count, unit_id)  # type: ignore[assignment]
         else:
             raise ConfigurationError(f"不支援的 Function Code: {function_code}")
 

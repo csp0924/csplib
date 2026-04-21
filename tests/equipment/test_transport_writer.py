@@ -513,3 +513,52 @@ class TestValidatedWriterDefaultFunctionCode:
 
         assert result.status == WriteStatus.SUCCESS
         mock_client.write_multiple_registers.assert_called_once()
+
+
+class TestValidatedWriterUnitIdResolution:
+    """ValidatedWriter: point.unit_id 覆寫 default，fallback 至 constructor unit_id"""
+
+    @pytest.mark.asyncio
+    async def test_uses_point_unit_id_when_set(self, mock_client: AsyncMock):
+        writer = ValidatedWriter(client=mock_client, unit_id=1)
+        point = WritePoint(
+            name="p",
+            address=0,
+            data_type=UInt16(),
+            function_code=FunctionCode.WRITE_SINGLE_REGISTER,
+            unit_id=7,
+        )
+        await writer.write(point, 123)
+        kwargs = mock_client.write_single_register.call_args.kwargs
+        assert kwargs["unit_id"] == 7
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_default_when_point_unit_id_none(self, mock_client: AsyncMock):
+        writer = ValidatedWriter(client=mock_client, unit_id=4)
+        point = WritePoint(
+            name="p",
+            address=0,
+            data_type=UInt16(),
+            function_code=FunctionCode.WRITE_SINGLE_REGISTER,
+        )
+        await writer.write(point, 123)
+        kwargs = mock_client.write_single_register.call_args.kwargs
+        assert kwargs["unit_id"] == 4
+
+    @pytest.mark.asyncio
+    async def test_verify_read_back_uses_same_unit_id(self, mock_client: AsyncMock):
+        mock_client.read_holding_registers = AsyncMock(return_value=[123])
+        writer = ValidatedWriter(client=mock_client, unit_id=1)
+        point = WritePoint(
+            name="p",
+            address=0,
+            data_type=UInt16(),
+            function_code=FunctionCode.WRITE_SINGLE_REGISTER,
+            unit_id=5,
+        )
+        result = await writer.write(point, 123, verify=True)
+        assert result.status == WriteStatus.SUCCESS
+        # write 與 read_back 都用 point.unit_id=5，非 default=1
+        assert mock_client.write_single_register.call_args.kwargs["unit_id"] == 5
+        # read_holding_registers positional call: (address, count, unit_id)
+        assert mock_client.read_holding_registers.call_args.args[2] == 5
