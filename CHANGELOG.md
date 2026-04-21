@@ -4,6 +4,23 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.1](https://github.com/csp0924/csplib/compare/v0.9.0...v0.9.1) (2026-04-21)
+
+
+### Fixed
+
+* **ci:** release-please dispatch release.yml 需顯式指定 --repo ([#95](https://github.com/csp0924/csplib/issues/95)) ([38957a1](https://github.com/csp0924/csplib/commit/38957a15f298c85f7800d98f325d7bc5abdb15d7))
+* **integration:** CommandRouter._last_written 在 device 解除註冊時 prune ([#101](https://github.com/csp0924/csplib/issues/101)) ([ed2931e](https://github.com/csp0924/csplib/commit/ed2931e24b3621a0fa475944d53c75468631cb8b))
+
+
+### Changed
+
+* **cluster:** ClusterSnapshot 加 frozen=True ([#98](https://github.com/csp0924/csplib/issues/98)) ([3298aab](https://github.com/csp0924/csplib/commit/3298aab7feb19f04b6e21befd1647fe5dce7d397))
+* **controller:** GridControllerProtocol 讓 SystemController 結構性滿足 ([#102](https://github.com/csp0924/csplib/issues/102)) ([924306b](https://github.com/csp0924/csplib/commit/924306b2d6119fe2d198cbaca090cf2703f7c68a))
+* **integration:** DeviceRegistry 型別 AsyncModbusDevice → DeviceProtocol ([#103](https://github.com/csp0924/csplib/issues/103)) ([2a3acf9](https://github.com/csp0924/csplib/commit/2a3acf9e371a98fe66ac074eebad87f9aa5c60d1))
+* **manager:** AsyncRepository Protocol 補齊繼承關係 ([#100](https://github.com/csp0924/csplib/issues/100)) ([47b5550](https://github.com/csp0924/csplib/commit/47b55506697a1fc05f44a0f8595ce01e25f3e354))
+* **modbus:** slave_kwarg/is_new_api 改為 _ prefix internal ([#99](https://github.com/csp0924/csplib/issues/99)) ([e75bf4f](https://github.com/csp0924/csplib/commit/e75bf4fb65728d1eec24919fb92bd80ca66aaa2a))
+
 ## [0.9.0](https://github.com/csp0924/csplib/compare/v0.8.4...v0.9.0) (2026-04-21)
 
 
