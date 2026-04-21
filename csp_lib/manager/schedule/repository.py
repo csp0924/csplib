@@ -15,6 +15,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from csp_lib.manager.base import AsyncRepository
+
 from . import matcher
 from .schema import ScheduleRule
 
@@ -23,16 +25,14 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class ScheduleRepository(Protocol):
+class ScheduleRepository(AsyncRepository, Protocol):
     """
     排程 Repository 介面
 
     定義排程資料存取的標準介面，遵循依賴倒置原則。
-    """
 
-    async def health_check(self) -> bool:
-        """檢查 Repository 連線是否正常"""
-        ...
+    繼承自 ``AsyncRepository``，統一所有 Repository 的健康檢查介面。
+    """
 
     async def find_active_rules(self, site_id: str, now: datetime) -> list[ScheduleRule]:
         """查詢當前時間匹配的啟用規則（依 priority DESC 排序）"""

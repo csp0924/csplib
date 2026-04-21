@@ -38,10 +38,10 @@ class TestClusterSnapshot:
     def test_defaults(self):
         snap = ClusterSnapshot()
         assert snap.leader_id is None
-        assert snap.base_modes == []
-        assert snap.override_names == []
+        assert snap.base_modes == ()
+        assert snap.override_names == ()
         assert snap.effective_mode is None
-        assert snap.triggered_rules == []
+        assert snap.triggered_rules == ()
         assert snap.protection_was_modified is False
         assert snap.p_target == 0.0
         assert snap.q_target == 0.0
@@ -222,7 +222,7 @@ class TestClusterStateSubscriber:
         await asyncio.sleep(0.15)
 
         snap = subscriber.snapshot
-        assert snap.base_modes == ["pq"]
+        assert snap.base_modes == ("pq",)
         assert snap.effective_mode == "pq"
 
         await subscriber.stop()
@@ -344,7 +344,7 @@ class TestClusterStateSubscriber:
 
         snap = subscriber.snapshot
         assert snap.leader_id is None
-        assert snap.base_modes == []
+        assert snap.base_modes == ()
         assert snap.auto_stop_active is False
 
         await subscriber.stop()
