@@ -152,6 +152,9 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         # 寫入點位查詢表
         self._write_points = {write_point.name: write_point for write_point in write_points}
 
+        # 計算此設備實際觸及的 unit_id 集合（sentinel resolve：None → config.unit_id）
+        self._used_unit_ids: frozenset[int] = self._compute_used_unit_ids()
+
         # 告警管理
         self._alarm_manager = AlarmStateManager()
         self._alarm_evaluators = list(alarm_evaluators)
@@ -353,6 +356,19 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         """目前被停用的點位"""
         return frozenset(self._disabled_points)
 
+    @property
+    def used_unit_ids(self) -> frozenset[int]:
+        """此設備實際觸及的 Modbus unit_id 集合（SMA multi-unit 場景用）。
+
+        包含 ``DeviceConfig.unit_id`` 以及任何 ``ReadPoint`` / ``WritePoint``
+        以 ``unit_id`` 欄位覆寫的值。``None`` sentinel 已 resolve 為
+        ``config.unit_id``，故集合內皆為具體 int。
+
+        Returns:
+            frozenset[int]: 至少包含 ``{config.unit_id}``
+        """
+        return self._used_unit_ids
+
     def get_point_info(self) -> list[PointInfo]:
         """取得所有點位的詳細資訊（含啟用狀態）"""
         infos: list[PointInfo] = []
@@ -460,6 +476,10 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
             # 清理不再存在的 disabled_points
             valid_names = self.all_point_names
             self._disabled_points = self._disabled_points & valid_names
+
+            # 點位清單若有變動，重算 used_unit_ids
+            if any(s in changed_sections for s in ("always_points", "rotating_points", "write_points")):
+                self._used_unit_ids = self._compute_used_unit_ids()
         finally:
             if was_running:
                 await self.start()
@@ -816,6 +836,25 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
                 self._latest_values[name] = new_value
             except Exception as e:
                 logger.warning(f"[{self._config.device_id}] Event processing failed for point '{name}': {e}")
+
+    def _compute_used_unit_ids(self) -> frozenset[int]:
+        """計算此設備實際觸及的 unit_id 集合。
+
+        Point-level ``unit_id=None`` 視為使用 device 預設（``config.unit_id``），
+        故結果一定包含 ``config.unit_id``；非 None 的 override 額外加入集合。
+        """
+        used: set[int] = {self._config.unit_id}
+        for point in self._read_points_always:
+            if point.unit_id is not None:
+                used.add(point.unit_id)
+        for group in self._read_points_rotating:
+            for point in group:
+                if point.unit_id is not None:
+                    used.add(point.unit_id)
+        for wp in self._write_points.values():
+            if wp.unit_id is not None:
+                used.add(wp.unit_id)
+        return frozenset(used)
 
     def _build_read_point_lookup(self) -> dict[str, ReadPoint]:
         """建立 point_name → ReadPoint 的查詢表，供 per-point 策略使用。

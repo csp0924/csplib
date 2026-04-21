@@ -879,3 +879,69 @@ class TestAsyncModbusDeviceEdgeCases:
         # 應已正確清理
         assert device.is_connected is False
         assert device.is_running is False
+
+
+class TestUsedUnitIds:
+    """AsyncModbusDevice.used_unit_ids: sentinel resolve + 多 unit_id 聚合"""
+
+    def test_default_only_when_no_point_override(self, mock_client: AsyncMock, device_config: DeviceConfig):
+        """所有點位 unit_id=None → 僅回傳 config.unit_id"""
+        device = AsyncModbusDevice(
+            config=device_config,
+            client=mock_client,
+            always_points=[ReadPoint(name="p1", address=100, data_type=UInt16())],
+            write_points=[WritePoint(name="w1", address=200, data_type=UInt16())],
+        )
+        assert device.used_unit_ids == frozenset({1})
+
+    def test_aggregates_read_point_overrides(self, mock_client: AsyncMock, device_config: DeviceConfig):
+        """always_points / rotating_points 的 unit_id override 會被納入集合"""
+        device = AsyncModbusDevice(
+            config=device_config,
+            client=mock_client,
+            always_points=[
+                ReadPoint(name="p1", address=100, data_type=UInt16(), unit_id=7),
+            ],
+            rotating_points=[
+                [ReadPoint(name="p2", address=101, data_type=UInt16(), unit_id=8)],
+                [ReadPoint(name="p3", address=102, data_type=UInt16())],  # None → fallback
+            ],
+        )
+        assert device.used_unit_ids == frozenset({1, 7, 8})
+
+    def test_aggregates_write_point_overrides(self, mock_client: AsyncMock, device_config: DeviceConfig):
+        """write_points 的 unit_id override 也被納入"""
+        device = AsyncModbusDevice(
+            config=device_config,
+            client=mock_client,
+            write_points=[
+                WritePoint(name="w1", address=200, data_type=UInt16(), unit_id=5),
+                WritePoint(name="w2", address=201, data_type=UInt16()),
+            ],
+        )
+        assert device.used_unit_ids == frozenset({1, 5})
+
+    def test_returns_frozenset_immutable(self, mock_client: AsyncMock, device_config: DeviceConfig):
+        """property 回傳 frozenset，呼叫端無法 mutate"""
+        device = AsyncModbusDevice(config=device_config, client=mock_client)
+        result = device.used_unit_ids
+        assert isinstance(result, frozenset)
+
+    @pytest.mark.asyncio
+    async def test_recomputed_after_reconfigure(self, mock_client: AsyncMock, device_config: DeviceConfig):
+        """reconfigure 變更點位後 used_unit_ids 會重算"""
+        from csp_lib.equipment.device.base import ReconfigureSpec
+
+        device = AsyncModbusDevice(
+            config=device_config,
+            client=mock_client,
+            always_points=[ReadPoint(name="p1", address=100, data_type=UInt16(), unit_id=7)],
+        )
+        assert device.used_unit_ids == frozenset({1, 7})
+
+        await device.reconfigure(
+            ReconfigureSpec(
+                always_points=[ReadPoint(name="p1", address=100, data_type=UInt16(), unit_id=9)],
+            )
+        )
+        assert device.used_unit_ids == frozenset({1, 9})
