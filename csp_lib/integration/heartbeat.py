@@ -34,7 +34,7 @@ from .reconciler import ReconcilerMixin
 from .schema import HeartbeatMapping, HeartbeatMode
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import DeviceProtocol
 
     from .registry import DeviceRegistry
 
@@ -294,7 +294,7 @@ class HeartbeatService(ReconcilerMixin):
         return constant_value
 
     @staticmethod
-    async def _safe_write(device: AsyncModbusDevice, point_name: str, value: int) -> None:
+    async def _safe_write(device: DeviceProtocol, point_name: str, value: int) -> None:
         """安全寫入：單一設備失敗不中斷其他設備"""
         try:
             await device.write(point_name, value)
