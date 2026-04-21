@@ -95,11 +95,6 @@ class _TargetRuntime:
     last_save_time: float | None = None
 
 
-def _noop_transform(values: dict[str, Any]) -> dict[str, Any]:
-    # Legacy runtime 的 placeholder；legacy 路徑直接組 document，不會呼叫此函式。
-    return values
-
-
 # ================ 正規化工具 ================
 
 
@@ -239,23 +234,19 @@ class DataUploadManager(DeviceEventSubscriber):
             ValueError: 同時提供 ``collection_name`` 與 ``outputs``，或兩者皆未提供。
             NotImplementedError: 任一 target 使用 ``WritePolicy.INTERVAL``。
         """
-        # ----- 參數互斥驗證 -----
         if collection_name is not None and outputs is not None:
             raise ValueError("configure(): collection_name 與 outputs 不可同時提供")
         if collection_name is None and outputs is None:
             raise ValueError("configure(): 必須提供 collection_name（legacy）或 outputs（fan-out）其中一個")
 
-        # ----- Fan-out 模式 -----
         if outputs is not None:
             if not outputs:
                 raise ValueError("configure(): outputs 不可為空 list")
-            # 拒絕尚未實作的 INTERVAL policy
             for target in outputs:
                 if target.policy is WritePolicy.INTERVAL:
                     raise NotImplementedError(f"WritePolicy.INTERVAL 尚未實作（target collection={target.collection}）")
 
-            runtimes = [_TargetRuntime(target=t) for t in outputs]
-            self._device_targets[device_id] = runtimes
+            self._device_targets[device_id] = [_TargetRuntime(target=t) for t in outputs]
             for target in outputs:
                 self._uploader.register_collection(target.collection)
 
@@ -274,9 +265,19 @@ class DataUploadManager(DeviceEventSubscriber):
             DeprecationWarning,
             stacklevel=2,
         )
+        self._install_legacy_target(device_id, collection_name, save_interval)
+
+    def _install_legacy_target(
+        self,
+        device_id: str,
+        collection_name: str,
+        save_interval: float | None,
+    ) -> None:
+        # 提供給 configure() 舊路徑與 subscribe() 的預設 fallback 共用。
+        # 預設 fallback 不走 configure() 是為了避免對 library 自身發出 DeprecationWarning。
         legacy_target = UploadTarget(
             collection=collection_name,
-            transform=_noop_transform,
+            transform=lambda v: v,  # placeholder；legacy 路徑不呼叫 transform
             policy=WritePolicy.ALWAYS,
         )
         normalized_interval = save_interval if save_interval and save_interval > 0 else None
@@ -308,9 +309,9 @@ class DataUploadManager(DeviceEventSubscriber):
         if device_id in self._unsubscribes:
             return
 
-        # 若未 configure，建立 legacy 預設 target
         if device_id not in self._device_targets:
-            self.configure(device_id, "device_data")
+            # 預設 fallback：走內部路徑避免對 library 自己發 DeprecationWarning。
+            self._install_legacy_target(device_id, "device_data", None)
 
         self._unsubscribes[device_id] = self._register_events(device)
 
