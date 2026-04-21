@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/transport/base.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-22
+version: ">=0.9.0"
 ---
 
 # PointGrouper
@@ -18,9 +18,13 @@ version: ">=0.4.2"
 
 ## 分組邏輯
 
-1. 按 `read_group`、`function_code`、`address` 排序
-2. 相同 `read_group` 和 `function_code` 的點位嘗試合併
+1. 按 `read_group`、`function_code`、`unit_id`、`address` 排序
+2. 分桶 key = `(read_group, function_code, unit_id)`：三者皆相同的點位才會嘗試合併
 3. 合併後的群組不超過各功能碼的最大讀取長度
+
+> **v0.9.0+**：分桶 key 新增 `unit_id` 維度。不同 `ReadPoint.unit_id`
+> 會產生獨立 `ReadGroup`，避免跨 slave 的請求誤併成單一 Modbus 幀。
+> 詳見 [[Multi-UnitID Device]]。
 
 ### 各功能碼最大讀取長度
 
@@ -43,6 +47,7 @@ version: ">=0.4.2"
 | `start_address` | `int` | 起始位址 |
 | `count` | `int` | 暫存器/線圈數量 |
 | `points` | `tuple[ReadPoint, ...]` | 包含的點位 |
+| `unit_id` | `int \| None` | v0.9.0+：該群組送往的 Modbus unit_id；`None` 時 [[GroupReader]] fallback 為 `DeviceConfig.unit_id` |
 
 ---
 

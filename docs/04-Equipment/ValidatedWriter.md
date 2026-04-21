@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/transport/writer.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-22
+version: ">=0.9.0"
 ---
 
 # ValidatedWriter
@@ -21,7 +21,7 @@ version: ">=0.4.2"
 | 參數 | 型別 | 預設值 | 說明 |
 |------|------|--------|------|
 | `client` | `AsyncModbusClientBase` | (必填) | Modbus 客戶端 |
-| `unit_id` | `int` | `1` | 設備位址 (Slave ID) |
+| `unit_id` | `int` | `1` | 設備 fallback unit_id；`WritePoint.unit_id` 若非 None 則覆寫（v0.9.0+） |
 | `address_offset` | `int` | `0` | 位址偏移 |
 
 ---
@@ -33,6 +33,10 @@ version: ">=0.4.2"
 3. **編碼**：呼叫 `data_type.encode()` 將值編碼為暫存器資料
 4. **寫入**：根據 `function_code` 呼叫對應的 Modbus 寫入函數
 5. **讀回驗證**（可選）：寫入後讀回暫存器值，比對是否一致
+
+> **v0.9.0+ unit_id 一致性**：寫入與讀回驗證共用同一個 resolved unit_id
+> （point override 優先，否則 fallback 為建構時的 `unit_id`），確保讀回
+> 的是剛寫入的 slave。詳見 [[Multi-UnitID Device]]。
 
 ---
 

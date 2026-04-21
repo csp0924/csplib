@@ -4,8 +4,8 @@ tags:
   - layer/equipment
   - status/complete
 source: csp_lib/equipment/core/point.py
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-22
+version: ">=0.9.0"
 ---
 
 # WritePoint
@@ -29,6 +29,7 @@ version: ">=0.4.2"
 | `validator` | `ValueValidator \| None` | `None` | 值驗證器 |
 | `pipeline` | `ProcessingPipeline \| None` | `None` | 寫入前資料處理管線（使用者值 → 暫存器值） |
 | `metadata` | `PointMetadata \| None` | `None` | 點位元資料（單位、描述） |
+| `unit_id` | `int \| None` | `None` | v0.9.0+：此點位送往的 Modbus unit_id。`None` 沿用 `DeviceConfig.unit_id`；設值覆寫至 0-255 |
 
 ---
 

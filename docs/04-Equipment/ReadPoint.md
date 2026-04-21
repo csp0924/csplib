@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/equipment/core/point.py
 created: 2026-02-17
-updated: 2026-04-17
-version: ">=0.8.0"
+updated: 2026-04-22
+version: ">=0.9.0"
 ---
 
 # ReadPoint
@@ -31,6 +31,7 @@ version: ">=0.8.0"
 | `read_group` | `str` | `""` | 讀取分組名稱（空字串參與自動合併） |
 | `metadata` | `PointMetadata \| None` | `None` | 點位元資料（單位、描述） |
 | `reject_non_finite` | `bool` | `False` | v0.8.0+：True 時 NaN/Inf 視為無效，保留舊值並 log WARNING |
+| `unit_id` | `int \| None` | `None` | v0.9.0+：此點位送往的 Modbus unit_id。`None` 沿用 `DeviceConfig.unit_id`；設值覆寫至 0-255 |
 
 ---
 
