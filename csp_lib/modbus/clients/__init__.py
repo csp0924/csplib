@@ -13,6 +13,10 @@
 
 from .base import AsyncModbusClientBase
 from .client import PymodbusRtuClient, PymodbusTcpClient, SharedPymodbusTcpClient
+
+# Deprecated 別名：is_new_api / slave_kwarg 已改為 internal _is_new_api / _slave_kwarg。
+# 保留頂層 re-export 一版供下游過渡期使用，v0.10.0 將移除。呼叫時會發 DeprecationWarning。
+from .compat import is_new_api, slave_kwarg
 from .queue import (
     CircuitBreakerState,
     ModbusRequestQueue,
@@ -23,6 +27,9 @@ from .queue import (
 __all__ = [
     # Base
     "AsyncModbusClientBase",
+    # Compat (deprecated aliases, removed in v0.10.0)
+    "is_new_api",
+    "slave_kwarg",
     # Queue
     "RequestQueueConfig",
     "RequestPriority",
