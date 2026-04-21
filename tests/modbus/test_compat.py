@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from csp_lib.modbus.clients.compat import _get_pymodbus_version, slave_kwarg
+from csp_lib.modbus.clients.compat import _get_pymodbus_version, _slave_kwarg
 
 
 class TestCompat:
@@ -10,13 +10,13 @@ class TestCompat:
     def test_slave_kwarg_new_api(self):
         _get_pymodbus_version.cache_clear()
         with patch("csp_lib.modbus.clients.compat._get_pymodbus_version", return_value=(3, 10, 0)):
-            result = slave_kwarg(5)
+            result = _slave_kwarg(5)
             assert result == {"device_id": 5}
 
     def test_slave_kwarg_old_api(self):
         _get_pymodbus_version.cache_clear()
         with patch("csp_lib.modbus.clients.compat._get_pymodbus_version", return_value=(3, 9, 0)):
-            result = slave_kwarg(5)
+            result = _slave_kwarg(5)
             assert result == {"slave": 5}
 
     def test_version_with_dev_suffix(self):

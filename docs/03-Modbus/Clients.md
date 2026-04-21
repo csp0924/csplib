@@ -288,11 +288,11 @@ async with SharedPymodbusTcpClient(config) as client:
 
 | 函式 | 說明 |
 |------|------|
-| `is_new_api()` | 回傳 `True` 若 pymodbus >= 3.10.0 |
-| `slave_kwarg(unit_id)` | 回傳 `{"device_id": unit_id}` 或 `{"slave": unit_id}`（依版本） |
+| `_is_new_api()` | 回傳 `True` 若 pymodbus >= 3.10.0 |
+| `_slave_kwarg(unit_id)` | 回傳 `{"device_id": unit_id}` 或 `{"slave": unit_id}`（依版本） |
 
 > [!note] 內部 API
-> `compat` 模組為內部使用，一般使用者不需要直接呼叫。
+> `compat` 模組為內部使用，函式以 `_` 前綴標記；`csp_lib.modbus.clients` 模組外請勿直接引用。
 
 ---
 
