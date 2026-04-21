@@ -13,7 +13,7 @@ import asyncio
 import json
 import socket
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
@@ -37,16 +37,17 @@ class ClusterSnapshot:
     叢集狀態快照（不可變）
 
     由 ClusterStateSubscriber 從 Redis 反序列化產生。
-    為防止意外就地修改，此 dataclass 為 frozen；若需更新欄位請重新構造整個物件
-    （例如於 ``_poll_all`` 中累積 kwargs 後一次性建立）。
+    此 dataclass 為 ``frozen=True``：屬性不可 reassign；集合型欄位使用 ``tuple``
+    確保 shallow immutability（無法 ``snap.base_modes.append(...)``）。若需更新欄位
+    請重新構造整個物件（例如於 ``_poll_all`` 中累積 kwargs 後一次性建立）。
 
     Attributes:
         leader_id: 目前 leader instance_id
         elected_at: leader 上任時間
-        base_modes: 基礎模式名稱列表
-        override_names: 活躍的 override 名稱列表
+        base_modes: 基礎模式名稱 tuple
+        override_names: 活躍的 override 名稱 tuple
         effective_mode: 目前生效的模式名稱
-        triggered_rules: 觸發的保護規則名稱列表
+        triggered_rules: 觸發的保護規則名稱 tuple
         protection_was_modified: 保護是否修改了命令
         p_target: 最後一次命令的 P 目標
         q_target: 最後一次命令的 Q 目標
@@ -56,10 +57,10 @@ class ClusterSnapshot:
 
     leader_id: str | None = None
     elected_at: float | None = None
-    base_modes: list[str] = field(default_factory=list)
-    override_names: list[str] = field(default_factory=list)
+    base_modes: tuple[str, ...] = ()
+    override_names: tuple[str, ...] = ()
     effective_mode: str | None = None
-    triggered_rules: list[str] = field(default_factory=list)
+    triggered_rules: tuple[str, ...] = ()
     protection_was_modified: bool = False
     p_target: float = 0.0
     q_target: float = 0.0
@@ -341,17 +342,17 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             if isinstance(raw_base, str):
                 parsed = self._parse_json_field("base_modes", raw_base)
                 if parsed is not None:
-                    kwargs["base_modes"] = parsed
+                    kwargs["base_modes"] = tuple(parsed)
             elif isinstance(raw_base, list):
-                kwargs["base_modes"] = raw_base
+                kwargs["base_modes"] = tuple(raw_base)
 
             raw_overrides = mode_data.get("overrides")
             if isinstance(raw_overrides, str):
                 parsed = self._parse_json_field("overrides", raw_overrides)
                 if parsed is not None:
-                    kwargs["override_names"] = parsed
+                    kwargs["override_names"] = tuple(parsed)
             elif isinstance(raw_overrides, list):
-                kwargs["override_names"] = raw_overrides
+                kwargs["override_names"] = tuple(raw_overrides)
 
             effective = mode_data.get("effective_mode", "")
             kwargs["effective_mode"] = effective if effective else None
@@ -363,9 +364,9 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             if isinstance(raw_rules, str):
                 parsed = self._parse_json_field("triggered_rules", raw_rules)
                 if parsed is not None:
-                    kwargs["triggered_rules"] = parsed
+                    kwargs["triggered_rules"] = tuple(parsed)
             elif isinstance(raw_rules, list):
-                kwargs["triggered_rules"] = raw_rules
+                kwargs["triggered_rules"] = tuple(raw_rules)
 
             raw_modified = prot_data.get("was_modified")
             if isinstance(raw_modified, bool):
