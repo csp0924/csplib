@@ -64,7 +64,7 @@ class DeviceRegistry:
         註冊設備與可選的 traits 和 metadata
 
         Args:
-            device: 要註冊的 Modbus 設備
+            device: 要註冊的設備（任何滿足 DeviceProtocol 的實作，如 AsyncModbusDevice）
             traits: 設備的 trait 標籤列表（可選）
             metadata: 設備靜態資訊（可選），如 rated_p、rated_s 等
 
@@ -94,7 +94,7 @@ class DeviceRegistry:
         then merges with extra_traits provided by user.
 
         Args:
-            device: 要註冊的 Modbus 設備
+            device: 要註冊的設備（任何滿足 DeviceProtocol 的實作，如 AsyncModbusDevice）
             extra_traits: 額外的 trait 標籤（可選），會排在自動發現的 traits 前面
             metadata: 設備靜態資訊（可選）
 

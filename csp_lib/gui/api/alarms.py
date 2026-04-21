@@ -59,6 +59,13 @@ async def clear_alarm(
     device = registry.get_device(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found")
-    # clear_alarm 為 AsyncModbusDevice (AlarmMixin) 方法，DeviceProtocol 不含
-    await device.clear_alarm(code)  # type: ignore[attr-defined]
+    # clear_alarm 為 AsyncModbusDevice (AlarmMixin) 方法，DeviceProtocol 不含。
+    # Registry 可能註冊非 Modbus 設備，用 getattr 檢查後回 501。
+    clear_alarm_method = getattr(device, "clear_alarm", None)
+    if not callable(clear_alarm_method):
+        raise HTTPException(
+            status_code=501,
+            detail=f"Device '{device_id}' does not support clearing alarms",
+        )
+    await clear_alarm_method(code)
     return {"status": "ok"}

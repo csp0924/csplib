@@ -20,7 +20,7 @@ from .schema import CapabilityCommandMapping, CommandMapping
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Command
-    from csp_lib.equipment.device.protocol import DeviceProtocol
+    from csp_lib.equipment.device import DeviceProtocol
 
 logger = get_logger(__name__)
 

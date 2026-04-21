@@ -29,8 +29,15 @@ def list_write_points(
     device = registry.get_device(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found")
-    # _write_points 為 AsyncModbusDevice 內部屬性，DeviceProtocol 不含
-    return sorted(device._write_points.keys())  # type: ignore[attr-defined]
+    # _write_points 為 AsyncModbusDevice 內部屬性，DeviceProtocol 不含。
+    # Registry 可能註冊非 Modbus 設備（如 AsyncCANDevice），用 hasattr 檢查後回 501。
+    write_points = getattr(device, "_write_points", None)
+    if write_points is None:
+        raise HTTPException(
+            status_code=501,
+            detail=f"Device '{device_id}' does not support listing write points",
+        )
+    return sorted(write_points.keys())
 
 
 @router.post("/devices/{device_id}/write")
