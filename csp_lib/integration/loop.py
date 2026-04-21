@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+from warnings import deprecated
 
 from csp_lib.controller.core import SystemBase
 from csp_lib.controller.executor import StrategyExecutor
@@ -53,9 +54,18 @@ class GridControlLoopConfig:
     pv_max_history: int = 300
 
 
+@deprecated(
+    "GridControlLoop 將於 v1.0.0 移除，請改用 SystemController；見 BACKLOG UL-D",
+    category=DeprecationWarning,
+)
 class GridControlLoop(AsyncLifecycleMixin):
     """
     完整控制迴圈編排器
+
+    .. deprecated::
+        將於 v1.0.0 移除，請改用 :class:`~csp_lib.integration.system_controller.SystemController`。
+        目前保留供相容。見 BACKLOG UL-D。
+
 
     編排 ContextBuilder、CommandRouter、DeviceDataFeed 與 StrategyExecutor，
     提供從設備讀取到策略執行再到設備寫入的完整控制迴圈。

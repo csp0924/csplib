@@ -10,6 +10,11 @@ from csp_lib.integration.loop import GridControlLoop, GridControlLoopConfig
 from csp_lib.integration.registry import DeviceRegistry
 from csp_lib.integration.schema import CommandMapping, ContextMapping, DataFeedMapping
 
+# GridControlLoop 已 deprecated（UL-D，v1.0.0 將移除）。本模組既有測試沿用其實例化驗證
+# runtime 行為，容易觸發 DeprecationWarning spam。範圍限縮到本檔避免影響其他模組。
+# 驗證 deprecation 本身的測試使用 `pytest.warns(...)`，pytest 會在該上下文內覆蓋此 filter。
+pytestmark = pytest.mark.filterwarnings("ignore:GridControlLoop:DeprecationWarning")
+
 
 def _make_device(
     device_id: str, values: dict | None = None, responsive: bool = True, protected: bool = False
@@ -46,6 +51,16 @@ class MockStrategy(Strategy):
 
     async def on_deactivate(self) -> None:
         self.deactivated = True
+
+
+class TestGridControlLoopDeprecation:
+    """驗證 GridControlLoop 已標記為 deprecated（UL-D，v1.0.0 將移除）"""
+
+    def test_instantiation_emits_deprecation_warning(self):
+        reg = DeviceRegistry()
+        config = GridControlLoopConfig()
+        with pytest.warns(DeprecationWarning, match="GridControlLoop"):
+            GridControlLoop(reg, config)
 
 
 class TestGridControlLoopInit:
