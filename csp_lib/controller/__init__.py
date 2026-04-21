@@ -22,7 +22,7 @@ from .core import (
 )
 from .discovery import ENTRY_POINT_GROUP, StrategyDescriptor, discover_strategies
 from .executor import ComputeOffloader, StrategyExecutor
-from .protocol import GridControllerBase, GridControllerProtocol
+from .protocol import GridControllerBase, GridControllerProtocol, StrategyAwareGridControllerProtocol
 from .services import PVDataService
 from .strategies import (
     BypassStrategy,
@@ -87,6 +87,7 @@ __all__ = [
     # Protocol
     "GridControllerBase",
     "GridControllerProtocol",
+    "StrategyAwareGridControllerProtocol",
     # Core
     "Command",
     "CommandProcessor",
