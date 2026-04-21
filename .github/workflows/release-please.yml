@@ -60,7 +60,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.rp.outputs.tag_name }}
-        run: gh workflow run release.yml --ref "$TAG"
+          REPO: ${{ github.repository }}
+        # 此 job 沒有 checkout，gh 需要 --repo 顯式指定；
+        # 不加會在 runner 上跑 `git rev-parse` 失敗（fatal: not a git repository）。
+        run: gh workflow run release.yml --repo "$REPO" --ref "$TAG"
 
   # ========== CITATION.cff date-released 同步 ==========
   # release-please 的 generic updater 只能 bump semver，不能改日期。
