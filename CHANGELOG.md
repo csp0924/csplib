@@ -4,6 +4,29 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.0](https://github.com/csp0924/csplib/compare/v0.8.4...v0.9.0) (2026-04-21)
+
+
+### Added
+
+* **equipment:** AsyncModbusDevice.used_unit_ids property + sentinel resolve ([#92](https://github.com/csp0924/csplib/issues/92)) ([30f50e8](https://github.com/csp0924/csplib/commit/30f50e8aa66e9d9467eb01ff09df93bfd2e0f8e2))
+* **equipment:** ReadGroup.unit_id + PointGrouper 按 unit_id 分桶 ([#90](https://github.com/csp0924/csplib/issues/90)) ([b0a1084](https://github.com/csp0924/csplib/commit/b0a108472aafaea6ee293075e601185cf3c60295))
+* **equipment:** ReadPoint/WritePoint 新增 optional unit_id 欄位 ([#89](https://github.com/csp0924/csplib/issues/89)) ([9b6bf4e](https://github.com/csp0924/csplib/commit/9b6bf4ef5a38b3e05171306ef228e71d59f10b46))
+* **integration:** Operator Pattern 基礎（Reconciler + TypeRegistry + SiteManifest） ([#87](https://github.com/csp0924/csplib/issues/87)) ([4606bcb](https://github.com/csp0924/csplib/commit/4606bcb3ab2d9453ca66308ac8d8d33ea6a785b8))
+* **manager:** DataUploadManager fan-out transform 與 ON_CHANGE policy ([#94](https://github.com/csp0924/csplib/issues/94)) ([174eca1](https://github.com/csp0924/csplib/commit/174eca1ced10d357ec8b30a2a5c571ff215ba62d))
+
+
+### Fixed
+
+* **ci:** CITATION.cff date 同步改推 Release PR branch 避開 main protection ([#83](https://github.com/csp0924/csplib/issues/83)) ([928fd64](https://github.com/csp0924/csplib/commit/928fd646a18e533b429d6528bb188382be149959))
+* **ci:** release.yml 支援 dispatch 舊 tag（救 v0.8.4 情境） ([#86](https://github.com/csp0924/csplib/issues/86)) ([9f622ff](https://github.com/csp0924/csplib/commit/9f622ff36bc140a791d32f5312c34c11777051ee))
+
+
+### Changed
+
+* **equipment:** GroupReader/ValidatedWriter 支援 per-group/per-point unit_id ([#91](https://github.com/csp0924/csplib/issues/91)) ([db84529](https://github.com/csp0924/csplib/commit/db8452940e965236fafc30348fdc4d07c32b5ac4))
+* **integration:** Operator Pattern merge 前收尾（BoundSpec 瘦身 + ReconcilerMixin） ([#88](https://github.com/csp0924/csplib/issues/88)) ([6cf5ce4](https://github.com/csp0924/csplib/commit/6cf5ce4ac6511a0b17e88366c24ec98cfb00c590))
+
 ## [0.8.4](https://github.com/csp0924/csplib/compare/v0.8.3...v0.8.4) (2026-04-19)
 
 
