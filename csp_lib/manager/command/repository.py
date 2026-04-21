@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from csp_lib.core import get_logger
+from csp_lib.manager.base import AsyncRepository
 
 from .schema import CommandRecord, CommandStatus
 
@@ -22,12 +23,11 @@ logger = get_logger(__name__)
 
 
 @runtime_checkable
-class CommandRepository(Protocol):
-    """指令記錄儲存庫介面"""
+class CommandRepository(AsyncRepository, Protocol):
+    """指令記錄儲存庫介面
 
-    async def health_check(self) -> bool:
-        """檢查 Repository 連線是否正常"""
-        ...
+    繼承自 ``AsyncRepository``，統一所有 Repository 的健康檢查介面。
+    """
 
     async def create(self, record: CommandRecord) -> str:
         """
