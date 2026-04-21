@@ -20,7 +20,7 @@ from .schema import CapabilityCommandMapping, CommandMapping
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Command
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import DeviceProtocol
 
 logger = get_logger(__name__)
 
@@ -286,7 +286,7 @@ class CommandRouter:
                     continue
                 await self._apply_transform_and_write(device, cap_mapping, value)
 
-    def _resolve_capability_targets(self, mapping: CapabilityCommandMapping) -> list[AsyncModbusDevice]:
+    def _resolve_capability_targets(self, mapping: CapabilityCommandMapping) -> list[DeviceProtocol]:
         """解析 capability mapping 的目標設備列表（已過濾 responsive + non-protected + has_capability）"""
         if mapping.device_id is not None:
             device = self._registry.get_device(mapping.device_id)  # type: ignore[arg-type]
@@ -305,7 +305,7 @@ class CommandRouter:
         return [d for d in devices if not d.is_protected]
 
     async def _apply_transform_and_write(
-        self, device: AsyncModbusDevice, mapping: CapabilityCommandMapping, value: object
+        self, device: DeviceProtocol, mapping: CapabilityCommandMapping, value: object
     ) -> None:
         """套用 transform 後寫入 capability 解析的點位"""
         if mapping.transform is not None:
@@ -319,7 +319,7 @@ class CommandRouter:
             self._record_written(device.device_id, point_name, value)
 
     @staticmethod
-    async def _safe_write(device: AsyncModbusDevice, point_name: str, value: object) -> bool:
+    async def _safe_write(device: DeviceProtocol, point_name: str, value: object) -> bool:
         """安全寫入：單一設備失敗不中斷其他設備
 
         Returns:

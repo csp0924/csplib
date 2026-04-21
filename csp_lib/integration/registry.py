@@ -19,7 +19,7 @@ from csp_lib.core import get_logger
 from .schema import CapabilityRequirement, capability_display_name
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import DeviceProtocol
     from csp_lib.equipment.device.capability import Capability
 
 logger = get_logger(__name__)
@@ -38,7 +38,7 @@ class DeviceRegistry:
     Trait-based 設備查詢索引
 
     維護雙向索引：
-      - device_id → AsyncModbusDevice
+      - device_id → DeviceProtocol
       - device_id → set[trait]
       - trait → set[device_id]
 
@@ -48,7 +48,7 @@ class DeviceRegistry:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._devices: dict[str, AsyncModbusDevice] = {}  # device_id → 設備實例
+        self._devices: dict[str, DeviceProtocol] = {}  # device_id → 設備實例
         self._device_traits: dict[str, set[str]] = {}  # device_id → 該設備的 traits
         self._trait_devices: dict[str, set[str]] = {}  # trait → 擁有該 trait 的 device_ids
         self._metadata: dict[str, dict[str, Any]] = {}  # device_id → 靜態 metadata
@@ -62,7 +62,7 @@ class DeviceRegistry:
 
     def register(
         self,
-        device: AsyncModbusDevice,
+        device: DeviceProtocol,
         traits: list[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
@@ -70,7 +70,7 @@ class DeviceRegistry:
         註冊設備與可選的 traits 和 metadata
 
         Args:
-            device: 要註冊的 Modbus 設備
+            device: 要註冊的設備（任何滿足 DeviceProtocol 的實作，如 AsyncModbusDevice）
             traits: 設備的 trait 標籤列表（可選）
             metadata: 設備靜態資訊（可選），如 rated_p、rated_s 等
 
@@ -89,7 +89,7 @@ class DeviceRegistry:
 
     def register_with_capabilities(
         self,
-        device: AsyncModbusDevice,
+        device: DeviceProtocol,
         extra_traits: Sequence[str] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
@@ -100,7 +100,7 @@ class DeviceRegistry:
         then merges with extra_traits provided by user.
 
         Args:
-            device: 要註冊的 Modbus 設備
+            device: 要註冊的設備（任何滿足 DeviceProtocol 的實作，如 AsyncModbusDevice）
             extra_traits: 額外的 trait 標籤（可選），會排在自動發現的 traits 前面
             metadata: 設備靜態資訊（可選）
 
@@ -175,22 +175,22 @@ class DeviceRegistry:
 
     # ---- 查詢 ----
 
-    def get_device(self, device_id: str) -> AsyncModbusDevice | None:
+    def get_device(self, device_id: str) -> DeviceProtocol | None:
         """依 ID 查詢設備，不存在回傳 None"""
         with self._lock:
             return self._devices.get(device_id)
 
-    def get_devices_by_trait(self, trait: str) -> list[AsyncModbusDevice]:
+    def get_devices_by_trait(self, trait: str) -> list[DeviceProtocol]:
         """依 trait 查詢所有設備（按 device_id 排序，確保確定性）"""
         with self._lock:
             ids = self._trait_devices.get(trait, set())
             return [self._devices[did] for did in sorted(ids)]
 
-    def get_responsive_devices_by_trait(self, trait: str) -> list[AsyncModbusDevice]:
+    def get_responsive_devices_by_trait(self, trait: str) -> list[DeviceProtocol]:
         """依 trait 查詢所有 is_responsive=True 的設備（按 device_id 排序）"""
         return [d for d in self.get_devices_by_trait(trait) if d.is_responsive]
 
-    def get_first_responsive_device_by_trait(self, trait: str) -> AsyncModbusDevice | None:
+    def get_first_responsive_device_by_trait(self, trait: str) -> DeviceProtocol | None:
         """依 trait 取得第一台 responsive 設備，無則回傳 None"""
         devices = self.get_responsive_devices_by_trait(trait)
         return devices[0] if devices else None
@@ -206,7 +206,7 @@ class DeviceRegistry:
             return dict(self._metadata.get(device_id, {}))
 
     @property
-    def all_devices(self) -> list[AsyncModbusDevice]:
+    def all_devices(self) -> list[DeviceProtocol]:
         """所有已註冊設備（按 device_id 排序）"""
         with self._lock:
             return [self._devices[did] for did in sorted(self._devices)]
@@ -219,7 +219,7 @@ class DeviceRegistry:
 
     # ---- Capability 查詢 ----
 
-    def get_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
+    def get_devices_with_capability(self, capability: Capability | str) -> list[DeviceProtocol]:
         """取得具備指定能力的所有設備（按 device_id 排序）"""
         with self._lock:
             return sorted(
@@ -227,7 +227,7 @@ class DeviceRegistry:
                 key=lambda d: d.device_id,
             )
 
-    def get_responsive_devices_with_capability(self, capability: Capability | str) -> list[AsyncModbusDevice]:
+    def get_responsive_devices_with_capability(self, capability: Capability | str) -> list[DeviceProtocol]:
         """取得具備指定能力且 responsive 的設備（按 device_id 排序）"""
         return [d for d in self.get_devices_with_capability(capability) if d.is_responsive]
 
