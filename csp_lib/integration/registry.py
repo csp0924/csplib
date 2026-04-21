@@ -28,6 +28,10 @@ logger = get_logger(__name__)
 # responsive=True 代表設備從無回應轉為有回應；False 則為反向。
 StatusChangeCallback = Callable[[str, bool], None]
 
+# Unregister callback 簽名: (device_id) -> None
+# 設備自 Registry 解除註冊後呼叫（鎖外執行），供下游元件清理 per-device 狀態。
+UnregisterCallback = Callable[[str], None]
+
 
 class DeviceRegistry:
     """
@@ -51,6 +55,8 @@ class DeviceRegistry:
         # Status-change 觀察者與最近一次觀測狀態（用於變更偵測）
         self._status_observers: list[StatusChangeCallback] = []
         self._last_responsive: dict[str, bool] = {}  # device_id → 上次 notify 時的 responsive
+        # Unregister 觀察者：設備自 Registry 移除時通知下游清理 per-device 狀態
+        self._unregister_observers: list[UnregisterCallback] = []
 
     # ---- 註冊 / 移除 ----
 
@@ -109,9 +115,14 @@ class DeviceRegistry:
         """
         移除設備及其所有 trait 關聯
 
+        成功移除後（device 先前存在），會鎖外同步呼叫所有
+        unregister observer，供下游元件（如 ``CommandRouter``）清理
+        per-device 狀態。device_id 不存在時靜默忽略且**不觸發** observer。
+
         Args:
             device_id: 要移除的設備 ID（不存在時靜默忽略）
         """
+        removed = False
         with self._lock:
             if device_id not in self._devices:
                 return
@@ -123,6 +134,10 @@ class DeviceRegistry:
             # 移除設備時同步清除狀態基準，避免下次以同名 id 重註冊後
             # 首次 notify 誤判為「狀態變化」
             self._last_responsive.pop(device_id, None)
+            removed = True
+        # 鎖外通知 observers
+        if removed:
+            self._notify_unregistered(device_id)
 
     # ---- Trait 管理 ----
 
@@ -426,6 +441,45 @@ class DeviceRegistry:
             except Exception:
                 logger.opt(exception=True).warning(
                     f"DeviceRegistry status observer 執行失敗: device_id={device_id}, responsive={responsive}"
+                )
+
+    # ---- Unregister 觀察者 ----
+
+    def on_unregister(self, callback: UnregisterCallback) -> None:
+        """註冊「設備解除註冊」觀察者。
+
+        回呼簽名 ``callback(device_id: str) -> None``，在設備自 Registry 成功
+        移除後、鎖外同步呼叫。用於讓下游元件（如 ``CommandRouter``）清理
+        與該 device_id 綁定的 per-device 狀態。
+
+        Thread-safe：append 在 ``self._lock`` 保護下進行。例外不影響其他
+        observer，統一以 ``logger.opt(exception=True).warning(...)`` 記錄。
+        """
+        with self._lock:
+            self._unregister_observers.append(callback)
+
+    def remove_unregister_observer(self, callback: UnregisterCallback) -> None:
+        """移除已註冊的 unregister 觀察者；未註冊時靜默忽略。"""
+        with self._lock:
+            try:
+                self._unregister_observers.remove(callback)
+            except ValueError:
+                pass
+
+    def _notify_unregistered(self, device_id: str) -> None:
+        """鎖外同步呼叫所有 unregister observers。
+
+        在 ``self._lock`` 內以 ``list(...)`` 取得 observer 的 snapshot，
+        鎖外再逐一呼叫，避免 callback 反向存取 Registry 時重入死鎖。
+        """
+        with self._lock:
+            observers = list(self._unregister_observers)
+        for cb in observers:
+            try:
+                cb(device_id)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    f"DeviceRegistry unregister observer 執行失敗: device_id={device_id}"
                 )
 
     # ---- 內部輔助 ----

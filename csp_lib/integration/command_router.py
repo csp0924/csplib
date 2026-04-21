@@ -60,6 +60,13 @@ class CommandRouter:
         # Desired-state table consumed by CommandRefreshService reconciler.
         # NO_CHANGE writes skip this table so values stay business-meaningful.
         self._last_written: dict[str, dict[str, Any]] = {}
+        # 設備解除註冊時同步 prune desired-state，避免污染 get_tracked_device_ids()
+        # 進而讓 reconciler / refresh service 持續對已移除設備發無效寫入。
+        self._registry.on_unregister(self._on_device_unregistered)
+
+    def _on_device_unregistered(self, device_id: str) -> None:
+        """DeviceRegistry unregister observer：prune 該 device 的 desired-state。"""
+        self._last_written.pop(device_id, None)
 
     async def route(self, command: Command) -> None:
         """
