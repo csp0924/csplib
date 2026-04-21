@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.modbus import ByteOrder, FunctionCode, ModbusDataType, RegisterOrder
 
 if TYPE_CHECKING:
@@ -42,6 +43,10 @@ class PointDefinition:
         function_code: Modbus 功能碼
         byte_order: 位元組順序
         register_order: 暫存器順序
+        unit_id: 此點位要送往的 Modbus unit_id（slave address）。
+            - ``None``（預設）：沿用所屬 ``AsyncModbusDevice`` 的 ``DeviceConfig.unit_id``
+            - ``int``（0-255）：覆寫至指定 unit，用於 SMA 風格單一物理設備
+              掛多個 Modbus unit（如 Inverter + MeterCorrection 共享 TCP 連線）
     """
 
     name: str
@@ -50,6 +55,11 @@ class PointDefinition:
     function_code: FunctionCode | None = None
     byte_order: ByteOrder = ByteOrder.BIG_ENDIAN
     register_order: RegisterOrder = RegisterOrder.HIGH_FIRST
+    unit_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.unit_id is not None and not 0 <= self.unit_id <= 255:
+            raise ConfigurationError(f"point {self.name!r} 的 unit_id={self.unit_id} 超出 Modbus 合法範圍 [0, 255]")
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +108,7 @@ class ReadPoint(PointDefinition):
     reject_non_finite: bool = False
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         if self.function_code is None:
             object.__setattr__(self, "function_code", FunctionCode.READ_HOLDING_REGISTERS)
 
@@ -118,6 +129,7 @@ class WritePoint(PointDefinition):
     metadata: PointMetadata | None = None
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         if self.function_code is None:
             object.__setattr__(self, "function_code", FunctionCode.WRITE_MULTIPLE_REGISTERS)
 
