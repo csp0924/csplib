@@ -1,42 +1,40 @@
 # =============== Controller Protocol Tests ===============
 #
-# 測試 GridControllerProtocol 與 GridControllerBase
+# 測試 GridControllerProtocol、StrategyAwareGridControllerProtocol 與 GridControllerBase
 
 import pytest
 
 from csp_lib.controller.core import Command, StrategyContext
-from csp_lib.controller.protocol import GridControllerBase, GridControllerProtocol
+from csp_lib.controller.protocol import (
+    GridControllerBase,
+    GridControllerProtocol,
+    StrategyAwareGridControllerProtocol,
+)
 
 # =============== GridControllerProtocol Tests ===============
 
 
 class TestGridControllerProtocol:
-    """GridControllerProtocol 協定測試"""
+    """GridControllerProtocol 協定測試（僅 start/stop 生命週期介面）"""
 
     def test_is_runtime_checkable(self):
         """Protocol 應標記為 @runtime_checkable"""
-        # runtime_checkable protocols support isinstance checks
         assert (
             hasattr(GridControllerProtocol, "__protocol_attrs__")
             or hasattr(GridControllerProtocol, "__callable_proto_members_only__")
             or callable(getattr(GridControllerProtocol, "_is_runtime_protocol", None))
         )
 
-        # The definitive test: isinstance() does not raise TypeError
         class Dummy:
             pass
 
-        # If not runtime_checkable, isinstance would raise TypeError
         result = isinstance(Dummy(), GridControllerProtocol)
         assert result is False
 
     def test_conforming_class_passes_isinstance(self):
-        """實作所有方法的類別應通過 isinstance 檢查"""
+        """實作 start/stop 的類別應通過 isinstance 檢查"""
 
         class ConformingController:
-            def set_strategy(self, strategy):
-                pass
-
             async def start(self):
                 pass
 
@@ -46,38 +44,10 @@ class TestGridControllerProtocol:
         controller = ConformingController()
         assert isinstance(controller, GridControllerProtocol)
 
-    def test_partial_implementation_fails_isinstance(self):
-        """只實作部分方法的類別不應通過 isinstance 檢查"""
-
-        class PartialController:
-            def set_strategy(self, strategy):
-                pass
-
-            # missing start() and stop()
-
-        controller = PartialController()
-        assert not isinstance(controller, GridControllerProtocol)
-
-    def test_missing_set_strategy_fails_isinstance(self):
-        """缺少 set_strategy 的類別不應通過 isinstance 檢查"""
-
-        class MissingSetStrategy:
-            async def start(self):
-                pass
-
-            async def stop(self):
-                pass
-
-        controller = MissingSetStrategy()
-        assert not isinstance(controller, GridControllerProtocol)
-
     def test_missing_start_fails_isinstance(self):
         """缺少 start 的類別不應通過 isinstance 檢查"""
 
         class MissingStart:
-            def set_strategy(self, strategy):
-                pass
-
             async def stop(self):
                 pass
 
@@ -88,9 +58,6 @@ class TestGridControllerProtocol:
         """缺少 stop 的類別不應通過 isinstance 檢查"""
 
         class MissingStop:
-            def set_strategy(self, strategy):
-                pass
-
             async def start(self):
                 pass
 
@@ -105,10 +72,76 @@ class TestGridControllerProtocol:
 
         assert not isinstance(EmptyClass(), GridControllerProtocol)
 
+    def test_set_strategy_not_required(self):
+        """v0.9.x 後 set_strategy 已移至 StrategyAwareGridControllerProtocol，
+        只實作 start/stop 仍應滿足 GridControllerProtocol。"""
+
+        class LifecycleOnly:
+            async def start(self):
+                pass
+
+            async def stop(self):
+                pass
+
+        assert isinstance(LifecycleOnly(), GridControllerProtocol)
+
+    def test_protocol_has_expected_methods(self):
+        """Protocol 應定義 start, stop 方法（不包含 set_strategy）"""
+        assert hasattr(GridControllerProtocol, "start")
+        assert hasattr(GridControllerProtocol, "stop")
+
+
+# =============== StrategyAwareGridControllerProtocol Tests ===============
+
+
+class TestStrategyAwareGridControllerProtocol:
+    """StrategyAwareGridControllerProtocol 擴充協定測試（start/stop + set_strategy）"""
+
+    def test_conforming_class_passes_isinstance(self):
+        """實作所有三個方法的類別應通過 isinstance 檢查"""
+
+        class ConformingController:
+            def set_strategy(self, strategy):
+                pass
+
+            async def start(self):
+                pass
+
+            async def stop(self):
+                pass
+
+        controller = ConformingController()
+        assert isinstance(controller, StrategyAwareGridControllerProtocol)
+        # 同時也必須符合 base protocol
+        assert isinstance(controller, GridControllerProtocol)
+
+    def test_missing_set_strategy_fails(self):
+        """只有 start/stop 的類別不應通過 StrategyAware 檢查"""
+
+        class LifecycleOnly:
+            async def start(self):
+                pass
+
+            async def stop(self):
+                pass
+
+        controller = LifecycleOnly()
+        assert not isinstance(controller, StrategyAwareGridControllerProtocol)
+        # 但仍符合 base protocol
+        assert isinstance(controller, GridControllerProtocol)
+
+    def test_partial_implementation_fails_isinstance(self):
+        """只實作 set_strategy 不實作生命週期的類別不應通過檢查"""
+
+        class PartialController:
+            def set_strategy(self, strategy):
+                pass
+
+        controller = PartialController()
+        assert not isinstance(controller, StrategyAwareGridControllerProtocol)
+
     def test_non_callable_attributes_pass_isinstance(self):
-        """runtime_checkable Protocol 只檢查屬性存在性，非 callable 屬性也會通過"""
-        # This is documented Python behavior: runtime_checkable only checks hasattr(),
-        # not whether the attribute is callable.
+        """runtime_checkable Protocol 只檢查屬性存在性"""
 
         class NonCallableAttrs:
             set_strategy = "not a method"
@@ -116,13 +149,13 @@ class TestGridControllerProtocol:
             stop = "not a method"
 
         controller = NonCallableAttrs()
-        assert isinstance(controller, GridControllerProtocol)
+        assert isinstance(controller, StrategyAwareGridControllerProtocol)
 
     def test_protocol_has_expected_methods(self):
-        """Protocol 應定義 set_strategy, start, stop 方法"""
-        assert hasattr(GridControllerProtocol, "set_strategy")
-        assert hasattr(GridControllerProtocol, "start")
-        assert hasattr(GridControllerProtocol, "stop")
+        """StrategyAware 協定應定義 set_strategy, start, stop"""
+        assert hasattr(StrategyAwareGridControllerProtocol, "set_strategy")
+        assert hasattr(StrategyAwareGridControllerProtocol, "start")
+        assert hasattr(StrategyAwareGridControllerProtocol, "stop")
 
 
 # =============== GridControllerBase Tests ===============
@@ -184,7 +217,6 @@ class TestGridControllerBase:
         assert isinstance(ctx, StrategyContext)
         assert ctx.soc == 85.0
 
-    @pytest.mark.asyncio
     async def test_concrete_subclass_send_command(self):
         """_send_command 實作應能接收 Command"""
         sent_commands: list[Command] = []
@@ -221,8 +253,8 @@ class TestGridControllerBase:
 class TestProtocolAndBaseInteraction:
     """Protocol 與 Base 交互測試"""
 
-    def test_base_subclass_satisfies_protocol_when_complete(self):
-        """繼承 GridControllerBase 並額外實作 Protocol 方法時應滿足 Protocol"""
+    def test_base_subclass_satisfies_strategy_aware_protocol_when_complete(self):
+        """繼承 GridControllerBase 並實作 set_strategy/start/stop 時應滿足 StrategyAware Protocol"""
 
         class FullController(GridControllerBase):
             def _build_context(self) -> StrategyContext:
@@ -241,19 +273,27 @@ class TestProtocolAndBaseInteraction:
                 pass
 
         controller = FullController()
+        assert isinstance(controller, StrategyAwareGridControllerProtocol)
         assert isinstance(controller, GridControllerProtocol)
         assert isinstance(controller, GridControllerBase)
 
-    def test_base_subclass_without_protocol_methods_fails_protocol(self):
-        """只繼承 GridControllerBase 但未實作 Protocol 方法時不應滿足 Protocol"""
+    def test_base_subclass_with_only_lifecycle_satisfies_base_protocol(self):
+        """僅實作 start/stop 的 base 子類別符合 GridControllerProtocol 但不符合 StrategyAware"""
 
-        class MinimalController(GridControllerBase):
+        class LifecycleController(GridControllerBase):
             def _build_context(self) -> StrategyContext:
                 return StrategyContext()
 
             async def _send_command(self, command: Command) -> None:
                 pass
 
-        controller = MinimalController()
+            async def start(self) -> None:
+                pass
+
+            async def stop(self) -> None:
+                pass
+
+        controller = LifecycleController()
         assert isinstance(controller, GridControllerBase)
-        assert not isinstance(controller, GridControllerProtocol)
+        assert isinstance(controller, GridControllerProtocol)
+        assert not isinstance(controller, StrategyAwareGridControllerProtocol)
