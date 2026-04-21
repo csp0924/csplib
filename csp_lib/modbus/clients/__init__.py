@@ -13,7 +13,6 @@
 
 from .base import AsyncModbusClientBase
 from .client import PymodbusRtuClient, PymodbusTcpClient, SharedPymodbusTcpClient
-from .compat import is_new_api, slave_kwarg
 from .queue import (
     CircuitBreakerState,
     ModbusRequestQueue,
@@ -24,9 +23,6 @@ from .queue import (
 __all__ = [
     # Base
     "AsyncModbusClientBase",
-    # Compat
-    "is_new_api",
-    "slave_kwarg",
     # Queue
     "RequestQueueConfig",
     "RequestPriority",

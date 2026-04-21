@@ -19,7 +19,7 @@ from csp_lib.core import get_logger
 from ..config import ModbusRtuConfig, ModbusTcpConfig
 from ..exceptions import ModbusError
 from .base import AsyncModbusClientBase
-from .compat import slave_kwarg
+from .compat import _slave_kwarg
 from .queue import ModbusRequestQueue, RequestPriority, RequestQueueConfig
 
 logger = get_logger(__name__)
@@ -134,7 +134,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.read_coils(
             address=address,
             count=count,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
@@ -146,7 +146,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.read_discrete_inputs(
             address=address,
             count=count,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
@@ -158,7 +158,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.read_holding_registers(
             address=address,
             count=count,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
@@ -170,7 +170,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.read_input_registers(
             address=address,
             count=count,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"讀取輸入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC04")
@@ -184,7 +184,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.write_coil(
             address=address,
             value=value,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
@@ -195,7 +195,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.write_register(
             address=address,
             value=value,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
@@ -206,7 +206,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.write_coils(
             address=address,
             values=values,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
@@ -217,7 +217,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         response = await client.write_registers(
             address=address,
             values=values,
-            **slave_kwarg(unit_id),
+            **_slave_kwarg(unit_id),
         )
         if response.isError():
             raise ModbusError(f"寫入多個暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC10")
@@ -388,7 +388,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_read_coils(self, address: int, count: int, unit_id: int) -> list[bool]:
         client, _ = await self._get_resources()
-        response = await client.read_coils(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_coils(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
         return list(response.bits[:count])
@@ -403,7 +403,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_read_discrete_inputs(self, address: int, count: int, unit_id: int) -> list[bool]:
         client, _ = await self._get_resources()
-        response = await client.read_discrete_inputs(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_discrete_inputs(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
         return list(response.bits[:count])
@@ -418,7 +418,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_read_holding_registers(self, address: int, count: int, unit_id: int) -> list[int]:
         client, _ = await self._get_resources()
-        response = await client.read_holding_registers(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_holding_registers(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
         return list(response.registers)
@@ -433,7 +433,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_read_input_registers(self, address: int, count: int, unit_id: int) -> list[int]:
         client, _ = await self._get_resources()
-        response = await client.read_input_registers(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_input_registers(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取輸入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC04")
         return list(response.registers)
@@ -450,7 +450,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_write_single_coil(self, address: int, value: bool, unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_coil(address=address, value=value, **slave_kwarg(unit_id))
+        response = await client.write_coil(address=address, value=value, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
@@ -464,7 +464,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_write_single_register(self, address: int, value: int, unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_register(address=address, value=value, **slave_kwarg(unit_id))
+        response = await client.write_register(address=address, value=value, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
@@ -478,7 +478,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_write_multiple_coils(self, address: int, values: list[bool], unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_coils(address=address, values=values, **slave_kwarg(unit_id))
+        response = await client.write_coils(address=address, values=values, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
@@ -492,7 +492,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     async def _do_write_multiple_registers(self, address: int, values: list[int], unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_registers(address=address, values=values, **slave_kwarg(unit_id))
+        response = await client.write_registers(address=address, values=values, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入多個暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC10")
 
@@ -662,7 +662,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_read_coils(self, address: int, count: int, unit_id: int) -> list[bool]:
         client, _ = await self._get_resources()
-        response = await client.read_coils(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_coils(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
         return list(response.bits[:count])
@@ -677,7 +677,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_read_discrete_inputs(self, address: int, count: int, unit_id: int) -> list[bool]:
         client, _ = await self._get_resources()
-        response = await client.read_discrete_inputs(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_discrete_inputs(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
         return list(response.bits[:count])
@@ -692,7 +692,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_read_holding_registers(self, address: int, count: int, unit_id: int) -> list[int]:
         client, _ = await self._get_resources()
-        response = await client.read_holding_registers(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_holding_registers(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
         return list(response.registers)
@@ -707,7 +707,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_read_input_registers(self, address: int, count: int, unit_id: int) -> list[int]:
         client, _ = await self._get_resources()
-        response = await client.read_input_registers(address=address, count=count, **slave_kwarg(unit_id))
+        response = await client.read_input_registers(address=address, count=count, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"讀取輸入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC04")
         return list(response.registers)
@@ -724,7 +724,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_write_single_coil(self, address: int, value: bool, unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_coil(address=address, value=value, **slave_kwarg(unit_id))
+        response = await client.write_coil(address=address, value=value, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
@@ -738,7 +738,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_write_single_register(self, address: int, value: int, unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_register(address=address, value=value, **slave_kwarg(unit_id))
+        response = await client.write_register(address=address, value=value, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
@@ -752,7 +752,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_write_multiple_coils(self, address: int, values: list[bool], unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_coils(address=address, values=values, **slave_kwarg(unit_id))
+        response = await client.write_coils(address=address, values=values, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
@@ -766,7 +766,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     async def _do_write_multiple_registers(self, address: int, values: list[int], unit_id: int) -> None:
         client, _ = await self._get_resources()
-        response = await client.write_registers(address=address, values=values, **slave_kwarg(unit_id))
+        response = await client.write_registers(address=address, values=values, **_slave_kwarg(unit_id))
         if response.isError():
             raise ModbusError(f"寫入多個暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC10")
 
