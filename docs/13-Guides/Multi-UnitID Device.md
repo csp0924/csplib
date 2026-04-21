@@ -69,11 +69,12 @@ print(device.used_unit_ids)     # frozenset({1, 2, 3})
 
 ### Grouping
 
-[[PointGrouper]] 分桶 key 為 `(function_code, unit_id)`：
+[[PointGrouper]] 會以 `(unit_id, read_group, function_code)` 進行分桶／排序：
 
 - 相同 `fc` + 不同 `unit_id` **不會**被合併到同一個 `ReadGroup`
-- 每個 `ReadGroup` 帶上 `unit_id` 一起傳入 [[GroupReader]]
-- 結果：至少產生 N 個獨立 Modbus 請求，N = 點位組合出的 distinct unit_id 數量
+- 相同 `unit_id` + 相同 `fc`，但不同 `read_group` **也不會**被合併到同一個 `ReadGroup`
+- 每個 `ReadGroup` 會帶著其對應的 `unit_id` 一起傳入 [[GroupReader]]
+- 結果：實際產生的獨立 Modbus 請求數量，取決於點位組合出的 distinct `(unit_id, read_group, function_code)` 組合數
 
 ### Concurrency
 

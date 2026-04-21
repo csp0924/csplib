@@ -18,13 +18,13 @@ version: ">=0.9.0"
 
 ## 分組邏輯
 
-1. 按 `read_group`、`function_code`、`unit_id`、`address` 排序
-2. 分桶 key = `(read_group, function_code, unit_id)`：三者皆相同的點位才會嘗試合併
+1. 先按 `unit_id`、`read_group`、`function_code`、`address` 排序；其中 `unit_id=None` 會以 `-1` 作為排序 sentinel
+2. 分桶 key = `(unit_id, read_group, function_code)`：三者皆相同的點位才會嘗試合併
 3. 合併後的群組不超過各功能碼的最大讀取長度
 
-> **v0.9.0+**：分桶 key 新增 `unit_id` 維度。不同 `ReadPoint.unit_id`
-> 會產生獨立 `ReadGroup`，避免跨 slave 的請求誤併成單一 Modbus 幀。
-> 詳見 [[Multi-UnitID Device]]。
+> **v0.9.0+**：分桶與排序皆納入 `unit_id` 維度，且優先於 `read_group` / `function_code`。
+> 不同 `ReadPoint.unit_id` 會產生獨立 `ReadGroup`；`unit_id=None` 僅在排序時以 `-1`
+> 參與比較，不代表實際送出的 Modbus unit_id。詳見 [[Multi-UnitID Device]]。
 
 ### 各功能碼最大讀取長度
 
