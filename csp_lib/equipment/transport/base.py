@@ -18,12 +18,37 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True, frozen=True)
 class ReadGroup:
-    """讀取群組（不可變）"""
+    """讀取群組（不可變）
+
+    Attributes:
+        unit_id: 此 group 要送往的 Modbus unit_id（slave address）。
+            - ``None``（預設）：沿用所屬 ``AsyncModbusDevice`` 的 ``DeviceConfig.unit_id``
+            - ``int``：覆寫至指定 unit（SMA 風格 multi-unit device）
+
+        群組內所有 points 的 ``unit_id`` 必須一致（``__post_init__`` 驗證）。
+    """
 
     function_code: int
     start_address: int
     count: int
     points: tuple[ReadPoint, ...] = field(default_factory=tuple)
+    unit_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if not self.points:
+            return
+        effective = {p.unit_id for p in self.points}
+        if len(effective) > 1:
+            raise ValueError(
+                f"ReadGroup 內 points unit_id 不一致: {sorted(str(u) for u in effective)} "
+                f"(fc={self.function_code}, addr={self.start_address})"
+            )
+        point_uid = next(iter(effective))
+        if self.unit_id is not None and point_uid is not None and point_uid != self.unit_id:
+            raise ValueError(
+                f"ReadGroup.unit_id={self.unit_id} 與 points unit_id={point_uid} 不一致 "
+                f"(fc={self.function_code}, addr={self.start_address})"
+            )
 
 
 class PointGrouper:
@@ -53,17 +78,32 @@ class PointGrouper:
         if not points:
             return []
 
-        sorted_points = sorted(points, key=lambda p: (p.read_group, p.function_code, p.address))
+        # unit_id=None 與 int 不可直接排序，用 -1 作為 None 的 sort sentinel
+        # （真實 unit_id 合法範圍 0-255，-1 不會衝突）
+        def _sort_key(p: ReadPoint) -> tuple[int, str, int, int]:
+            uid_key = -1 if p.unit_id is None else p.unit_id
+            fc_key = int(p.function_code) if p.function_code is not None else -1
+            return (uid_key, p.read_group, fc_key, p.address)
+
+        def _bucket_key(p: ReadPoint) -> tuple[int | None, str, int]:
+            fc_key = int(p.function_code) if p.function_code is not None else -1
+            return (p.unit_id, p.read_group, fc_key)
+
+        sorted_points = sorted(points, key=_sort_key)
 
         groups: list[ReadGroup] = []
 
-        for (_, function_code), function_point in groupby(sorted_points, key=lambda p: (p.read_group, p.function_code)):
-            groups.extend(self._merge_consecutive(list(function_point), function_code))
+        for (unit_id, _, function_code), function_point in groupby(sorted_points, key=_bucket_key):
+            groups.extend(self._merge_consecutive(list(function_point), function_code, unit_id=unit_id))
 
         return groups
 
     def _merge_consecutive(
-        self, points: list[ReadPoint], function_code: int, max_length: int | None = None
+        self,
+        points: list[ReadPoint],
+        function_code: int,
+        max_length: int | None = None,
+        unit_id: int | None = None,
     ) -> list[ReadGroup]:
         """
         合併連續點位成群組
@@ -97,14 +137,26 @@ class PointGrouper:
                 continue
 
             groups.append(
-                ReadGroup(function_code=function_code, start_address=start, count=end - start, points=tuple(current))
+                ReadGroup(
+                    function_code=function_code,
+                    start_address=start,
+                    count=end - start,
+                    points=tuple(current),
+                    unit_id=unit_id,
+                )
             )
             # 重置狀態，開始新群組
             current, start, end = [point], p_start, p_end
 
         if current:
             groups.append(
-                ReadGroup(function_code=function_code, start_address=start, count=end - start, points=tuple(current))
+                ReadGroup(
+                    function_code=function_code,
+                    start_address=start,
+                    count=end - start,
+                    points=tuple(current),
+                    unit_id=unit_id,
+                )
             )
 
         return groups

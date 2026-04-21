@@ -280,3 +280,113 @@ class TestPointGrouperEdgeCases:
         # 2. read_group="b", FC=3 (b1)
         # 3. read_group="a", FC=4 (a_input)
         assert len(result) == 3
+
+
+class TestReadGroupUnitIdValidation:
+    """ReadGroup.__post_init__ 對 unit_id 一致性的驗證"""
+
+    def test_default_unit_id_is_none(self):
+        g = ReadGroup(function_code=3, start_address=0, count=1)
+        assert g.unit_id is None
+
+    def test_explicit_unit_id(self):
+        g = ReadGroup(function_code=3, start_address=0, count=1, unit_id=5)
+        assert g.unit_id == 5
+
+    def test_empty_points_skips_validation(self):
+        # 無 points 時略過驗證（允許空 group 單純表達請求區段）
+        g = ReadGroup(function_code=3, start_address=0, count=10, points=(), unit_id=7)
+        assert g.unit_id == 7
+
+    def test_points_with_consistent_unit_id_pass(self):
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=3)
+        p2 = ReadPoint(name="b", address=1, data_type=UInt16(), unit_id=3)
+        g = ReadGroup(function_code=3, start_address=0, count=2, points=(p1, p2), unit_id=3)
+        assert g.unit_id == 3
+
+    def test_points_all_none_pass(self):
+        # 全部未指定 unit_id，group 也 None（向下相容情境）
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16())
+        p2 = ReadPoint(name="b", address=1, data_type=UInt16())
+        g = ReadGroup(function_code=3, start_address=0, count=2, points=(p1, p2))
+        assert g.unit_id is None
+
+    def test_mixed_point_unit_ids_raises(self):
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=3)
+        p2 = ReadPoint(name="b", address=1, data_type=UInt16(), unit_id=5)
+        with pytest.raises(ValueError, match="不一致"):
+            ReadGroup(function_code=3, start_address=0, count=2, points=(p1, p2))
+
+    def test_mixed_none_and_int_raises(self):
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=3)
+        p2 = ReadPoint(name="b", address=1, data_type=UInt16())  # None
+        with pytest.raises(ValueError, match="不一致"):
+            ReadGroup(function_code=3, start_address=0, count=2, points=(p1, p2))
+
+    def test_group_unit_id_mismatches_points_raises(self):
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=3)
+        with pytest.raises(ValueError, match="unit_id=5.*unit_id=3"):
+            ReadGroup(function_code=3, start_address=0, count=1, points=(p1,), unit_id=5)
+
+
+class TestPointGrouperMultiUnitId:
+    """PointGrouper 按 unit_id 分桶"""
+
+    @pytest.fixture
+    def grouper(self) -> PointGrouper:
+        return PointGrouper()
+
+    def test_different_unit_ids_split_into_separate_groups(self, grouper):
+        # 相鄰 address 但不同 unit_id 不應合併
+        p_uid1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=1)
+        p_uid5 = ReadPoint(name="b", address=1, data_type=UInt16(), unit_id=5)
+        result = grouper.group([p_uid1, p_uid5])
+        assert len(result) == 2
+        uids = {g.unit_id for g in result}
+        assert uids == {1, 5}
+        for g in result:
+            assert len(g.points) == 1
+
+    def test_same_unit_id_still_merges(self, grouper):
+        # 相同 unit_id + 相鄰 address → 合併為單一 group
+        p1 = ReadPoint(name="a", address=0, data_type=UInt16(), unit_id=3)
+        p2 = ReadPoint(name="b", address=1, data_type=UInt16(), unit_id=3)
+        result = grouper.group([p1, p2])
+        assert len(result) == 1
+        assert result[0].unit_id == 3
+        assert len(result[0].points) == 2
+
+    def test_none_unit_id_grouped_separately_from_explicit(self, grouper):
+        # None 與 int 視為不同桶（None 代表 device 預設，int 代表覆寫）
+        p_default = ReadPoint(name="a", address=0, data_type=UInt16())
+        p_override = ReadPoint(name="b", address=1, data_type=UInt16(), unit_id=5)
+        result = grouper.group([p_default, p_override])
+        assert len(result) == 2
+        uids = {g.unit_id for g in result}
+        assert uids == {None, 5}
+
+    def test_backward_compat_all_none_byte_identical(self, grouper):
+        # 全部未指定 unit_id 時，分組結果應與 v0.8.x 完全一致
+        points = [ReadPoint(name=f"p{i}", address=i, data_type=UInt16()) for i in range(5)]
+        result = grouper.group(points)
+        assert len(result) == 1
+        assert result[0].unit_id is None
+        assert result[0].start_address == 0
+        assert result[0].count == 5
+        assert len(result[0].points) == 5
+
+    def test_multi_unit_across_function_codes(self, grouper):
+        # 不同 unit_id × 不同 function_code → 每個組合獨立 group
+        points = [
+            ReadPoint(name="u1fc3", address=0, data_type=UInt16(), unit_id=1),
+            ReadPoint(name="u5fc3", address=0, data_type=UInt16(), unit_id=5),
+            ReadPoint(
+                name="u1fc4",
+                address=0,
+                data_type=UInt16(),
+                unit_id=1,
+                function_code=FunctionCode.READ_INPUT_REGISTERS,
+            ),
+        ]
+        result = grouper.group(points)
+        assert len(result) == 3
