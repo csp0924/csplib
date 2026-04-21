@@ -454,3 +454,121 @@ class TestGroupReaderExceptions:
         """max_concurrent_reads < 1 應拋 ConfigurationError"""
         with pytest.raises(ConfigurationError, match="max_concurrent_reads"):
             GroupReader(client=mock_client, max_concurrent_reads=0)
+
+
+class TestGroupReaderUnitIdResolution:
+    """GroupReader: group.unit_id 覆寫 default，fallback 語義"""
+
+    @pytest.mark.asyncio
+    async def test_uses_group_unit_id_when_set(self, mock_client: AsyncMock):
+        reader = GroupReader(client=mock_client, unit_id=1)
+        group = ReadGroup(function_code=3, start_address=0, count=1, unit_id=7)
+        await reader.read(group)
+        call = mock_client.read_holding_registers.call_args
+        # client.read_holding_registers(address, count, unit_id)
+        assert call.args[2] == 7
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_default_when_group_unit_id_none(self, mock_client: AsyncMock):
+        reader = GroupReader(client=mock_client, unit_id=4)
+        group = ReadGroup(function_code=3, start_address=0, count=1)
+        await reader.read(group)
+        assert mock_client.read_holding_registers.call_args.args[2] == 4
+
+    @pytest.mark.asyncio
+    async def test_fallback_applies_to_all_function_codes(self, mock_client: AsyncMock):
+        reader = GroupReader(client=mock_client, unit_id=2)
+        for fc, mock_fn_name in [
+            (FunctionCode.READ_COILS, "read_coils"),
+            (FunctionCode.READ_DISCRETE_INPUTS, "read_discrete_inputs"),
+            (FunctionCode.READ_INPUT_REGISTERS, "read_input_registers"),
+        ]:
+            mock_fn = getattr(mock_client, mock_fn_name)
+            mock_fn.reset_mock()
+            group = ReadGroup(function_code=fc, start_address=0, count=1, unit_id=9)
+            await reader.read(group)
+            assert mock_fn.call_args.args[2] == 9
+
+
+async def _wait_for(pred, timeout: float = 2.0, interval: float = 0.01) -> None:
+    """Poll until pred() is true or timeout — 參考 lesson async-test-state-race"""
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if pred():
+            return
+        await asyncio.sleep(interval)
+    raise AssertionError(f"condition not met within {timeout}s")
+
+
+class TestGroupReaderPerUnitSemaphore:
+    """GroupReader: per-unit_id semaphore 保證同 uid 請求串列、跨 uid 並行"""
+
+    @pytest.mark.asyncio
+    async def test_same_unit_id_requests_are_serialized(self, mock_client: AsyncMock):
+        import asyncio
+
+        in_flight = 0
+        max_seen = 0
+        event = asyncio.Event()
+
+        async def blocking_read(address, count, unit_id):
+            nonlocal in_flight, max_seen
+            in_flight += 1
+            max_seen = max(max_seen, in_flight)
+            await event.wait()
+            in_flight -= 1
+            return [0] * count
+
+        mock_client.read_holding_registers = AsyncMock(side_effect=blocking_read)
+
+        reader = GroupReader(client=mock_client, max_concurrent_reads=4)
+        g = ReadGroup(function_code=3, start_address=0, count=1, unit_id=5)
+        tasks = [asyncio.create_task(reader.read(g)) for _ in range(3)]
+
+        # 等第一個 task 進入 blocking_read
+        await _wait_for(lambda: in_flight == 1)
+        # 放一小段時間讓剩餘 tasks 有機會跑到 per-unit semaphore 的 acquire；
+        # 若 production 未序列化，max_seen 會在此期間跳到 > 1
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+        assert in_flight == 1
+        assert mock_client.read_holding_registers.call_count == 1
+
+        event.set()
+        await asyncio.gather(*tasks, return_exceptions=False)
+        # 同一 unit_id 不論發送幾次，in-flight 最多 1
+        assert max_seen == 1
+
+    @pytest.mark.asyncio
+    async def test_different_unit_ids_can_run_concurrently(self, mock_client: AsyncMock):
+        import asyncio
+
+        in_flight = 0
+        max_seen = 0
+        event = asyncio.Event()
+
+        async def blocking_read(address, count, unit_id):
+            nonlocal in_flight, max_seen
+            in_flight += 1
+            max_seen = max(max_seen, in_flight)
+            await event.wait()
+            in_flight -= 1
+            return [0] * count
+
+        mock_client.read_holding_registers = AsyncMock(side_effect=blocking_read)
+
+        reader = GroupReader(client=mock_client, max_concurrent_reads=4)
+        tasks = [
+            asyncio.create_task(reader.read(ReadGroup(function_code=3, start_address=0, count=1, unit_id=uid)))
+            for uid in (1, 2, 3)
+        ]
+
+        # 不同 unit_id 共 3 個 semaphore，應可全部並行（max_concurrent_reads=4 不限制）
+        await _wait_for(lambda: in_flight == 3)
+        assert max_seen == 3
+
+        event.set()
+        await asyncio.gather(*tasks)

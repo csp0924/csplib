@@ -73,10 +73,13 @@ class GroupReader:
             raise ConfigurationError(f"max_concurrent_reads 必須 >= 1，收到: {max_concurrent_reads}")
 
         self._client = client
-        self._unit_id = unit_id
+        self._default_unit_id = unit_id
         self._address_offset = address_offset
         self._max_concurrent_reads = max_concurrent_reads
         self._semaphore = asyncio.Semaphore(max_concurrent_reads)
+        # Per-unit serialization: 保護單一 slave 不被自己多個 in-flight 請求打爆；
+        # 跨 unit_id 仍可並行（SMA multi-unit 場景），限於全局 _semaphore 上限。
+        self._unit_semaphores: dict[int, asyncio.Semaphore] = {}
 
     async def read(self, group: ReadGroup) -> dict[str, Any]:
         """
@@ -91,8 +94,12 @@ class GroupReader:
         Raises:
             Exception: Modbus 通訊錯誤時傳播原始異常
         """
-        async with self._semaphore:
-            raw_data = await self._read_from_device(group)
+        uid = group.unit_id if group.unit_id is not None else self._default_unit_id
+        unit_sem = self._unit_semaphores.setdefault(uid, asyncio.Semaphore(1))
+        # 先取 per-unit、再取全域：避免同 uid 大量請求占用全域 token 等 per-unit，
+        # 造成其他 uid 被饑餓（SMA multi-unit + 小 max_concurrent_reads 場景）。
+        async with unit_sem, self._semaphore:
+            raw_data = await self._read_from_device(group, uid)
             return self._decode(group, raw_data)
 
     async def read_many(self, groups: Sequence[ReadGroup]) -> dict[str, Any]:
@@ -137,12 +144,14 @@ class GroupReader:
             merged.update(outcome)
         return merged
 
-    async def _read_from_device(self, group: ReadGroup) -> list[int] | list[bool]:
+    async def _read_from_device(self, group: ReadGroup, unit_id: int) -> list[int] | list[bool]:
         """
         根據 function_code 讀取資料
 
         Args:
             group: 讀取群組
+            unit_id: 此次 Modbus 請求的 slave address（由 caller resolve，
+                優先用 ``group.unit_id``，fallback ``self._default_unit_id``）
 
         Returns:
             原始暫存器/線圈資料
@@ -157,13 +166,13 @@ class GroupReader:
 
         try:
             if function_code == FunctionCode.READ_COILS:
-                return list(await self._client.read_coils(address, count, self._unit_id))
+                return list(await self._client.read_coils(address, count, unit_id))
             elif function_code == FunctionCode.READ_DISCRETE_INPUTS:
-                return list(await self._client.read_discrete_inputs(address, count, self._unit_id))
+                return list(await self._client.read_discrete_inputs(address, count, unit_id))
             elif function_code == FunctionCode.READ_HOLDING_REGISTERS:
-                return list(await self._client.read_holding_registers(address, count, self._unit_id))
+                return list(await self._client.read_holding_registers(address, count, unit_id))
             elif function_code == FunctionCode.READ_INPUT_REGISTERS:
-                return list(await self._client.read_input_registers(address, count, self._unit_id))
+                return list(await self._client.read_input_registers(address, count, unit_id))
             else:
                 raise ConfigurationError(f"不支援的 Function Code: {function_code}")
         except (ConfigurationError, CommunicationError):
