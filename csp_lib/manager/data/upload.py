@@ -336,16 +336,19 @@ class DataUploadManager(DeviceEventSubscriber):
 
     # ================ 內部工具 ================
 
-    async def _safe_enqueue(self, collection: str, document: dict[str, Any], device_id: str) -> None:
+    async def _safe_enqueue(self, collection: str, document: dict[str, Any], device_id: str) -> bool:
         # 任何 enqueue 錯誤都不應影響其他 target；以 logger.exception 記錄 traceback 並吞掉。
+        # 回傳是否成功，供呼叫端決定要不要 commit 去重 / 節流狀態（避免失敗後資料被去重吞掉）。
         try:
             await self._uploader.enqueue(collection, document)
+            return True
         except Exception:
             logger.exception(
                 "資料上傳管理器: enqueue 失敗 device={} collection={}",
                 device_id,
                 collection,
             )
+            return False
 
     # ================ 事件處理器 ================
 
@@ -386,16 +389,22 @@ class DataUploadManager(DeviceEventSubscriber):
             if not docs:
                 continue
 
+            if target.policy is WritePolicy.ON_CHANGE and rt.last_result == docs:
+                continue
+
+            all_ok = True
+            for doc in docs:
+                if not await self._safe_enqueue(target.collection, doc, device_id):
+                    all_ok = False
+
+            # 只在全部 enqueue 成功時才 commit 快取：失敗時保持舊狀態，
+            # 下次同樣輸出會再試一次，避免資料被去重或空洞吞掉。
+            if not all_ok:
+                continue
             if target.policy is WritePolicy.ON_CHANGE:
-                if rt.last_result == docs:
-                    continue
                 rt.last_result = docs
             elif target.policy is WritePolicy.ALWAYS:
-                # 快取 shape 供斷線時 nullify 用
                 rt.last_shape_cache = docs
-
-            for doc in docs:
-                await self._safe_enqueue(target.collection, doc, device_id)
 
     async def _handle_legacy_read(self, rt: _TargetRuntime, payload: ReadCompletePayload) -> None:
         # 保留舊 1:1 配置的 wire output：{device_id, timestamp, **values} + save_interval 節流。
@@ -403,19 +412,22 @@ class DataUploadManager(DeviceEventSubscriber):
         rt.last_raw_values = payload.values
 
         interval = rt.save_interval
+        now: float | None = None
         if interval is not None:
             now = time.monotonic()
             last_save = rt.last_save_time
             if last_save is not None and (now - last_save) < interval:
                 return
-            rt.last_save_time = now
 
         document = {
             "device_id": device_id,
             "timestamp": payload.timestamp,
             **payload.values,
         }
-        await self._safe_enqueue(rt.target.collection, document, device_id)
+        # 節流時戳只在成功 enqueue 後才更新；否則下次 read 仍會再試，
+        # 避免 enqueue 失敗後整段節流窗內完全沒有資料落庫。
+        if await self._safe_enqueue(rt.target.collection, document, device_id) and now is not None:
+            rt.last_save_time = now
 
     async def _on_disconnected(self, payload: DisconnectPayload) -> None:
         """

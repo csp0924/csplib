@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -521,3 +521,55 @@ class TestLegacyAndFanoutCoexistence:
             "collection_kind": "summary",
             "value": 10,
         }
+
+
+# ================ enqueue 失敗後不 commit 快取 ================
+
+
+class TestEnqueueFailureDoesNotPollute:
+    """enqueue 失敗時，ON_CHANGE 去重與 legacy 節流狀態都不應被提前 commit。
+
+    否則一次失敗後，下游恢復時相同的 payload 會被去重吞掉 / 節流窗內也不會
+    再試，導致資料遺失。
+    """
+
+    async def test_on_change_retries_after_enqueue_failure(self) -> None:
+        uploader = FakeUploader()
+        manager = DataUploadManager(uploader)
+        device = MockDevice("dev")
+
+        manager.configure(
+            device.device_id,
+            outputs=[UploadTarget(collection="c", transform=summary_transform, policy=WritePolicy.ON_CHANGE)],
+        )
+        manager.subscribe(device)
+
+        # 第 1 次 enqueue 失敗，第 2 次成功；兩次的 transform 輸出相同
+        uploader.enqueue.side_effect = [RuntimeError("boom"), None]
+        payload = _read_payload("dev", {"v": 42})
+
+        await device.emit(EVENT_READ_COMPLETE, payload)
+        await device.emit(EVENT_READ_COMPLETE, payload)
+
+        # 兩次都進 enqueue（第 1 次失敗沒 commit last_result，第 2 次重試）
+        assert uploader.enqueue.call_count == 2
+
+    async def test_legacy_throttle_retries_after_enqueue_failure(self) -> None:
+        uploader = FakeUploader()
+        manager = DataUploadManager(uploader)
+        device = MockDevice("dev")
+
+        manager.configure(device.device_id, "c", save_interval=60)
+        manager.subscribe(device)
+
+        uploader.enqueue.side_effect = [RuntimeError("boom"), None]
+        payload = _read_payload("dev", {"v": 1})
+
+        fake_time = [1000.0]
+        with patch("csp_lib.manager.data.upload.time.monotonic", side_effect=lambda: fake_time[0]):
+            await device.emit(EVENT_READ_COMPLETE, payload)
+            # 仍在節流窗內但第一次失敗；last_save_time 應未 commit，所以第二次還要再試
+            fake_time[0] += 1.0
+            await device.emit(EVENT_READ_COMPLETE, payload)
+
+        assert uploader.enqueue.call_count == 2
