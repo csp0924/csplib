@@ -68,7 +68,7 @@ from .schema import (
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import AsyncModbusDevice, DeviceProtocol
 
     from .manifest import SiteManifest
     from .type_registry import TypeRegistry
@@ -164,8 +164,8 @@ class SystemControllerConfig:
     system_alarm_key: str = "system_alarm"
     capacity_kva: float | None = None
     alarm_mode: str = "system_wide"
-    on_device_alarm: Callable[[AsyncModbusDevice], Awaitable[None]] | None = None
-    on_device_alarm_clear: Callable[[AsyncModbusDevice], Awaitable[None]] | None = None
+    on_device_alarm: Callable[[DeviceProtocol], Awaitable[None]] | None = None
+    on_device_alarm_clear: Callable[[DeviceProtocol], Awaitable[None]] | None = None
     heartbeat_mappings: list[HeartbeatMapping] = field(default_factory=list)
     heartbeat_interval: float = 1.0
     use_heartbeat_capability: bool = False
@@ -997,16 +997,19 @@ class SystemController(AsyncLifecycleMixin):
                 continue
             if mapping.device_id is not None:
                 device = self._registry.get_device(mapping.device_id)
-                if device is not None and mapping.point_name not in device.all_point_names:
-                    logger.warning(
-                        "Heartbeat point '{}' not found on device '{}'.",
-                        mapping.point_name,
-                        mapping.device_id,
-                    )
+                if device is not None:
+                    point_names: set[str] = getattr(device, "all_point_names", set())
+                    if mapping.point_name not in point_names:
+                        logger.warning(
+                            "Heartbeat point '{}' not found on device '{}'.",
+                            mapping.point_name,
+                            mapping.device_id,
+                        )
             elif mapping.trait is not None:
                 devices = self._registry.get_devices_by_trait(mapping.trait)
                 for device in devices:
-                    if mapping.point_name not in device.all_point_names:
+                    trait_point_names: set[str] = getattr(device, "all_point_names", set())
+                    if mapping.point_name not in trait_point_names:
                         logger.warning(
                             "Heartbeat point '{}' not found on device '{}' (trait='{}').",
                             mapping.point_name,
@@ -1122,7 +1125,8 @@ class SystemController(AsyncLifecycleMixin):
                 if self._config.on_device_alarm is not None:
                     await self._config.on_device_alarm(device)
                 elif "stop" in getattr(device, "ACTIONS", {}):
-                    await device.execute_action("stop")
+                    # execute_action 為 AsyncModbusDevice 專屬；DeviceProtocol 不含此方法
+                    await device.execute_action("stop")  # type: ignore[attr-defined]
                 logger.warning(f"Device alarm activated: {device_id}")
             elif not device.is_protected and device_id in self._alarmed_devices:
                 # 告警解除

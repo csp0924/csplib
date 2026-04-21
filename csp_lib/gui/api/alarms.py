@@ -59,5 +59,6 @@ async def clear_alarm(
     device = registry.get_device(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found")
-    await device.clear_alarm(code)
+    # clear_alarm 為 AsyncModbusDevice (AlarmMixin) 方法，DeviceProtocol 不含
+    await device.clear_alarm(code)  # type: ignore[attr-defined]
     return {"status": "ok"}

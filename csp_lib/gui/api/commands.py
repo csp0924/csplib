@@ -29,7 +29,8 @@ def list_write_points(
     device = registry.get_device(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found")
-    return sorted(device._write_points.keys())
+    # _write_points 為 AsyncModbusDevice 內部屬性，DeviceProtocol 不含
+    return sorted(device._write_points.keys())  # type: ignore[attr-defined]
 
 
 @router.post("/devices/{device_id}/write")
