@@ -96,7 +96,9 @@ class GroupReader:
         """
         uid = group.unit_id if group.unit_id is not None else self._default_unit_id
         unit_sem = self._unit_semaphores.setdefault(uid, asyncio.Semaphore(1))
-        async with self._semaphore, unit_sem:
+        # 先取 per-unit、再取全域：避免同 uid 大量請求占用全域 token 等 per-unit，
+        # 造成其他 uid 被饑餓（SMA multi-unit + 小 max_concurrent_reads 場景）。
+        async with unit_sem, self._semaphore:
             raw_data = await self._read_from_device(group, uid)
             return self._decode(group, raw_data)
 

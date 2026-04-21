@@ -530,10 +530,12 @@ class TestGroupReaderPerUnitSemaphore:
 
         # 等第一個 task 進入 blocking_read
         await _wait_for(lambda: in_flight == 1)
-        # 觀察 reader 的 per-unit semaphore 已有 waiters 等待同一 uid
-        # （若 production 未用 semaphore 保護，max_seen 會在之後的 gather 期間跳到 3）
-        sem = reader._unit_semaphores[5]
-        await _wait_for(lambda: len(sem._waiters or []) == 2)
+        # 放一小段時間讓剩餘 tasks 有機會跑到 per-unit semaphore 的 acquire；
+        # 若 production 未序列化，max_seen 會在此期間跳到 > 1
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+        assert in_flight == 1
+        assert mock_client.read_holding_registers.call_count == 1
 
         event.set()
         await asyncio.gather(*tasks, return_exceptions=False)
