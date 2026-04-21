@@ -244,3 +244,42 @@ class TestCommandRouterProtectedDevice:
         )
         await router.route(Command(p_target=1000.0))
         dev.write.assert_awaited_once_with("p_set", 1000.0)
+
+
+class TestCommandRouterLastWrittenPrune:
+    """解除註冊後 ``_last_written`` 應 prune 對應設備條目。
+
+    否則 ``get_tracked_device_ids()`` 會持續回傳已移除的設備 ID，
+    污染 CommandRefreshService / SetpointDriftReconciler 的 desired-state 巡檢。
+    """
+
+    @pytest.mark.asyncio
+    async def test_tracked_ids_contain_device_after_write(self):
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+
+        router = CommandRouter(
+            reg,
+            [CommandMapping(command_field="p_target", point_name="p_set", device_id="pcs1")],
+        )
+        await router.route(Command(p_target=1000.0))
+        assert "pcs1" in router.get_tracked_device_ids()
+
+    @pytest.mark.asyncio
+    async def test_tracked_ids_pruned_after_unregister(self):
+        reg = DeviceRegistry()
+        dev = _make_device("pcs1")
+        reg.register(dev)
+
+        router = CommandRouter(
+            reg,
+            [CommandMapping(command_field="p_target", point_name="p_set", device_id="pcs1")],
+        )
+        await router.route(Command(p_target=1000.0))
+        assert "pcs1" in router.get_tracked_device_ids()
+
+        # 解除註冊後 _last_written 應同步 prune
+        reg.unregister("pcs1")
+        assert "pcs1" not in router.get_tracked_device_ids()
+        assert router.get_last_written("pcs1") == {}
