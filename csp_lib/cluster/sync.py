@@ -31,12 +31,14 @@ logger = get_logger(__name__)
 # ================ Snapshot ================
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class ClusterSnapshot:
     """
-    叢集狀態快照
+    叢集狀態快照（不可變）
 
     由 ClusterStateSubscriber 從 Redis 反序列化產生。
+    為防止意外就地修改，此 dataclass 為 frozen；若需更新欄位請重新構造整個物件
+    （例如於 ``_poll_all`` 中累積 kwargs 後一次性建立）。
 
     Attributes:
         leader_id: 目前 leader instance_id
@@ -321,16 +323,16 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
         return result
 
     async def _poll_all(self) -> None:
-        """讀取所有叢集狀態"""
-        snap = ClusterSnapshot()
+        """讀取所有叢集狀態（累積 kwargs 後一次性建立 frozen snapshot）"""
+        kwargs: dict[str, Any] = {}
 
         # Leader identity
         leader_raw = await self._redis.get(self._config.redis_key("leader"))
         if leader_raw is not None:
             leader_data = self._parse_json_field("leader", leader_raw)
             if isinstance(leader_data, dict):
-                snap.leader_id = leader_data.get("instance_id")
-                snap.elected_at = leader_data.get("elected_at")
+                kwargs["leader_id"] = leader_data.get("instance_id")
+                kwargs["elected_at"] = leader_data.get("elected_at")
 
         # Mode state
         mode_data = await self._redis.hgetall(self._config.redis_key("mode_state"))
@@ -339,20 +341,20 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             if isinstance(raw_base, str):
                 parsed = self._parse_json_field("base_modes", raw_base)
                 if parsed is not None:
-                    snap.base_modes = parsed
+                    kwargs["base_modes"] = parsed
             elif isinstance(raw_base, list):
-                snap.base_modes = raw_base
+                kwargs["base_modes"] = raw_base
 
             raw_overrides = mode_data.get("overrides")
             if isinstance(raw_overrides, str):
                 parsed = self._parse_json_field("overrides", raw_overrides)
                 if parsed is not None:
-                    snap.override_names = parsed
+                    kwargs["override_names"] = parsed
             elif isinstance(raw_overrides, list):
-                snap.override_names = raw_overrides
+                kwargs["override_names"] = raw_overrides
 
             effective = mode_data.get("effective_mode", "")
-            snap.effective_mode = effective if effective else None
+            kwargs["effective_mode"] = effective if effective else None
 
         # Protection state
         prot_data = await self._redis.hgetall(self._config.redis_key("protection_state"))
@@ -361,30 +363,30 @@ class ClusterStateSubscriber(AsyncLifecycleMixin):
             if isinstance(raw_rules, str):
                 parsed = self._parse_json_field("triggered_rules", raw_rules)
                 if parsed is not None:
-                    snap.triggered_rules = parsed
+                    kwargs["triggered_rules"] = parsed
             elif isinstance(raw_rules, list):
-                snap.triggered_rules = raw_rules
+                kwargs["triggered_rules"] = raw_rules
 
             raw_modified = prot_data.get("was_modified")
             if isinstance(raw_modified, bool):
-                snap.protection_was_modified = raw_modified
+                kwargs["protection_was_modified"] = raw_modified
             elif isinstance(raw_modified, str):
                 parsed = self._parse_json_field("was_modified", raw_modified)
                 if parsed is not None:
-                    snap.protection_was_modified = parsed
+                    kwargs["protection_was_modified"] = parsed
 
         # Last command
         cmd_data = await self._redis.hgetall(self._config.redis_key("last_command"))
         if cmd_data:
-            snap.p_target = self._parse_float_field("p_target", cmd_data.get("p_target"), 0.0)
-            snap.q_target = self._parse_float_field("q_target", cmd_data.get("q_target"), 0.0)
-            snap.command_timestamp = self._parse_float_field("command_timestamp", cmd_data.get("timestamp"), 0.0)
+            kwargs["p_target"] = self._parse_float_field("p_target", cmd_data.get("p_target"), 0.0)
+            kwargs["q_target"] = self._parse_float_field("q_target", cmd_data.get("q_target"), 0.0)
+            kwargs["command_timestamp"] = self._parse_float_field("command_timestamp", cmd_data.get("timestamp"), 0.0)
 
         # Auto stop
         auto_stop_raw = await self._redis.get(self._config.redis_key("auto_stop_active"))
-        snap.auto_stop_active = auto_stop_raw == "1"
+        kwargs["auto_stop_active"] = auto_stop_raw == "1"
 
-        self._snapshot = snap
+        self._snapshot = ClusterSnapshot(**kwargs)
 
         # Device states（利用既有 StateSyncManager 發佈的 key）
         for device_id in self._config.device_ids:
