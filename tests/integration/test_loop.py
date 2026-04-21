@@ -48,6 +48,16 @@ class MockStrategy(Strategy):
         self.deactivated = True
 
 
+class TestGridControlLoopDeprecation:
+    """驗證 GridControlLoop 已標記為 deprecated（UL-D，v1.0.0 將移除）"""
+
+    def test_instantiation_emits_deprecation_warning(self):
+        reg = DeviceRegistry()
+        config = GridControlLoopConfig()
+        with pytest.warns(DeprecationWarning, match="GridControlLoop"):
+            GridControlLoop(reg, config)
+
+
 class TestGridControlLoopInit:
     def test_basic_init(self):
         reg = DeviceRegistry()
