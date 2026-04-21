@@ -15,6 +15,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from csp_lib.manager.base import AsyncRepository
+
 from .schema import AlarmRecord, AlarmStatus
 
 if TYPE_CHECKING:
@@ -22,17 +24,15 @@ if TYPE_CHECKING:
 
 
 @runtime_checkable
-class AlarmRepository(Protocol):
+class AlarmRepository(AsyncRepository, Protocol):
     """
     告警 Repository 介面
 
     定義告警資料存取的標準介面，遵循依賴倒置原則。
     業務層應依賴此 Protocol，而非具體實作。
-    """
 
-    async def health_check(self) -> bool:
-        """檢查 Repository 連線是否正常"""
-        ...
+    繼承自 ``AsyncRepository``，統一所有 Repository 的健康檢查介面。
+    """
 
     async def upsert(self, record: AlarmRecord) -> tuple[str, bool]:
         """新增或更新告警記錄"""
