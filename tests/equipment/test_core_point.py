@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from csp_lib.core.errors import ConfigurationError
 from csp_lib.equipment.core.point import (
     CompositeValidator,
     EnumValidator,
@@ -387,3 +388,43 @@ class TestValueValidatorProtocol:
         assert validator.validate(2) is True
         assert validator.validate(3) is False
         assert "偶數" in validator.get_error_message(3)
+
+
+class TestPointUnitId:
+    """Multi-UnitID 支援：PointDefinition/ReadPoint/WritePoint.unit_id 欄位"""
+
+    def test_default_unit_id_is_none(self):
+        # 預設 None 代表沿用 device 預設 unit_id，維持 v0.8.x 行為
+        p = PointDefinition(name="p", address=0, data_type=UInt16())
+        assert p.unit_id is None
+
+    def test_read_point_default_unit_id_is_none(self):
+        p = ReadPoint(name="r", address=0, data_type=UInt16())
+        assert p.unit_id is None
+
+    def test_write_point_default_unit_id_is_none(self):
+        p = WritePoint(name="w", address=0, data_type=UInt16())
+        assert p.unit_id is None
+
+    def test_explicit_unit_id(self):
+        p = ReadPoint(name="r", address=0, data_type=UInt16(), unit_id=3)
+        assert p.unit_id == 3
+
+    def test_write_point_explicit_unit_id(self):
+        p = WritePoint(name="w", address=0, data_type=UInt16(), unit_id=5)
+        assert p.unit_id == 5
+
+    @pytest.mark.parametrize("uid", [-1, 256, 1000])
+    def test_invalid_unit_id_raises(self, uid):
+        with pytest.raises(ConfigurationError, match="unit_id"):
+            ReadPoint(name="r", address=0, data_type=UInt16(), unit_id=uid)
+
+    @pytest.mark.parametrize("uid", [0, 1, 247, 255])
+    def test_boundary_unit_ids_accepted(self, uid):
+        p = ReadPoint(name="r", address=0, data_type=UInt16(), unit_id=uid)
+        assert p.unit_id == uid
+
+    def test_unit_id_is_immutable(self):
+        p = ReadPoint(name="r", address=0, data_type=UInt16(), unit_id=2)
+        with pytest.raises(FrozenInstanceError):
+            p.unit_id = 3  # type: ignore[misc]
