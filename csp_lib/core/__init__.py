@@ -23,6 +23,7 @@ from .errors import (
     DeviceConnectionError,
     DeviceError,
     DeviceRegistryError,
+    NotLeaderError,
     ProtectionError,
     StrategyExecutionError,
 )
@@ -253,6 +254,7 @@ __all__ = [
     "StrategyExecutionError",
     "ProtectionError",
     "DeviceRegistryError",
+    "NotLeaderError",
     # Health
     "HealthStatus",
     "HealthReport",

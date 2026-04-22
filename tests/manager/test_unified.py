@@ -149,7 +149,7 @@ class TestUnifiedDeviceManagerInit:
         config = UnifiedConfig(command_repository=mock_command_repo)
         manager = UnifiedDeviceManager(config)
 
-        mock_wcm.assert_called_once_with(mock_command_repo)
+        mock_wcm.assert_called_once_with(mock_command_repo, leader_gate=None)
         assert manager.command_manager is not None
 
     @patch("csp_lib.manager.unified.DataUploadManager")
@@ -167,7 +167,7 @@ class TestUnifiedDeviceManagerInit:
         config = UnifiedConfig(redis_client=mock_redis)
         manager = UnifiedDeviceManager(config)
 
-        mock_ssm.assert_called_once_with(mock_redis)
+        mock_ssm.assert_called_once_with(mock_redis, leader_gate=None)
         assert manager.state_manager is not None
 
 

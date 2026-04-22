@@ -31,6 +31,7 @@ from csp_lib.manager.state.config import StateSyncConfig
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.protocol import DeviceProtocol
+    from csp_lib.manager.base import LeaderGate
     from csp_lib.redis import RedisClient
 
 logger = get_logger(__name__)
@@ -79,6 +80,8 @@ class StateSyncManager(DeviceEventSubscriber):
         config: StateSyncConfig | None = None,
         state_ttl: int | None = None,
         online_ttl: int | None = None,
+        *,
+        leader_gate: LeaderGate | None = None,
     ) -> None:
         """
         初始化狀態同步管理器
@@ -88,6 +91,9 @@ class StateSyncManager(DeviceEventSubscriber):
             config: 狀態同步配置（優先使用）
             state_ttl: 設備狀態 Hash TTL（秒），config 為 None 時使用
             online_ttl: 連線狀態 TTL（秒），config 為 None 時使用
+            leader_gate: Leader 閘門（keyword-only，可選）。非 leader 時
+                所有事件 handler 會早退，不寫 Redis 也不發 Pub/Sub；
+                ``subscribe()`` 本身不受影響（訂閱動作不碰 Redis）。
         """
         super().__init__()
         self._redis = redis_client
@@ -99,6 +105,24 @@ class StateSyncManager(DeviceEventSubscriber):
         self._config = config
         self._state_ttl = self._config.state_ttl
         self._online_ttl = self._config.online_ttl
+        self._leader_gate = leader_gate
+
+    # ================ Leader 閘門 helper ================
+
+    def _skip_if_not_leader(self, event_name: str, device_id: str) -> bool:
+        """若已注入 leader_gate 且目前非 leader，記 TRACE log 並回傳 True。
+
+        Args:
+            event_name: 事件名稱（for logging）
+            device_id: 設備 ID（for logging）
+
+        Returns:
+            True 代表應早退（非 leader）；False 代表可繼續處理
+        """
+        if self._leader_gate is not None and not self._leader_gate.is_leader:
+            logger.trace("StateSync: skip {} for {} (not leader)", event_name, device_id)
+            return True
+        return False
 
     # ================ Key/Channel 命名 ================
 
@@ -160,6 +184,8 @@ class StateSyncManager(DeviceEventSubscriber):
             payload: 讀取完成事件資料
         """
         device_id = payload.device_id
+        if self._skip_if_not_leader("read_complete", device_id):
+            return
         state_key = self._state_key(device_id)
         online_key = self._online_key(device_id)
 
@@ -190,6 +216,8 @@ class StateSyncManager(DeviceEventSubscriber):
             payload: 連線事件資料
         """
         device_id = payload.device_id
+        if self._skip_if_not_leader("connected", device_id):
+            return
 
         # 更新連線狀態 + TTL
         await self._redis.set(self._online_key(device_id), "1", ex=self._online_ttl)
@@ -214,6 +242,8 @@ class StateSyncManager(DeviceEventSubscriber):
             payload: 斷線事件資料
         """
         device_id = payload.device_id
+        if self._skip_if_not_leader("disconnected", device_id):
+            return
 
         # 更新連線狀態
         await self._redis.set(self._online_key(device_id), "0")
@@ -239,6 +269,8 @@ class StateSyncManager(DeviceEventSubscriber):
             payload: 告警事件資料
         """
         device_id = payload.device_id
+        if self._skip_if_not_leader("alarm_triggered", device_id):
+            return
         alarm = payload.alarm_event.alarm
 
         # 新增至 Set
@@ -270,6 +302,8 @@ class StateSyncManager(DeviceEventSubscriber):
             payload: 告警事件資料
         """
         device_id = payload.device_id
+        if self._skip_if_not_leader("alarm_cleared", device_id):
+            return
         alarm = payload.alarm_event.alarm
 
         # 從 Set 移除
