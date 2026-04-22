@@ -105,6 +105,28 @@ class TestStandaloneStartPartialFailure:
         with pytest.raises(asyncio.CancelledError):
             await manager.start()
 
+    async def test_cancelled_start_rolls_back_running_flag(self):
+        """CancelledError 中斷啟動後，``_running`` 需 rollback 為 False，
+        使後續 start() 可再嘗試（不會被 ``if self._running: return`` 卡死）。"""
+        dev1 = _make_standalone_device("dev_1")
+        dev2 = _make_standalone_device("dev_2")
+        dev2.connect.side_effect = asyncio.CancelledError()
+
+        manager = DeviceManager()
+        manager.register(dev1)
+        manager.register(dev2)
+
+        with pytest.raises(asyncio.CancelledError):
+            await manager.start()
+
+        assert manager.is_running is False, "CancelledError 後 _running 應 rollback 為 False"
+
+        # 第二次 start（移除錯誤注入後）應該能正常啟動
+        dev2.connect.side_effect = None
+        await manager.start()
+        assert manager.is_running is True
+        await manager.stop()
+
     async def test_generic_exception_on_start_does_not_block_other_devices(self):
         """start() 本身失敗也不應阻止其他 device（gather return_exceptions=True）。"""
         dev1 = _make_standalone_device("dev_1")

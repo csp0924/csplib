@@ -79,10 +79,12 @@ async def _gather_per_device_with_cancel(
         return_exceptions=True,
     )
     for dev, result in zip(devices, results, strict=True):
-        if isinstance(result, asyncio.CancelledError):
+        if isinstance(result, BaseException) and not isinstance(result, Exception):
+            # CancelledError / SystemExit / KeyboardInterrupt 必須傳播
             raise result
-        if isinstance(result, BaseException):
-            logger.warning(failure_msg, dev.device_id, result)
+        if isinstance(result, Exception):
+            # 附 stack trace 便於診斷非預期失敗
+            logger.opt(exception=result).warning(failure_msg, dev.device_id, result)
 
 
 def _require_lifecycle_methods(device: "DeviceProtocol", *, for_group: bool) -> None:
@@ -335,14 +337,10 @@ class DeviceManager(AsyncLifecycleMixin):
         async def _start_standalone(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
             await _safe_device_step(concrete.connect(), device_id=device.device_id, action="connect")
-            # connect 失敗仍要 start：read_loop 內部會背景重連
-            await concrete.start()
-
-        await _gather_per_device_with_cancel(
-            self._standalone,
-            _start_standalone,
-            failure_msg="設備 {} start 失敗，保留在註冊表等下次重試: {}",
-        )
+            # connect 失敗仍要 start：read_loop 內部會背景重連。
+            # start 失敗吞掉 + warn（expected_exc=() 讓所有 Exception 帶 stack）
+            # 以維持「單台失敗不擋其他」語意。
+            await _safe_device_step(concrete.start(), device_id=device.device_id, action="start", expected_exc=())
 
         async def _prepare_group_device(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
@@ -355,13 +353,28 @@ class DeviceManager(AsyncLifecycleMixin):
                 expected_exc=(),
             )
 
-        for group in self._groups:
+        # 若啟動過程被 cancel 中斷，_running 需 rollback 避免卡在 True 狀態
+        # （否則後續 start() 會被 `if self._running: return` 跳過）。用 try/finally
+        # 明確表達 rollback 意圖，避免 `except BaseException` 的歧義。
+        startup_completed = False
+        try:
             await _gather_per_device_with_cancel(
-                group.devices,
-                _prepare_group_device,
-                failure_msg="群組設備 {} 準備失敗（保留在群組中）: {}",
+                self._standalone,
+                _start_standalone,
+                failure_msg="設備 {} start 失敗，保留在註冊表等下次重試: {}",
             )
-            group.start()
+
+            for group in self._groups:
+                await _gather_per_device_with_cancel(
+                    group.devices,
+                    _prepare_group_device,
+                    failure_msg="群組設備 {} 準備失敗（保留在群組中）: {}",
+                )
+                group.start()
+            startup_completed = True
+        finally:
+            if not startup_completed:
+                self._running = False
 
         logger.info(
             "DeviceManager 已啟動: {} 個獨立設備, {} 個群組",
