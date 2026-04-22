@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from csp_lib.manager.base import AsyncRepository
+from csp_lib.manager.base import AsyncRepository, MongoRepositoryBase
 
 from .schema import AlarmRecord, AlarmStatus
 
@@ -51,12 +51,14 @@ class AlarmRepository(AsyncRepository, Protocol):
         ...
 
 
-class MongoAlarmRepository:
+class MongoAlarmRepository(MongoRepositoryBase):
     """
     MongoDB 告警 Repository 實作
 
     使用 Motor 非同步驅動實作 AlarmRepository 介面。
-    支援告警的 CRUD 操作與索引管理。
+    支援告警的 CRUD 操作與索引管理。``__init__`` / ``health_check`` 由
+    :class:`MongoRepositoryBase` 提供；本類只負責 ``ensure_indexes`` 與
+    CRUD method。
 
     Attributes:
         COLLECTION_NAME: 預設 collection 名稱
@@ -65,28 +67,7 @@ class MongoAlarmRepository:
     COLLECTION_NAME = "alarms"
 
     def __init__(self, db: AsyncIOMotorDatabase, collection_name: str = COLLECTION_NAME) -> None:
-        """
-        初始化 MongoDB Repository
-
-        Args:
-            db: Motor 非同步資料庫連線
-            collection_name: Collection 名稱（預設 "alarms"）
-        """
-        self._db = db
-        self._collection = db[collection_name]
-
-    async def health_check(self) -> bool:
-        """
-        檢查 MongoDB 連線是否正常
-
-        Returns:
-            bool: True 表示連線正常
-        """
-        try:
-            await self._db.command("ping")
-            return True
-        except Exception:
-            return False
+        super().__init__(db, collection_name)
 
     async def ensure_indexes(self) -> None:
         """

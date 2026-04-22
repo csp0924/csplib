@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from csp_lib.core import get_logger
-from csp_lib.manager.base import AsyncRepository
+from csp_lib.manager.base import AsyncRepository, MongoRepositoryBase
 
 from .schema import CommandRecord, CommandStatus
 
@@ -88,11 +88,13 @@ class CommandRepository(AsyncRepository, Protocol):
         ...
 
 
-class MongoCommandRepository:
+class MongoCommandRepository(MongoRepositoryBase):
     """
     MongoDB 指令記錄儲存庫
 
-    將指令記錄儲存至 MongoDB。
+    將指令記錄儲存至 MongoDB。``__init__`` / ``health_check`` 由
+    :class:`MongoRepositoryBase` 提供；本類只負責 ``ensure_indexes`` 與
+    CRUD method。
 
     Example:
         ```python
@@ -113,29 +115,42 @@ class MongoCommandRepository:
 
     COLLECTION_NAME = "commands"
 
-    def __init__(self, db: AsyncIOMotorDatabase, collection: str = COLLECTION_NAME) -> None:
+    def __init__(
+        self,
+        db: AsyncIOMotorDatabase,
+        collection_name: str | None = None,
+        *,
+        collection: str | None = None,
+    ) -> None:
         """
         初始化 MongoDB 儲存庫
 
         Args:
             db: Motor 非同步資料庫連線
-            collection: Collection 名稱
-        """
-        self._db = db
-        self._collection = db[collection]
+            collection_name: Collection 名稱（v0.9.x+；與其他 Mongo repo 命名統一）
+            collection: 舊參數名，保留相容（v1.0 移除）
 
-    async def health_check(self) -> bool:
+        Raises:
+            ValueError: 同時提供 ``collection_name`` 與 ``collection``
         """
-        檢查 MongoDB 連線是否正常
+        if collection_name is not None and collection is not None:
+            raise ValueError(
+                "MongoCommandRepository: cannot specify both 'collection_name' and 'collection'. "
+                "'collection' is deprecated; use 'collection_name'."
+            )
+        if collection is not None:
+            import warnings
 
-        Returns:
-            bool: True 表示連線正常
-        """
-        try:
-            await self._db.command("ping")
-            return True
-        except Exception:
-            return False
+            warnings.warn(
+                "MongoCommandRepository(collection=...) is deprecated; use collection_name= instead. "
+                "Will be removed in v1.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            resolved = collection
+        else:
+            resolved = collection_name if collection_name is not None else self.COLLECTION_NAME
+        super().__init__(db, resolved)
 
     async def ensure_indexes(self) -> None:
         """

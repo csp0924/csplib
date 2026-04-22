@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from csp_lib.manager.base import AsyncRepository
+from csp_lib.manager.base import AsyncRepository, MongoRepositoryBase
 
 from . import matcher
 from .schema import ScheduleRule
@@ -47,12 +47,14 @@ class ScheduleRepository(AsyncRepository, Protocol):
         ...
 
 
-class MongoScheduleRepository:
+class MongoScheduleRepository(MongoRepositoryBase):
     """
     MongoDB 排程 Repository 實作
 
     使用 Motor 非同步驅動實作 ScheduleRepository 介面。
-    時間/星期/日期的匹配邏輯在 Python 端完成。
+    時間/星期/日期的匹配邏輯在 Python 端完成。``__init__`` / ``health_check`` 由
+    :class:`MongoRepositoryBase` 提供；本類只負責 ``ensure_indexes`` 與
+    CRUD method。
 
     Attributes:
         COLLECTION_NAME: 預設 collection 名稱
@@ -61,28 +63,7 @@ class MongoScheduleRepository:
     COLLECTION_NAME = "schedule_rules"
 
     def __init__(self, db: AsyncIOMotorDatabase, collection_name: str = COLLECTION_NAME) -> None:
-        """
-        初始化 MongoDB Repository
-
-        Args:
-            db: Motor 非同步資料庫連線
-            collection_name: Collection 名稱（預設 "schedule_rules"）
-        """
-        self._db = db
-        self._collection = db[collection_name]
-
-    async def health_check(self) -> bool:
-        """
-        檢查 MongoDB 連線是否正常
-
-        Returns:
-            bool: True 表示連線正常
-        """
-        try:
-            await self._db.command("ping")
-            return True
-        except Exception:
-            return False
+        super().__init__(db, collection_name)
 
     async def ensure_indexes(self) -> None:
         """
