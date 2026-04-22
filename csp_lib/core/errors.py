@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class DeviceError(Exception):
     """設備層基礎例外"""
@@ -79,6 +81,25 @@ class NotLeaderError(Exception):
         super().__init__(f"[{operation}] {message}")
 
 
+class WriteValidationError(Exception):
+    """寫入前驗證失敗例外。
+
+    由 ``WriteValidationRule`` 鏈或其 caller 在 reject 時 raise。
+    刻意繼承 ``Exception`` 而非 ``DeviceError``，因驗證失敗屬指令層語意
+    錯誤，並非設備故障，不應被 device-scoped 例外處理誤當成通訊問題。
+
+    ``WriteCommandManager.execute()`` 本身不 raise 此例外（維持回傳
+    ``WriteResult`` 的既有契約），保留此類別供 pure-Python 直接呼叫 rule
+    的場景使用及測試斷言。
+    """
+
+    def __init__(self, point_name: str, value: Any, reason: str) -> None:
+        self.point_name = point_name
+        self.value = value
+        self.reason = reason
+        super().__init__(f"[{point_name}] validation rejected: value={value!r}, reason={reason}")
+
+
 __all__ = [
     "DeviceError",
     "DeviceConnectionError",
@@ -89,4 +110,5 @@ __all__ = [
     "ProtectionError",
     "DeviceRegistryError",
     "NotLeaderError",
+    "WriteValidationError",
 ]

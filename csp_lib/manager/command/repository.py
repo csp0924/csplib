@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from csp_lib.core import get_logger
 from csp_lib.manager.base import AsyncRepository, MongoRepositoryBase
 
-from .schema import CommandRecord, CommandStatus
+from .schema import TERMINAL_STATUSES, CommandRecord, CommandStatus
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -198,7 +198,7 @@ class MongoCommandRepository(MongoRepositoryBase):
 
         if status == CommandStatus.EXECUTING:
             update["executed_at"] = datetime.now(timezone.utc)
-        elif status in (CommandStatus.SUCCESS, CommandStatus.FAILED, CommandStatus.DEVICE_NOT_FOUND):
+        elif status in TERMINAL_STATUSES:
             update["completed_at"] = datetime.now(timezone.utc)
 
         if result is not None:

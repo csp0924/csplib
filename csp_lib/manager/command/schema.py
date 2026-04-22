@@ -35,6 +35,18 @@ class CommandStatus(Enum):
     SUCCESS = "success"  # 成功
     FAILED = "failed"  # 失敗
     DEVICE_NOT_FOUND = "device_not_found"  # 設備未找到
+    VALIDATION_FAILED = "validation_failed"  # 驗證失敗（WriteValidationRule reject）
+
+
+# Terminal 狀態集合：到此狀態的指令不會再變，repository 應寫 completed_at
+TERMINAL_STATUSES: frozenset[CommandStatus] = frozenset(
+    {
+        CommandStatus.SUCCESS,
+        CommandStatus.FAILED,
+        CommandStatus.DEVICE_NOT_FOUND,
+        CommandStatus.VALIDATION_FAILED,
+    }
+)
 
 
 @dataclass
@@ -284,6 +296,7 @@ class CommandRecord:
 __all__ = [
     "CommandSource",
     "CommandStatus",
+    "TERMINAL_STATUSES",
     "WriteCommand",
     "ActionCommand",
     "CommandRecord",

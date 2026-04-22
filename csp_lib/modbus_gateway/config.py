@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from csp_lib.modbus import ByteOrder, ModbusDataType, RegisterOrder
+
+if TYPE_CHECKING:
+    from csp_lib.equipment.transport import ValidationResult
 
 
 class RegisterType(Enum):
@@ -148,12 +151,40 @@ class WriteRule:
             raise ValueError(f"min_value must be <= max_value, got min={self.min_value} max={self.max_value}")
 
     def apply(self, name: str, value: float) -> tuple[float, bool]:
-        """Apply rule: return (possibly_clamped_value, rejected)."""
+        """Apply rule: return (possibly_clamped_value, rejected).
+
+        .. note::
+            Legacy tuple interface retained for :class:`WritePipeline`.
+            v1.0 will unify to :meth:`apply_v2` signature returning
+            :class:`~csp_lib.equipment.transport.ValidationResult`.
+        """
         if self.min_value is not None and value < self.min_value:
             return (self.min_value, False) if self.clamp else (value, True)
         if self.max_value is not None and value > self.max_value:
             return (self.max_value, False) if self.clamp else (value, True)
         return value, False
+
+    def apply_v2(self, point_name: str, value: Any) -> ValidationResult:
+        """Same rule as :meth:`apply`, but returns a :class:`ValidationResult`.
+
+        Structurally satisfies the Layer 3
+        :class:`~csp_lib.equipment.transport.WriteValidationRule` Protocol,
+        so a ``WriteRule`` instance can be passed into
+        ``WriteCommandManager(validation_rules=...)`` directly.
+
+        Both :meth:`apply` (tuple) and :meth:`apply_v2` (ValidationResult)
+        will co-exist until v1.0; the legacy tuple interface will be removed
+        then (BREAKING — listed in BACKLOG Breaking Pipeline).
+
+        ``point_name`` is not checked against ``self.register_name`` because
+        callers typically associate a rule to a point via
+        ``Mapping[str, WriteRule]`` at the ``WriteCommandManager`` level.
+        """
+        # Lazy import keeps equipment.transport off the gateway import path
+        # (same pattern as csp_lib/modbus/_pymodbus)
+        from csp_lib.equipment.transport.validation import RangeRule
+
+        return RangeRule(self.min_value, self.max_value, self.clamp).apply(point_name, value)
 
 
 __all__ = [
