@@ -1,101 +1,54 @@
 # =============== PV Data Service ===============
 #
-# PV 功率資料服務
+# PV 功率資料服務（v0.9.x 起為 HistoryBuffer 的語義化 subclass）。
+#
+# .. deprecated:: 0.9.x
+#     本類別僅為 backward-compat 保留，改用 :class:`HistoryBuffer`。
+#     將於 v1.0 移除。
 
 from __future__ import annotations
 
-from collections import deque
+import warnings
+
+from .history_buffer import HistoryBuffer
 
 
-class PVDataService:
+class PVDataService(HistoryBuffer):
     """
-    PV 功率資料服務
+    PV 功率資料服務（deprecated alias of :class:`HistoryBuffer`）。
 
-    收集並維護 PV 功率歷史資料，供 PVSmooth 等策略使用。
-    透過建構子注入策略，確保策略切換時資料不遺失。
+    .. deprecated:: 0.9.x
+        改用 :class:`HistoryBuffer`。
+        ``PVDataService`` 將於 v1.0 移除。
 
-    Usage:
-        pv_service = PVDataService(max_history=300)
-        pv_service.append(500.0)  # 由外部 loop 定期呼叫
+        Migration::
 
-        strategy = PVSmoothStrategy(config, pv_service=pv_service)
+            # Before
+            from csp_lib.controller.services import PVDataService
+            svc = PVDataService(max_history=300)
 
-    Attributes:
-        max_history: 最大歷史筆數
+            # After
+            from csp_lib.controller.services import HistoryBuffer
+            buf = HistoryBuffer(max_history=300)
+
+    API 與 HistoryBuffer 完全相同（append / get_history / get_latest /
+    get_average / clear / count / max_history / __len__）。建構時會發出
+    ``DeprecationWarning``。
     """
 
-    def __init__(self, max_history: int = 300):
+    def __init__(self, max_history: int = 300) -> None:
         """
-        初始化 PV 資料服務
+        初始化 PV 資料服務（deprecated）。
 
         Args:
-            max_history: 最大歷史筆數，超過後自動移除最舊資料
+            max_history: 最大歷史筆數；delegate 至 HistoryBuffer。
         """
-        if max_history < 1:
-            raise ValueError("max_history must be at least 1")
-
-        self._max_history = max_history
-        self._queue: deque[float | None] = deque(maxlen=max_history)
-
-    @property
-    def max_history(self) -> int:
-        """最大歷史筆數"""
-        return self._max_history
-
-    @property
-    def count(self) -> int:
-        """目前資料筆數 (含 None)"""
-        return len(self._queue)
-
-    def append(self, power: float | None) -> None:
-        """
-        新增一筆 PV 功率資料
-
-        Args:
-            power: PV 功率值 (kW)，可為 None 表示讀取失敗
-        """
-        self._queue.append(power)
-
-    def get_history(self) -> list[float]:
-        """
-        取得有效的歷史資料 (過濾 None)
-
-        Returns:
-            list[float]: 有效的 PV 功率歷史
-        """
-        return [p for p in self._queue if p is not None]
-
-    def get_latest(self) -> float | None:
-        """
-        取得最新一筆有效資料
-
-        Returns:
-            float | None: 最新的 PV 功率值，若無資料則回傳 None
-        """
-        for p in reversed(self._queue):
-            if p is not None:
-                return p
-        return None
-
-    def get_average(self) -> float | None:
-        """
-        計算有效資料的平均值
-
-        Returns:
-            float | None: 平均 PV 功率，若無資料則回傳 None
-        """
-        valid = self.get_history()
-        if not valid:
-            return None
-        return sum(valid) / len(valid)
-
-    def clear(self) -> None:
-        """清空所有歷史資料"""
-        self._queue.clear()
-
-    def __len__(self) -> int:
-        """回傳有效資料筆數 (不含 None)"""
-        return len(self.get_history())
+        warnings.warn(
+            "PVDataService is deprecated since 0.9.x; use HistoryBuffer instead. Will be removed in v1.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(max_history=max_history)
 
     def __str__(self) -> str:
         return f"PVDataService(count={self.count}, valid={len(self)})"

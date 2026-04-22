@@ -23,7 +23,7 @@ from .core import (
 from .discovery import ENTRY_POINT_GROUP, StrategyDescriptor, discover_strategies
 from .executor import ComputeOffloader, StrategyExecutor
 from .protocol import GridControllerBase, GridControllerProtocol, StrategyAwareGridControllerProtocol
-from .services import PVDataService
+from .services import HistoryBuffer, PVDataService
 from .strategies import (
     BypassStrategy,
     DroopConfig,
@@ -104,6 +104,7 @@ __all__ = [
     "ComputeOffloader",
     "StrategyExecutor",
     # Services
+    "HistoryBuffer",
     "PVDataService",
     # Strategies
     "BypassStrategy",

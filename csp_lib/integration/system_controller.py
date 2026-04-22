@@ -23,6 +23,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from csp_lib.controller.core import (
@@ -34,7 +35,7 @@ from csp_lib.controller.core import (
     SystemBase,
 )
 from csp_lib.controller.executor import StrategyExecutor
-from csp_lib.controller.services import PVDataService
+from csp_lib.controller.services import HistoryBuffer, PVDataService
 from csp_lib.controller.strategies import StopStrategy
 from csp_lib.controller.system import ModeManager, ModePriority, ProtectionGuard, ProtectionResult, ProtectionRule
 from csp_lib.controller.system.cascading import CapacityConfig, CascadingStrategy
@@ -49,7 +50,7 @@ from csp_lib.equipment.device import EVENT_READ_COMPLETE
 from .command_refresh import CommandRefreshService
 from .command_router import CommandRouter
 from .context_builder import ContextBuilder
-from .data_feed import DeviceDataFeed
+from .data_feed import _LEGACY_PV_KEY, DeviceDataFeed
 from .distributor import DeviceSnapshot, PowerDistributor
 from .heartbeat import HeartbeatService
 from .heartbeat_targets import HeartbeatTarget
@@ -195,6 +196,15 @@ class SystemControllerConfig:
     """命令刷新（reconciler）服務配置。``enabled=True`` 時 SystemController
     會自動建立並隨生命週期啟停 CommandRefreshService。"""
 
+    history_buffers: dict[str, HistoryBuffer] | None = None
+    """v0.9.x+：多來源 HistoryBuffer 字典，key 為自訂識別（如 "pv_power"、
+    "grid_power"），value 為 HistoryBuffer 實例。與 ``data_feed_mappings``
+    搭配使用。舊欄位 ``data_feed_mapping`` + ``pv_max_history`` 仍可用；
+    新舊欄位混用時以新欄位為準。"""
+
+    data_feed_mappings: dict[str, DataFeedMapping] | None = None
+    """v0.9.x+：多來源 DataFeedMapping 字典。key 須與 ``history_buffers`` 對齊。"""
+
     @classmethod
     def builder(cls) -> "SystemControllerConfigBuilder":
         """回傳 fluent builder 以逐步建構配置"""
@@ -251,6 +261,8 @@ class SystemControllerConfigBuilder:
         self._trigger_on_read_device_ids: list[str] = []
         self._heartbeat_config: HeartbeatConfig | None = None
         self._command_refresh_config: CommandRefreshConfig | None = None
+        self._history_buffers: dict[str, HistoryBuffer] = {}
+        self._data_feed_mappings: dict[str, DataFeedMapping] = {}
 
         # Operator Pattern — 由 from_manifest 填入，否則保持初始空值
         self._manifest_source: SiteManifest | None = None
@@ -463,9 +475,39 @@ class SystemControllerConfigBuilder:
     # ─────────────── PV / 級聯 ───────────────
 
     def data_feed(self, mapping: DataFeedMapping, max_history: int = 300) -> "SystemControllerConfigBuilder":
-        """設定 PV 資料餵入"""
+        """設定 PV 資料餵入（legacy 單來源）。
+
+        .. deprecated:: 0.9.x
+            改用 :meth:`history_buffer` 以支援多來源（仍保留 backward-compat）。
+        """
         self._data_feed_mapping = mapping
         self._pv_max_history = max_history
+        return self
+
+    def history_buffer(
+        self,
+        key: str,
+        buffer: HistoryBuffer,
+        mapping: DataFeedMapping | None = None,
+    ) -> "SystemControllerConfigBuilder":
+        """v0.9.x+：註冊 HistoryBuffer（支援多來源）。
+
+        每次呼叫新增一個 (key, buffer)；若提供 ``mapping`` 則同時註冊對應的
+        DataFeedMapping，啟動時由 DeviceDataFeed 自動餵入。
+
+        Args:
+            key: buffer 識別鍵（如 "pv_power"、"grid_power"、"battery_soc"）
+            buffer: HistoryBuffer 實例
+            mapping: 對應的資料來源映射（可選；沒給時需外部自行 append）
+
+        Raises:
+            ValueError: key 已存在（重複註冊同一 key fail-fast）
+        """
+        if key in self._history_buffers:
+            raise ValueError(f"history buffer key '{key}' already registered")
+        self._history_buffers[key] = buffer
+        if mapping is not None:
+            self._data_feed_mappings[key] = mapping
         return self
 
     def cascading(self, capacity_kva: float) -> "SystemControllerConfigBuilder":
@@ -616,6 +658,8 @@ class SystemControllerConfigBuilder:
             trigger_on_read_device_ids=self._trigger_on_read_device_ids,
             heartbeat=self._heartbeat_config,
             command_refresh=self._command_refresh_config,
+            history_buffers=self._history_buffers or None,
+            data_feed_mappings=self._data_feed_mappings or None,
         )
 
 
@@ -660,11 +704,33 @@ class SystemController(AsyncLifecycleMixin):
         # 保護鏈
         self._protection_guard = ProtectionGuard(config.protection_rules)
 
-        # PV 資料服務（可選）
+        # PV / HistoryBuffer 資料服務（可選）
+        #
+        # v0.9.x 起支援多來源：``config.history_buffers`` / ``config.data_feed_mappings``
+        # 優先；若未設定，回退至舊 ``config.data_feed_mapping`` + ``config.pv_max_history``
+        # 單來源路徑（自動建立 PVDataService，legacy key = "pv_power"）。
         self._pv_service: PVDataService | None = None
+        self._history_buffers: dict[str, HistoryBuffer] = {}
         self._data_feed: DeviceDataFeed | None = None
-        if config.data_feed_mapping is not None:
+        if config.history_buffers is not None or config.data_feed_mappings is not None:
+            # 新路徑：多來源 HistoryBuffer
+            buffers = dict(config.history_buffers) if config.history_buffers else {}
+            mappings = dict(config.data_feed_mappings) if config.data_feed_mappings else {}
+            self._history_buffers = buffers
+            if mappings:
+                self._data_feed = DeviceDataFeed(
+                    registry,
+                    mappings=mappings,
+                    history_buffers=buffers,
+                )
+            # 若 legacy pv_power key 也存在，expose via _pv_service 以保相容
+            legacy_buf = buffers.get(_LEGACY_PV_KEY)
+            if isinstance(legacy_buf, PVDataService):
+                self._pv_service = legacy_buf
+        elif config.data_feed_mapping is not None:
+            # Legacy 路徑：單一來源，自動建立 PVDataService
             self._pv_service = PVDataService(max_history=config.pv_max_history)
+            self._history_buffers = {_LEGACY_PV_KEY: self._pv_service}
             self._data_feed = DeviceDataFeed(registry, config.data_feed_mapping, self._pv_service)
 
         # Context 建構器
@@ -1241,8 +1307,24 @@ class SystemController(AsyncLifecycleMixin):
 
     @property
     def pv_service(self) -> PVDataService | None:
-        """PV 資料服務"""
+        """PV 資料服務。
+
+        .. deprecated:: 0.9.x
+            改用 :attr:`history_buffers` 的 ``"pv_power"`` key。
+            legacy ``pv_power`` HistoryBuffer（非 PVDataService subclass）不會
+            出現在此 property，需改用新 API 取得。
+        """
         return self._pv_service
+
+    @property
+    def history_buffers(self) -> Mapping[str, HistoryBuffer]:
+        """v0.9.x+：取得所有 HistoryBuffer 的不可變視圖（``MappingProxyType``，零複製）。
+
+        key 由配置決定：
+        - 舊路徑（``data_feed_mapping``）自動使用 ``"pv_power"``
+        - 新路徑由 ``config.history_buffers`` / ``config.data_feed_mappings`` 指定
+        """
+        return MappingProxyType(self._history_buffers)
 
     @property
     def alarmed_device_ids(self) -> set[str]:
