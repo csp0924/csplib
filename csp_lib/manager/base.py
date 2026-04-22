@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol, runtime_checkable
 from csp_lib.core import get_logger
 
 if TYPE_CHECKING:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
+
     from csp_lib.equipment.device.protocol import DeviceProtocol
 
 logger = get_logger(__name__)
@@ -194,6 +196,66 @@ class ManagerDescribable(Protocol):
     def describe(self) -> object: ...
 
 
+# ================ Mongo Repository Base ================
+
+
+class MongoRepositoryBase:
+    """Mongo Repository 共用基底 — 收斂三個 Mongo Repository 的樣板。
+
+    合併重複的 ``__init__(db, collection_name)`` 樣板與 ``health_check()``
+    ``db.command("ping")`` 實作。子類必須覆寫 ``ensure_indexes()``。
+
+    設計：
+        - 非 abstract base class（不繼承 ``ABC``）以簡化測試 Mock
+          且允許 caller 透過 ``isinstance`` 檢查（motor 是 optional extra，
+          用 runtime duck typing 而非 metaclass 約束更寬鬆）
+        - ``ensure_indexes`` 預設 raise ``NotImplementedError``，子類必須覆寫
+        - 暴露 ``_db`` / ``_collection`` protected 屬性供子類使用
+
+    Usage::
+
+        class MongoAlarmRepository(MongoRepositoryBase):
+            COLLECTION_NAME = "alarms"
+
+            def __init__(self, db, collection_name=COLLECTION_NAME):
+                super().__init__(db, collection_name)
+
+            async def ensure_indexes(self):
+                await self._collection.create_indexes([...])
+
+            # 其他 CRUD method 用 self._collection
+    """
+
+    def __init__(self, db: AsyncIOMotorDatabase, collection_name: str) -> None:
+        """
+        Args:
+            db: Motor 非同步資料庫連線
+            collection_name: Collection 名稱（子類常提供類別常數 ``COLLECTION_NAME`` 當預設值）
+        """
+        self._db = db
+        self._collection = db[collection_name]
+
+    async def health_check(self) -> bool:
+        """檢查 MongoDB 連線是否正常（走 ``db.command(\"ping\")``）。
+
+        Returns:
+            True 表示連線正常；任何例外都視為不健康回 False。
+        """
+        try:
+            await self._db.command("ping")
+            return True
+        except Exception:
+            return False
+
+    async def ensure_indexes(self) -> None:
+        """建立資料庫索引（子類必須覆寫）。
+
+        應於應用程式啟動時呼叫一次。子類用 ``self._collection.create_indexes([...])``
+        建立所需 ``IndexModel``。
+        """
+        raise NotImplementedError(f"{type(self).__name__} must override ensure_indexes() to declare its index schema.")
+
+
 __all__ = [
     "AsyncRepository",
     "BatchUploader",
@@ -201,4 +263,5 @@ __all__ = [
     "LeaderGate",
     "AlwaysLeaderGate",
     "ManagerDescribable",
+    "MongoRepositoryBase",
 ]
