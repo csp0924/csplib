@@ -709,6 +709,25 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         """發送事件（非阻塞）"""
         self._emitter.emit(event, payload)
 
+    async def ensure_event_loop_started(self) -> None:
+        """
+        確保內部事件 emitter worker 已啟動（idempotent）。
+
+        Standalone 模式由 ``start()`` 間接啟動；group 模式由 ``DeviceManager``
+        在連線後呼叫此方法，取代舊的 ``device._emitter.start()`` 私有存取。
+        多次呼叫安全（``DeviceEventEmitter.start()`` 內部已 idempotent）。
+        """
+        await self._emitter.start()
+
+    async def ensure_event_loop_stopped(self) -> None:
+        """
+        確保內部事件 emitter worker 已停止（對稱 ``ensure_event_loop_started``）。
+
+        用於 group 模式下 ``DeviceManager`` 在 disconnect 前關閉事件 worker。
+        多次呼叫安全（``DeviceEventEmitter.stop()`` 內部已 idempotent）。
+        """
+        await self._emitter.stop()
+
     # =============== Private ===============
 
     async def _read_all(self) -> dict[str, Any]:

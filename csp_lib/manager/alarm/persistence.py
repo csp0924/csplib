@@ -19,8 +19,11 @@ from csp_lib.equipment.alarm import AlarmLevel
 from csp_lib.equipment.device.events import (
     EVENT_ALARM_CLEARED,
     EVENT_ALARM_TRIGGERED,
+    EVENT_CAPABILITY_ADDED,
+    EVENT_CAPABILITY_REMOVED,
     EVENT_CONNECTED,
     EVENT_DISCONNECTED,
+    CapabilityChangedPayload,
     ConnectedPayload,
     DeviceAlarmPayload,
     DisconnectPayload,
@@ -91,13 +94,15 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
     # ================ 訂閱管理 ================
 
     def _register_events(self, device: DeviceProtocol) -> list[Callable[[], None]]:
-        """註冊設備的連線/斷線與告警觸發/解除事件"""
+        """註冊設備的連線/斷線、告警觸發/解除、能力變更事件"""
         logger.info(f"告警持久化管理器已訂閱設備: {device.device_id}")
         return [
             device.on(EVENT_DISCONNECTED, self._on_disconnected),
             device.on(EVENT_CONNECTED, self._on_connected),
             device.on(EVENT_ALARM_TRIGGERED, self._on_alarm_triggered),
             device.on(EVENT_ALARM_CLEARED, self._on_alarm_cleared),
+            device.on(EVENT_CAPABILITY_REMOVED, self._on_capability_removed),
+            device.on(EVENT_CAPABILITY_ADDED, self._on_capability_restored),
         ]
 
     def _on_unsubscribe(self, device_id: str) -> None:
@@ -171,6 +176,25 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         """
         alarm = payload.alarm_event.alarm
         key = AlarmRecord.make_key(payload.device_id, AlarmType.DEVICE_ALARM, alarm.code)
+        await self._resolve_alarm(key, payload.timestamp)
+
+    async def _on_capability_removed(self, payload: CapabilityChangedPayload) -> None:
+        """建立 CAPABILITY_DEGRADED 告警：每個 capability 獨立一筆（alarm_code=capability_name），等級固定 WARNING。"""
+        record = AlarmRecord(
+            alarm_key=AlarmRecord.make_key(payload.device_id, AlarmType.CAPABILITY_DEGRADED, payload.capability_name),
+            device_id=payload.device_id,
+            alarm_type=AlarmType.CAPABILITY_DEGRADED,
+            alarm_code=payload.capability_name,
+            name=f"能力降級: {payload.capability_name}",
+            level=AlarmLevel.WARNING,
+            description=f"設備 {payload.device_id} 不再支援 capability '{payload.capability_name}'",
+            timestamp=payload.timestamp,
+        )
+        await self._create_alarm(record)
+
+    async def _on_capability_restored(self, payload: CapabilityChangedPayload) -> None:
+        """解除對應的 CAPABILITY_DEGRADED 告警（alarm_key 需與 _on_capability_removed 對齊）。"""
+        key = AlarmRecord.make_key(payload.device_id, AlarmType.CAPABILITY_DEGRADED, payload.capability_name)
         await self._resolve_alarm(key, payload.timestamp)
 
     # ================ 私有方法 ================

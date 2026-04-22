@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Sequence, cast
+from typing import TYPE_CHECKING, Awaitable, Callable, Sequence, cast
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core.errors import DeviceConnectionError
@@ -26,31 +26,90 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+async def _safe_device_step(
+    coro: Awaitable[None],
+    *,
+    device_id: str,
+    action: str,
+    expected_exc: type[Exception] | tuple[type[Exception], ...] = DeviceConnectionError,
+) -> None:
+    """執行 device lifecycle 步驟並分類處理例外。
+
+    - ``CancelledError`` 向上傳播（不吞掉 cooperative cancellation 語意）
+    - ``expected_exc`` 類別（預設 ``DeviceConnectionError``）→ warn log，不附 stack
+      （代表預期可能失敗，通常由背景重試處理）
+    - 其他 ``Exception`` → ``logger.opt(exception=True).warning``（附 stack）
+
+    傳 ``expected_exc=()`` 可停用「預期例外」分支，所有 Exception 都走 unexpected
+    path（帶 stack trace）。_(bug-lesson: partial-failure-gather)_
+    """
+    try:
+        await coro
+    except asyncio.CancelledError:
+        raise
+    except expected_exc as e:
+        logger.warning("設備 {} {} 失敗: {}", device_id, action, e)
+    except Exception:
+        logger.opt(exception=True).warning("設備 {} {} 出現非預期例外", device_id, action)
+
+
+async def _gather_per_device_with_cancel(
+    devices: Sequence["DeviceProtocol"],
+    coro_factory: Callable[["DeviceProtocol"], Awaitable[None]],
+    *,
+    failure_msg: str,
+) -> None:
+    """對多個 device 平行執行 coroutine，保留 CancelledError 傳播語意。
+
+    - ``devices`` 空時直接返回
+    - ``CancelledError`` 任一出現即 re-raise，中止整批（cooperative cancellation）
+    - 其他 ``BaseException`` 以 ``failure_msg.format(device_id, exc)`` warn log
+      （注意 loguru 用 ``{}`` 風格，這裡用 ``%`` 風格 fallback 不合適；
+      故 ``failure_msg`` 必須是 loguru 格式字串）
+
+    Args:
+        devices: 設備序列
+        coro_factory: ``device -> Awaitable`` 的工廠函式
+        failure_msg: loguru 格式字串，須含兩個 ``{}`` 佔位：device_id 與 exception
+    """
+    if not devices:
+        return
+    results = await asyncio.gather(
+        *(coro_factory(d) for d in devices),
+        return_exceptions=True,
+    )
+    for dev, result in zip(devices, results, strict=True):
+        if isinstance(result, asyncio.CancelledError):
+            raise result
+        if isinstance(result, BaseException):
+            logger.warning(failure_msg, dev.device_id, result)
+
+
 def _require_lifecycle_methods(device: "DeviceProtocol", *, for_group: bool) -> None:
     """Fail-fast 驗證 device 具備 DeviceManager 執行期所需的 lifecycle 能力。
 
-    ``DeviceProtocol`` 目前尚未納入 ``connect/disconnect/start/stop/read_once/_emitter``
-    （追蹤 B-P2），因此 ``register/register_group`` 在接受 ``DeviceProtocol`` 型別的同時
-    必須在 runtime 確認能力齊全；否則會延後到 ``_on_start`` / ``unregister`` 才炸
-    ``AttributeError``（symptom 離 root cause 較遠，也容易被上層 ``except Exception``
-    吞掉）。
+    ``DeviceProtocol`` 目前尚未納入 ``connect/disconnect/start/stop/read_once/
+    ensure_event_loop_started/ensure_event_loop_stopped``（追蹤 B-P2），因此
+    ``register/register_group`` 在接受 ``DeviceProtocol`` 型別的同時必須在 runtime
+    確認能力齊全；否則會延後到 ``_on_start`` / ``unregister`` 才炸 ``AttributeError``
+    （symptom 離 root cause 較遠，也容易被上層 ``except Exception`` 吞掉）。
 
     Args:
         device: 欲註冊的設備
-        for_group: True 代表為群組註冊（額外要求 ``read_once`` / ``_emitter``）
+        for_group: True 代表為群組註冊（額外要求 ``read_once`` 與事件 loop helper）
 
     Raises:
-        ValueError: 缺少任一必要 lifecycle 方法/屬性
+        ValueError: 缺少任一必要 lifecycle 方法
     """
     required_methods = ["connect", "disconnect"]
     if for_group:
-        required_methods.append("read_once")
+        # group 模式：Manager 需呼叫 read_once，並以 public helper 控制 event loop
+        # （取代舊的 device._emitter.start/stop 私有存取）
+        required_methods.extend(["read_once", "ensure_event_loop_started", "ensure_event_loop_stopped"])
     else:
         required_methods.extend(["start", "stop"])
 
     missing = [name for name in required_methods if not callable(getattr(device, name, None))]
-    if for_group and not hasattr(device, "_emitter"):
-        missing.append("_emitter")
 
     if missing:
         device_id = getattr(device, "device_id", "<unknown>")
@@ -262,63 +321,95 @@ class DeviceManager(AsyncLifecycleMixin):
         啟動所有設備
 
         獨立設備將各自啟動 read_loop，群組設備將啟動順序讀取循環。
-        連線失敗不會阻止啟動，會在背景自動重試。
+        單一設備的連線/啟動失敗不會阻止其他設備，失敗的設備保留在註冊表，
+        由其內部背景邏輯自動重試（或下次 start 時重連）。
+
+        ``asyncio.CancelledError`` 保留原語意向上傳播；其他 Exception 僅記 warn。
         """
         if self._running:
             return
 
         self._running = True
 
-        # 啟動獨立設備（單一設備連線失敗不影響其他設備）
-        for device in self._standalone:
-            # 目前 lifecycle 方法（connect / start / _emitter）尚未納入 DeviceProtocol，
-            # 暫以 cast 壓 mypy；後續補齊 Protocol 後移除（追蹤 B-P2）。
+        # lifecycle 方法（connect / start）尚未納入 DeviceProtocol → cast（追蹤 B-P2）
+        async def _start_standalone(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
-            try:
-                await concrete.connect()
-            except DeviceConnectionError as e:
-                logger.warning(f"設備 {device.device_id} 連線失敗，將在背景重試: {e}")
-            # 無論連線成功與否都啟動 read_loop（會在背景自動重連）
+            await _safe_device_step(concrete.connect(), device_id=device.device_id, action="connect")
+            # connect 失敗仍要 start：read_loop 內部會背景重連
             await concrete.start()
 
-        # 啟動群組設備：先連線各設備，再啟動順序讀取
+        await _gather_per_device_with_cancel(
+            self._standalone,
+            _start_standalone,
+            failure_msg="設備 {} start 失敗，保留在註冊表等下次重試: {}",
+        )
+
+        async def _prepare_group_device(device: "DeviceProtocol") -> None:
+            concrete = cast("AsyncModbusDevice", device)
+            await _safe_device_step(concrete.connect(), device_id=device.device_id, action="connect")
+            # 即使 connect 失敗也要啟動 event emitter（後續 read_once 仍可能觸發事件）
+            await _safe_device_step(
+                concrete.ensure_event_loop_started(),
+                device_id=device.device_id,
+                action="ensure_event_loop_started",
+                expected_exc=(),
+            )
+
         for group in self._groups:
-            for device in group.devices:
-                try:
-                    await device.connect()
-                except DeviceConnectionError as e:
-                    logger.warning(f"設備 {device.device_id} 連線失敗，將在背景重試: {e}")
-                await device._emitter.start()
+            await _gather_per_device_with_cancel(
+                group.devices,
+                _prepare_group_device,
+                failure_msg="群組設備 {} 準備失敗（保留在群組中）: {}",
+            )
             group.start()
 
-        logger.info(f"DeviceManager 已啟動: {len(self._standalone)} 個獨立設備, {len(self._groups)} 個群組")
+        logger.info(
+            "DeviceManager 已啟動: {} 個獨立設備, {} 個群組",
+            len(self._standalone),
+            len(self._groups),
+        )
 
     async def _on_stop(self) -> None:
         """
         停止所有設備
 
-        停止所有讀取循環並斷開連線。
+        停止所有讀取循環並斷開連線。對每個設備採 per-device try/except，
+        單一設備 stop/disconnect 失敗不會阻止其他設備收尾；
+        ``asyncio.CancelledError`` 保留原語意向上傳播。
         """
         if not self._running:
             return
 
         self._running = False
 
-        # 停止獨立設備
-        for device in self._standalone:
+        async def _stop_standalone(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
-            await concrete.stop()
-            await concrete.disconnect()
+            await _safe_device_step(concrete.stop(), device_id=device.device_id, action="stop", expected_exc=())
+            await _safe_device_step(concrete.disconnect(), device_id=device.device_id, action="disconnect")
 
-        # 停止群組設備：先停止順序讀取，再斷線各設備
+        await _gather_per_device_with_cancel(self._standalone, _stop_standalone, failure_msg="設備 {} 收尾失敗: {}")
+
+        async def _stop_group_device(device: "DeviceProtocol") -> None:
+            concrete = cast("AsyncModbusDevice", device)
+            await _safe_device_step(
+                concrete.ensure_event_loop_stopped(),
+                device_id=device.device_id,
+                action="ensure_event_loop_stopped",
+                expected_exc=(),
+            )
+            await _safe_device_step(concrete.disconnect(), device_id=device.device_id, action="disconnect")
+
         for group in self._groups:
-            await group.stop()
-            for device in group.devices:
-                await device._emitter.stop()
-                try:
-                    await device.disconnect()
-                except DeviceConnectionError as e:
-                    logger.debug(f"設備 {device.device_id} 斷線失敗（已忽略）: {e}")
+            try:
+                await group.stop()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("群組 {} stop 失敗: {}", group.device_ids, e)
+
+            await _gather_per_device_with_cancel(
+                group.devices, _stop_group_device, failure_msg="群組設備 {} 收尾失敗: {}"
+            )
 
         logger.info("DeviceManager 已停止")
 

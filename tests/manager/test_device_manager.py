@@ -50,6 +50,10 @@ class MockDevice:
         self.start = AsyncMock()
         self.stop = AsyncMock()
         self.read_once = AsyncMock()
+        # Wave 2b：group 模式改呼叫 public ensure_event_loop_started/stopped
+        # 取代舊的 device._emitter.start/stop 私有存取。
+        self.ensure_event_loop_started = AsyncMock()
+        self.ensure_event_loop_stopped = AsyncMock()
 
 
 # ======================== Registration Tests ========================
@@ -351,21 +355,25 @@ class TestDeviceManagerLifecycleFailFast:
             manager.register(mock_device_protocol)
 
     def test_register_group_pure_protocol_raises(self, mock_device_protocol):
-        """純 DeviceProtocol 實作（缺 read_once/_emitter）應在 register_group 時 raise。"""
+        """純 DeviceProtocol 實作（缺 read_once/ensure_event_loop_*）應在 register_group 時 raise。"""
         manager = DeviceManager()
         with pytest.raises(ValueError, match="lifecycle"):
             manager.register_group([mock_device_protocol])
 
-    def test_register_group_missing_emitter_raises(self, make_mock_device_protocol):
-        """補了 connect/disconnect/read_once 但缺 _emitter 仍應 raise。"""
+    def test_register_group_missing_event_loop_helper_raises(self, make_mock_device_protocol):
+        """補了 connect/disconnect/read_once 但缺 ensure_event_loop_started/stopped 仍應 raise。
+
+        Wave 2b 後，group 模式不再私有存取 device._emitter.start/stop，改要求
+        public ``ensure_event_loop_started`` / ``ensure_event_loop_stopped``。
+        """
         device = make_mock_device_protocol("partial_group_device")
         device.connect = AsyncMock()
         device.disconnect = AsyncMock()
         # read_once 已由 MockDeviceProtocol 預設提供
-        # 刻意不補 _emitter
+        # 刻意不補 ensure_event_loop_started / ensure_event_loop_stopped
 
         manager = DeviceManager()
-        with pytest.raises(ValueError, match="_emitter"):
+        with pytest.raises(ValueError, match="ensure_event_loop_started"):
             manager.register_group([device])
 
 

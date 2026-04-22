@@ -103,6 +103,10 @@ def _attach_lifecycle(device: MockDeviceProtocol) -> MockDeviceProtocol:
     device.disconnect = AsyncMock()  # type: ignore[attr-defined]
     device.start = AsyncMock()  # type: ignore[attr-defined]
     device.stop = AsyncMock()  # type: ignore[attr-defined]
+    # Wave 2b：group 模式改呼叫 public ensure_event_loop_started/stopped
+    # 取代舊的 device._emitter.start/stop 私有存取。
+    device.ensure_event_loop_started = AsyncMock()  # type: ignore[attr-defined]
+    device.ensure_event_loop_stopped = AsyncMock()  # type: ignore[attr-defined]
 
     class _MockEmitter:
         def __init__(self) -> None:
