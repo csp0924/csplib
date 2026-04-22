@@ -168,7 +168,10 @@ async def _run_reconcile_scaffold(
         raise
     except Exception as e:
         last_error = repr(e)
-        logger.opt(exception=True).warning(f"{type(holder).__name__}.reconcile_once raised, captured in status")
+        # 動態綁定實際 holder 的 module 而非 core.reconciler，讓 module-based
+        # log filter / set_level 可精準控制實作來源（如 manager.schedule.service）。
+        _holder_logger = _root_logger.bind(module=type(holder).__module__, reconciler_module=__name__)
+        _holder_logger.opt(exception=True).warning(f"{type(holder).__name__}.reconcile_once raised, captured in status")
 
     # 成功或 non-cancel 失敗都會到這；detail 是子類在 work 執行過程（含 raise 前）
     # 寫入的 diagnostic metadata，失敗時保留部分進度供偵錯

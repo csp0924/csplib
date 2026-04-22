@@ -43,17 +43,25 @@ def _make_rule(name: str = "rule1", priority: int = 100) -> ScheduleRule:
     )
 
 
+_UNSET = object()
+
+
 def _make_service(
     *,
     rules: list[ScheduleRule] | None = None,
-    create_returns: object | None = None,
+    create_returns: object = _UNSET,
 ) -> tuple[ScheduleService, MagicMock, AsyncMock]:
-    """Factory 回傳 (service, repo, mode_controller)。"""
+    """Factory 回傳 (service, repo, mode_controller)。
+
+    Args:
+        create_returns: factory.create 的回傳值。預設（``_UNSET``）回一個新
+            MagicMock 讓 activate_schedule_mode 被呼叫；明確傳 ``None`` 可
+            模擬「策略建立失敗」分支。
+    """
     repo = MagicMock()
     repo.find_active_rules = AsyncMock(return_value=rules or [])
     factory = MagicMock(spec=StrategyFactory)
-    # create 預設回一個非 None 物件，讓 activate_schedule_mode 被呼叫
-    factory.create = MagicMock(return_value=create_returns if create_returns is not None else MagicMock())
+    factory.create = MagicMock(return_value=create_returns if create_returns is not _UNSET else MagicMock())
     mode_ctrl = AsyncMock()
     service = ScheduleService(_make_config(), repo, factory, mode_ctrl)
     return service, repo, mode_ctrl
@@ -134,11 +142,8 @@ class TestReconcileOnceDetailMetadata:
 
     async def test_factory_failed_records_action(self):
         rule = _make_rule("bad_rule")
-        # factory.create 回 None 表示無法建立策略
+        # 明確傳 None → factory.create 回 None → factory_failed 分支
         service, _, mode_ctrl = _make_service(rules=[rule], create_returns=None)
-        # create_returns=None 會讓 factory.create 回 MagicMock（非 None），所以
-        # 手動覆寫
-        service._factory.create = MagicMock(return_value=None)  # type: ignore[attr-defined]
 
         status = await service.reconcile_once()
 
