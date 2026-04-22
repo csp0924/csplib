@@ -188,8 +188,10 @@ class StateSyncManager(DeviceEventSubscriber):
         state_key = self._state_key(device_id)
         online_key = self._online_key(device_id)
 
-        # Hash 值需字串化（redis-py 原生 pipeline 不走 RedisClient.hset 的 JSON encode）
-        str_mapping = {k: v if isinstance(v, str) else json.dumps(v, default=str) for k, v in payload.values.items()}
+        # Hash 值需字串化。redis-py 原生 pipeline 不走 RedisClient.hset 的 JSON encode，
+        # 此處沿用 RedisClient.hset 的編碼策略（``json.dumps(v)`` 不加 ``default=str``）
+        # 讓不可序列化值 fail-loud，與非 pipeline 路徑行為一致。
+        str_mapping = {k: v if isinstance(v, str) else json.dumps(v) for k, v in payload.values.items()}
         message = json.dumps(
             {"timestamp": payload.timestamp.isoformat(), "values": payload.values},
             default=str,
