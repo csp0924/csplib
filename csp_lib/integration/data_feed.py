@@ -88,7 +88,8 @@ class DeviceDataFeed:
             history_buffers: （keyword-only）多來源緩衝字典 ``{key: HistoryBuffer}``
 
         Raises:
-            ValueError: legacy 參數與新 keyword 參數混用時
+            ValueError: legacy 參數與新 keyword 參數混用時；或 legacy 模式未成對提供
+                ``mapping`` 與 ``pv_service``（單獨傳其一會 silent skip，屬配置錯誤）
         """
         # 混用拒絕：新舊 API 不得共用
         legacy_used = mapping is not None or pv_service is not None
@@ -97,6 +98,14 @@ class DeviceDataFeed:
             raise ValueError(
                 "DeviceDataFeed: cannot mix legacy parameters (mapping, pv_service) "
                 "with new keyword parameters (mappings, history_buffers). Use one or the other."
+            )
+        # Legacy 模式需成對：單獨傳 mapping 或 pv_service 會讓 attach() silent skip
+        # 該 key，屬 fail-loud 的配置錯誤範疇（對齊 bug-lesson validation-fail-loud）。
+        if legacy_used and (mapping is None or pv_service is None):
+            raise ValueError(
+                "DeviceDataFeed legacy mode requires both `mapping` and `pv_service` to be provided. "
+                "For single-source config without a buffer (or vice versa), use the new "
+                "`mappings=` / `history_buffers=` keyword API."
             )
 
         self._registry = registry
@@ -231,13 +240,12 @@ class DeviceDataFeed:
                 else:
                     buffer.append(None)
             else:
-                self._feed_trait_aggregate(key, mapping, buffer)
+                self._feed_trait_aggregate(mapping, buffer)
 
         return handler
 
     def _feed_trait_aggregate(
         self,
-        key: str,
         mapping: DataFeedMapping,
         buffer: "HistoryBuffer",
     ) -> None:

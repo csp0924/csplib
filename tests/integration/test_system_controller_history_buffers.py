@@ -9,7 +9,8 @@
    - 可多次呼叫註冊多個 key
    - 重複註冊同一 key raise ValueError
    - 不傳 mapping 時只註冊 buffer（外部自行 append）
-4. ``history_buffers`` property 是 snapshot（dict copy，修改不影響內部狀態）。
+4. ``history_buffers`` property 回傳唯讀視圖（``MappingProxyType``，非 dict copy），
+   caller 無法直接修改其內容。
 """
 
 from __future__ import annotations
