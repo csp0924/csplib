@@ -100,9 +100,15 @@ class MongoCommandRepository(MongoRepositoryBase):
         ```python
         from motor.motor_asyncio import AsyncIOMotorClient
 
-        client = AsyncIOMotorClient("mongodb://localhost:27017")
-        collection = client["my_db"]["commands"]
-        repo = MongoCommandRepository(collection)
+        mongo_uri = "mongodb://localhost:27017"
+        database_name = "csp_lib"
+
+        client = AsyncIOMotorClient(mongo_uri)
+        db = client[database_name]
+
+        repo = MongoCommandRepository(db)  # 用預設 COLLECTION_NAME="commands"
+        # 或自訂 collection 名稱：
+        # repo = MongoCommandRepository(db, collection_name="my_commands")
 
         # 建立記錄
         record = CommandRecord.from_command(command)
