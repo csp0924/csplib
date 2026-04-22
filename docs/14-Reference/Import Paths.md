@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-20
-version: ">=0.9.0"
+updated: 2026-04-23
+version: ">=0.10.0"
 
 ---
 
@@ -46,6 +46,8 @@ from csp_lib.core import (
     StrategyExecutionError,       # v0.5.0
     ProtectionError,              # v0.5.0
     DeviceRegistryError,          # v0.5.0
+    NotLeaderError,               # v0.10.0
+    WriteValidationError,         # v0.10.0
     # Health
     HealthStatus,
     HealthReport,
@@ -56,6 +58,10 @@ from csp_lib.core import (
     RetryPolicy,
     # Runtime Parameters (v0.5.0)
     RuntimeParameters,
+    # Reconciler Protocol (v0.10.0 — 從 integration 下移)
+    Reconciler,
+    ReconcilerMixin,
+    ReconcilerStatus,
 )
 ```
 
@@ -145,6 +151,8 @@ from csp_lib.equipment.device import (
     CANRxFrameDefinition,
     # 協定（v0.4.2）
     DeviceProtocol,
+    # 動作設備協定（v0.10.0）
+    ActionDeviceProtocol,
     # 配置
     DeviceConfig,
     # DO 動作（v0.5.0）
@@ -265,7 +273,8 @@ from csp_lib.controller import (
     # 執行器
     StrategyExecutor, ComputeOffloader,
     # 服務
-    PVDataService,
+    HistoryBuffer,                             # v0.10.0 — 通用時序緩衝（取代 PVDataService 綁定語義）
+    PVDataService,                             # Deprecated v0.10.0 — 繼承 HistoryBuffer，向後相容
     # 協議
     GridControllerProtocol, GridControllerBase,
     # 策略
@@ -309,6 +318,9 @@ from csp_lib.manager import (
     AsyncRepository,
     BatchUploader,                            # v0.5.0
     DeviceEventSubscriber,
+    LeaderGate,                               # v0.10.0 — @runtime_checkable Protocol
+    AlwaysLeaderGate,                         # v0.10.0 — 單節點 no-op 實作
+    MongoRepositoryBase,                      # v0.10.0 — Mongo repo 共用基底
     # 告警
     AlarmPersistenceManager, AlarmPersistenceConfig,
     AlarmRepository, MongoAlarmRepository,
@@ -332,7 +344,11 @@ from csp_lib.manager import (
     StateSyncManager, StateSyncConfig,
     # 統一
     UnifiedDeviceManager, UnifiedConfig,
+    UnifiedManagerStatus,                     # v0.10.0 — describe() 的回傳型別
 )
+
+# ManagerDescribable Protocol（從 base 直接 import）
+from csp_lib.manager.base import ManagerDescribable   # v0.10.0
 ```
 
 ---

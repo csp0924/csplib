@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/manager/alarm/persistence.py
 created: 2026-02-17
-updated: 2026-04-18
-version: ">=0.8.2"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # AlarmPersistenceManager
@@ -54,6 +54,11 @@ version: ">=0.8.2"
 |------|------|
 | `DISCONNECT` | 設備斷線告警（通訊中斷） |
 | `DEVICE_ALARM` | 設備內部告警（如過溫、過載等） |
+| `CAPABILITY_DEGRADED` | 設備能力降級（v0.10.0）— 設備啟動時預期具備某能力但未滿足（如 PCS 啟動但功率控制 capability 未就緒） |
+
+> [!note] v0.10.0 新增 `CAPABILITY_DEGRADED`（PR #107）
+> 由 `DeviceManager._on_start` 在偵測到設備 capability 不足時觸發。
+> 可用於 dashboard 顯示哪些設備能力降級、或觸發通知提醒運維人員。
 
 ### AlarmStatus 列舉
 

@@ -2,10 +2,10 @@
 tags:
   - type/class
   - layer/manager
-  - status/stale
+  - status/complete
 source: csp_lib/manager/device/manager.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # DeviceManager
@@ -50,6 +50,21 @@ version: ">=0.5.0"
 
 - **啟動**：獨立設備各自 `connect()` + `start()`；群組設備先 `connect()` 再 `group.start()`。連線失敗不阻止啟動（`DeviceConnectionError` 被捕獲），會在背景自動重試。
 - **停止**：獨立設備 `stop()` + `disconnect()`；群組設備 `group.stop()` + 各設備 `disconnect()`。
+
+## 部分失敗策略（v0.10.0）
+
+`_on_start` 使用 `asyncio.gather(return_exceptions=True)` 平行啟動所有設備，採用部分失敗策略：
+
+- 單一設備啟動失敗（如 `DeviceConnectionError`）→ 記 warning log + 繼續啟動其他設備
+- `CancelledError` → 向上傳播（cooperative cancellation）
+- 其他非預期例外 → 附 stack trace 的 warning log
+
+這確保一台設備斷線不會阻止其他設備正常啟動，對應 `bug-lesson: partial-failure-gather`。
+
+> [!note] 解除註冊（v0.10.0）
+> `UnifiedDeviceManager` 新增 `unregister(device_id)` / `unregister_group(device_ids)` 方法，
+> 級聯清除所有子 manager 訂閱後，再呼叫 `DeviceManager` 內部的 `unregister`。
+> 直接操作 `DeviceManager` 本身的 `unregister` 通常不需要，建議透過 `UnifiedDeviceManager`。
 
 ## Quick Example
 

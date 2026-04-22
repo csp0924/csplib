@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/manager/unified.py
 created: 2026-02-17
-updated: 2026-04-06
-version: ">=0.7.1"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # UnifiedDeviceManager
@@ -49,33 +49,72 @@ version: ">=0.7.1"
 > config = UnifiedConfig(batch_uploader=uploader)
 > ```
 
+## 建構參數
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `config` | `UnifiedConfig` | 統一管理器配置 |
+| `leader_gate` | [[LeaderGate]] `\| None`（kw-only） | Leader 閘門（可選，見下方說明） |
+
+### leader_gate 行為（v0.10.0）
+
+| 情境 | 行為 |
+|------|------|
+| 未注入 | 視為永遠是 leader（等同 `AlwaysLeaderGate`） |
+| 注入後非 leader | `_on_start` 跳過 `device_manager.start()`（不連線/不讀取） |
+| 注入後非 leader + `WriteCommandManager` | `execute()` raise `NotLeaderError` |
+| 注入後非 leader + `StateSyncManager` | 所有事件 handler 早退，不寫 Redis |
+
+---
+
 ## API
+
+### 建構（constructor）
+
+```python
+UnifiedDeviceManager(config: UnifiedConfig, *, leader_gate: LeaderGate | None = None)
+```
 
 ### 註冊
 
 | 方法 | 說明 |
 |------|------|
-| `register(device, collection_name=None, traits=None, metadata=None)` | 註冊獨立設備 + 自動訂閱所有子管理器 |
-| `register_group(devices, interval=1.0, collection_name=None, traits=None, metadata=None)` | 註冊設備群組 + 自動訂閱 |
+| `register(device, collection_name=None, traits=None, metadata=None, *, outputs=None)` | 註冊獨立設備 + 自動訂閱所有子管理器 |
+| `register_group(devices, interval=1.0, collection_name=None, traits=None, metadata=None, *, outputs=None)` | 註冊設備群組 + 自動訂閱 |
 
 #### register 參數
 
 | 參數 | 型別 | 預設 | 說明 |
 |------|------|------|------|
-| `device` | `AsyncModbusDevice` | 必填 | Modbus 設備 |
-| `collection_name` | `str \| None` | `None` | MongoDB collection 名稱（Data Upload 用） |
+| `device` | `DeviceProtocol` | 必填 | 任何實作 `DeviceProtocol` 的設備 |
+| `collection_name` | `str \| None` | `None` | MongoDB collection 名稱（與 `outputs` 互斥） |
 | `traits` | `Sequence[str] \| None` | `None` | 設備 trait 標籤列表（用於 DeviceRegistry） |
-| `metadata` | `dict[str, Any] \| None` | `None` | 設備靜態資訊（用於 DeviceRegistry） |
+| `metadata` | `Mapping[str, Any] \| None` | `None` | 設備靜態資訊（用於 DeviceRegistry） |
+| `outputs` | `Sequence[UploadTarget] \| None`（kw-only） | `None` | Fan-out 上傳目標（與 `collection_name` 互斥） |
 
 #### register_group 參數
 
 | 參數 | 型別 | 預設 | 說明 |
 |------|------|------|------|
-| `devices` | `Sequence[AsyncModbusDevice]` | 必填 | 設備列表（必須共用同一 Client） |
+| `devices` | `Sequence[DeviceProtocol]` | 必填 | 設備列表（必須共用同一 Client） |
 | `interval` | `float` | `1.0` | 完整讀取一輪的間隔時間（秒） |
 | `collection_name` | `str \| None` | `None` | MongoDB collection 名稱（群組共用） |
 | `traits` | `Sequence[str] \| None` | `None` | 設備 trait 標籤列表（套用到群組所有設備） |
-| `metadata` | `dict[str, Any] \| None` | `None` | 設備靜態資訊（套用到群組所有設備） |
+| `metadata` | `Mapping[str, Any] \| None` | `None` | 設備靜態資訊（套用到群組所有設備） |
+| `outputs` | `Sequence[UploadTarget] \| None`（kw-only） | `None` | Fan-out 上傳目標（群組共用） |
+
+### 解除註冊（v0.10.0 新增）
+
+| 方法 | 說明 |
+|------|------|
+| `await unregister(device_id)` | 解除單一獨立設備；級聯清除所有子 manager 訂閱與 registry；回傳 `True`（找到）或 `False`（未找到） |
+| `await unregister_group(device_ids)` | 解除整個群組；需提供完整 device_ids 集合（順序無關）；回傳 `True`/`False` |
+
+### 觀測（v0.10.0 新增）
+
+| 方法 | 說明 |
+|------|------|
+| `describe()` | 回傳 `UnifiedManagerStatus` 快照（O(1)~O(n)，不 await、不做 I/O） |
 
 ### 唯讀屬性
 
@@ -89,16 +128,29 @@ version: ">=0.7.1"
 | `statistics_manager` | `StatisticsManager \| None` | 統計管理器 |
 | `is_running` | `bool` | 管理器是否運行中 |
 
+## Capability Refresh 自動化（v0.10.0）
+
+當 `UnifiedConfig.device_registry` 已配置時，`register()` / `register_group()` 會：
+
+1. 呼叫 `registry.refresh_capability_traits(device_id)` — 立即同步現有 capability 到 `cap:*` trait 索引
+2. 訂閱 `EVENT_CAPABILITY_ADDED` / `EVENT_CAPABILITY_REMOVED` — capability 變動時自動再次 refresh
+
+解除註冊（`unregister`）時自動清除 capability refresh 訂閱，避免 event leak。
+
+---
+
 ## Quick Example
 
+### 基本使用
+
 ```python
+import asyncio
 from csp_lib.manager import UnifiedDeviceManager, UnifiedConfig
-from csp_lib.mongo import MongoBatchUploader
 
 config = UnifiedConfig(
     alarm_repository=mongo_alarm_repo,
     command_repository=mongo_cmd_repo,
-    batch_uploader=uploader,        # BatchUploader Protocol（v0.7.1 推薦）
+    batch_uploader=uploader,
     redis_client=redis_client,
 )
 
@@ -120,6 +172,43 @@ async with manager:
     await asyncio.sleep(3600)
 ```
 
+### Cluster / HA 部署（注入 leader_gate）
+
+```python
+from csp_lib.manager import UnifiedDeviceManager, AlwaysLeaderGate
+
+# 單節點：明確傳 AlwaysLeaderGate
+manager = UnifiedDeviceManager(config, leader_gate=AlwaysLeaderGate())
+
+# Cluster 節點：注入 EtcdLeaderGate（自訂實作）
+manager = UnifiedDeviceManager(config, leader_gate=cluster_gate)
+
+async with manager:
+    # follower：_on_start 跳過 device_manager.start()
+    # leader：正常啟動
+    await asyncio.sleep(3600)
+```
+
+### 查詢觀測狀態（describe）
+
+```python
+status = manager.describe()
+print(f"設備數: {status.devices_count}, leader: {status.is_leader}")
+print(f"活躍告警: {status.alarms_active_count}")
+```
+
+### 解除設備註冊
+
+```python
+# 解除單一設備（async）
+removed = await manager.unregister("pcs_01")
+
+# 解除群組（傳入完整 device_ids 集合）
+removed = await manager.unregister_group(["rtu_01", "rtu_02"])
+```
+
+---
+
 ## 相關頁面
 
 - [[DeviceManager]] — 設備讀取管理
@@ -128,3 +217,5 @@ async with manager:
 - [[WriteCommandManager]] — 指令路由
 - [[StateSyncManager]] — 狀態同步
 - [[BatchUploader]] — 上傳器 Protocol
+- [[LeaderGate]] — Leader 閘門 Protocol（v0.10.0）
+- [[ManagerDescribable]] — `describe()` Protocol 與 `UnifiedManagerStatus`（v0.10.0）

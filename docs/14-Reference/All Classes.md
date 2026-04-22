@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-20
-version: ">=0.9.0"
+updated: 2026-04-23
+version: ">=0.10.0"
 
 ---
 
@@ -50,6 +50,9 @@ SORT file.name ASC
 | [[Logging\|CapturedRecord]] | 單筆捕獲 log 記錄（v0.7.0） |
 | [[Logging\|RemoteLevelSource]] | 遠端等級來源 Protocol（v0.7.0） |
 | [[Logging\|AsyncSinkAdapter]] | 非同步 Sink 轉接器（v0.7.0） |
+| [[Reconciler]] | K8s 風 Reconciler Protocol（v0.10.0 從 integration 下移） |
+| [[Reconciler\|ReconcilerMixin]] | reconcile_once scaffold — 計數、例外捕捉、狀態更新（v0.10.0） |
+| [[Reconciler\|ReconcilerStatus]] | reconcile 執行狀態 frozen dataclass（v0.10.0） |
 
 ### Modbus
 
@@ -86,6 +89,7 @@ SORT file.name ASC
 | [[EquipmentTemplate]] | 設備模型範本定義（v0.5.2） |
 | [[PointOverride]] | 點位覆寫定義（v0.5.2） |
 | [[DeviceFactory]] | 設備工廠（v0.5.2） |
+| [[ActionDeviceProtocol]] | 支援 execute_action 的設備協定（v0.10.0） |
 
 ### Controller
 
@@ -115,6 +119,12 @@ SORT file.name ASC
 |------|------|
 | [[Command\|NoChange]] | `Command.p_target` / `q_target` 的「此軸不變更」sentinel 類別（v0.8.0） |
 
+**快速參考（v0.10.0 新增）：**
+
+| 名稱 | 說明 |
+|------|------|
+| [[HistoryBuffer]] | 通用時序資料緩衝區（取代 PVDataService 綁定語義，v0.10.0） |
+
 ### Manager
 
 ```dataview
@@ -129,6 +139,14 @@ SORT file.name ASC
 | 類別 | 說明 |
 |------|------|
 | [[BatchUploader]] | 批次上傳基底類別（v0.5.0） |
+
+**快速參考（v0.10.0 新增）：**
+
+| 類別 | 說明 |
+|------|------|
+| [[LeaderGate]] | Leader 閘門 `@runtime_checkable` Protocol；`AlwaysLeaderGate` 為 no-op 實作（v0.10.0） |
+| [[ManagerDescribable]] | 統一觀測狀態介面 `@runtime_checkable` Protocol；`UnifiedManagerStatus` 為具體型別（v0.10.0） |
+| [[MongoRepositoryBase]] | Mongo Repository 共用基底，含 `health_check()` + `ensure_indexes()` 鉤子（v0.10.0） |
 
 ### Integration
 

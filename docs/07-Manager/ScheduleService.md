@@ -2,11 +2,11 @@
 tags:
   - type/class
   - layer/manager
-  - status/stale
+  - status/complete
 source: csp_lib/manager/schedule/service.py
 created: 2026-03-06
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # ScheduleService
@@ -41,6 +41,18 @@ StrategyExecutor.set_strategy()
 > `ScheduleService.__init__` 的 `schedule_strategy` 參數已改為 `mode_controller`。
 > 舊版接受 `ScheduleStrategy` 實例；新版接受實作 [[ScheduleModeController]] Protocol 的物件（通常為 `SystemController`）。
 
+## 概述補充（v0.10.0）
+
+`ScheduleService` 現在實作 [[Reconciler]] Protocol（透過 `ReconcilerMixin`）：
+
+- `reconcile_once()` → 執行一次排程輪詢（`_poll_once`）
+- `status` → 回傳 `ReconcilerStatus`（`run_count`、`last_error`、`detail["action"]`）
+- `detail["action"]` 為 `ScheduleAction` 字串值：`"no_match"` / `"deactivated"` / `"unchanged"` / `"switched"` / `"factory_failed"`
+
+可納入 `SystemController.describe()` 聚合 Reconciler 狀態，統一對外報告排程輪詢的健康狀況。
+
+---
+
 ## 建構參數
 
 | 參數 | 型別 | 說明 |
@@ -49,6 +61,7 @@ StrategyExecutor.set_strategy()
 | `repository` | `ScheduleRepository` | 排程規則資料存取層 |
 | `factory` | `StrategyFactory` | 策略工廠 |
 | `mode_controller` | `ScheduleModeController` | 排程模式控制器（通常為 `SystemController` 實例） |
+| `leader_gate` | [[LeaderGate]] `\| None`（kw-only） | Leader 閘門（v0.10.0）；非 leader 時 `reconcile_once()` 早退不輪詢 |
 
 ## ScheduleServiceConfig
 
@@ -65,6 +78,9 @@ StrategyExecutor.set_strategy()
 | 成員 | 說明 |
 |------|------|
 | `current_rule_key` | 當前生效規則的唯一識別鍵（`None` 表示無活躍規則） |
+| `reconcile_once()` | 執行一次排程輪詢，回傳 `ReconcilerStatus`（實作 Reconciler Protocol） |
+| `name` | `"schedule-service"`（Reconciler Protocol 識別名） |
+| `status` | 最新 `ReconcilerStatus` 快照 |
 
 生命週期繼承自 `AsyncLifecycleMixin`（`async with` / `start()` / `stop()`）。
 
@@ -138,7 +154,9 @@ async with service:
 
 ## 相關頁面
 
+- [[Reconciler]] — 實作的 Protocol（v0.10.0 從 integration 下移 core）
 - [[ScheduleModeController]] — 服務使用的協定橋接介面
 - [[SystemController]] — 實作 `ScheduleModeController` 的控制器
 - [[ModeManager]] — 底層模式管理，`update_mode_strategy()` 由此提供
+- [[LeaderGate]] — Leader 閘門 Protocol（v0.10.0）
 - [[DeviceEventSubscriber]] — Manager 基底類別

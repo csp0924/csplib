@@ -3,8 +3,8 @@ tags:
   - type/reference
   - status/complete
 created: 2026-02-17
-updated: 2026-04-05
-version: ">=0.7.0"
+updated: 2026-04-23
+version: ">=0.10.0"
 
 ---
 
@@ -65,11 +65,12 @@ SORT file.name ASC
 
 | 配置類別 | 說明 |
 |----------|------|
-| [[UnifiedConfig]] | 統一管理器配置 (`enable_alarm`, `enable_command`, ...) |
+| [[UnifiedConfig]] | 統一管理器配置 (`alarm_repository`, `command_repository`, `batch_uploader`, ...) |
 | [[AlarmPersistenceConfig]] | 告警持久化配置 |
 | [[CommandAdapterConfig]] | 命令適配器配置 |
-| [[StateSyncConfig]] | 狀態同步配置 |
+| [[StateSyncConfig]] | 狀態同步配置（v0.10.0 新增 `key_prefix` / `channel_prefix` 支援多站隔離） |
 | [[ScheduleServiceConfig]] | 排程服務配置（v0.4.2） |
+| [[ManagerDescribable\|UnifiedManagerStatus]] | `UnifiedDeviceManager.describe()` 的回傳快照（v0.10.0） |
 
 ### Integration 層
 

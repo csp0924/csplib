@@ -4,7 +4,7 @@ tags:
   - layer/controller
   - status/complete
 created: 2026-02-17
-updated: 2026-04-04
+updated: 2026-04-23
 ---
 
 # Controller 模組總覽
@@ -99,7 +99,8 @@ StrategyExecutor ─── Strategy.execute(context) ──→ Command
 
 | 文件 | 說明 |
 |------|------|
-| [[PVDataService]] | PV 功率資料服務 |
+| [[HistoryBuffer]] | 通用時序資料緩衝區（v0.10.0，取代 PVDataService 綁定語義） |
+| [[PVDataService]] | PV 功率資料服務（**Deprecated**，請改用 [[HistoryBuffer]]） |
 
 ---
 
