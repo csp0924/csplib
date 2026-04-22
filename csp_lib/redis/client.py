@@ -495,6 +495,35 @@ class RedisClient:
             raise ConnectionError("Redis 尚未連線")
         return await self._client.smembers(name)
 
+    # ================ Pipeline ================
+
+    def pipeline(self, transaction: bool = True) -> Any:
+        """取得底層 redis-py Pipeline 以批次執行多個命令。
+
+        Args:
+            transaction: 是否以 MULTI/EXEC 包裝（預設 True，原子執行）。
+                若僅需減少 round trip 不要求原子性，可傳 False 跳過 MULTI。
+
+        Returns:
+            底層 ``redis.asyncio.client.Pipeline`` 實例（context manager / awaitable）。
+            **caller 使用原生 redis-py API**，本 client 的高階封裝（如 ``hset``
+            的 JSON encoding）不適用，需自行處理編碼。
+
+        Example::
+
+            pipe = client.pipeline()
+            pipe.hset("k", mapping={"f": "v"})
+            pipe.expire("k", 60)
+            pipe.publish("ch", "msg")
+            await pipe.execute()
+
+        Raises:
+            ConnectionError: Redis 尚未連線
+        """
+        if not self._client:
+            raise ConnectionError("Redis 尚未連線")
+        return self._client.pipeline(transaction=transaction)
+
     # ================ Pub/Sub ================
 
     async def publish(self, channel: str, message: str) -> int:
