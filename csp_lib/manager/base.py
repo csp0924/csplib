@@ -175,10 +175,30 @@ class AlwaysLeaderGate:
         return None
 
 
+# ================ Manager Describable ================
+
+
+@runtime_checkable
+class ManagerDescribable(Protocol):
+    """統一 Manager 對外暴露觀測狀態的介面。
+
+    契約：
+        - ``describe()`` 必須是 O(1)~O(n_devices) 的快照讀取，不得 I/O、不得 await
+        - 回傳的物件應為 frozen dataclass 或 immutable Mapping，caller 不得改動
+        - 非 leader / 未啟動時仍應回傳合法結構（欄位可 0 或 False）
+
+    回傳型別留給各 Manager 自選具體型別（如 ``UnifiedManagerStatus``），
+    Protocol 本身僅宣告 shape。
+    """
+
+    def describe(self) -> object: ...
+
+
 __all__ = [
     "AsyncRepository",
     "BatchUploader",
     "DeviceEventSubscriber",
     "LeaderGate",
     "AlwaysLeaderGate",
+    "ManagerDescribable",
 ]

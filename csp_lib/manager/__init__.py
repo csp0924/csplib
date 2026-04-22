@@ -20,7 +20,14 @@ from .alarm import (
     InMemoryAlarmRepository,
     MongoAlarmRepository,
 )
-from .base import AlwaysLeaderGate, AsyncRepository, BatchUploader, DeviceEventSubscriber, LeaderGate
+from .base import (
+    AlwaysLeaderGate,
+    AsyncRepository,
+    BatchUploader,
+    DeviceEventSubscriber,
+    LeaderGate,
+    ManagerDescribable,
+)
 from .command import (
     ActionCommand,
     CommandAdapterConfig,
@@ -53,7 +60,7 @@ from .schedule import (
     StrategyType,
 )
 from .state import StateSyncConfig, StateSyncManager
-from .unified import UnifiedConfig, UnifiedDeviceManager
+from .unified import UnifiedConfig, UnifiedDeviceManager, UnifiedManagerStatus
 
 __all__ = [
     # Base
@@ -62,6 +69,7 @@ __all__ = [
     "DeviceEventSubscriber",
     "LeaderGate",
     "AlwaysLeaderGate",
+    "ManagerDescribable",
     # Alarm
     "AlarmPersistenceConfig",
     "AlarmPersistenceManager",
@@ -110,4 +118,5 @@ __all__ = [
     # Unified
     "UnifiedConfig",
     "UnifiedDeviceManager",
+    "UnifiedManagerStatus",
 ]

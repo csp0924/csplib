@@ -63,6 +63,22 @@ class DeviceRegistryError(DeviceError):
     """Device registry lookup/registration failure."""
 
 
+class NotLeaderError(Exception):
+    """操作需 leader 身份但目前節點非 leader。
+
+    用於 WriteCommandManager / 其他受 LeaderGate 守門的寫入端，
+    在非 leader 時 raise，讓呼叫者可重試或改路由到 leader 節點。
+
+    刻意繼承 ``Exception``（而非 ``DeviceError``），因為 leader 身份問題
+    屬於集群/節點層次，並非特定設備的錯誤，不應被 device-scoped
+    例外處理邏輯誤當成設備故障處理。
+    """
+
+    def __init__(self, operation: str, message: str = "not leader") -> None:
+        self.operation = operation
+        super().__init__(f"[{operation}] {message}")
+
+
 __all__ = [
     "DeviceError",
     "DeviceConnectionError",
@@ -72,4 +88,5 @@ __all__ = [
     "StrategyExecutionError",
     "ProtectionError",
     "DeviceRegistryError",
+    "NotLeaderError",
 ]

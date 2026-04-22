@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
+from csp_lib.core.errors import NotLeaderError
 from csp_lib.equipment.transport import WriteResult, WriteStatus
 
 from .repository import CommandRepository
@@ -18,6 +19,7 @@ from .schema import CommandRecord, CommandSource, CommandStatus, WriteCommand
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.protocol import DeviceProtocol
+    from csp_lib.manager.base import LeaderGate
 
 logger = get_logger(__name__)
 
@@ -54,15 +56,25 @@ class WriteCommandManager:
         ```
     """
 
-    def __init__(self, repository: CommandRepository) -> None:
+    def __init__(
+        self,
+        repository: CommandRepository,
+        *,
+        leader_gate: LeaderGate | None = None,
+    ) -> None:
         """
         初始化寫入指令管理器
 
         Args:
             repository: 指令記錄儲存庫
+            leader_gate: Leader 閘門（keyword-only，可選）。非 leader 時 ``execute()``
+                會在動到 repository/device 之前 raise ``NotLeaderError``，
+                確保寫入指令只在 leader 節點執行。單節點部署可不注入或注入
+                ``AlwaysLeaderGate``。
         """
         self._repository = repository
         self._devices: dict[str, DeviceProtocol] = {}
+        self._leader_gate = leader_gate
 
     # ================ 設備註冊 ================
 
@@ -139,7 +151,18 @@ class WriteCommandManager:
 
         Returns:
             寫入結果
+
+        Raises:
+            NotLeaderError: 注入了 ``leader_gate`` 但目前節點非 leader。
+                在動到 repository 與 device 之前擋下，避免 follower 產生 side-effect。
         """
+        # 0. Leader gate：非 leader 直接拒絕（在 repository.create 之前）
+        if self._leader_gate is not None and not self._leader_gate.is_leader:
+            raise NotLeaderError(
+                operation=f"write_command({command.device_id}.{command.point_name})",
+                message="write commands are only allowed on the leader node",
+            )
+
         # 1. 建立記錄
         record = CommandRecord.from_command(command)
         await self._repository.create(record)

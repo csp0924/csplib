@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Sequence
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 
@@ -23,7 +23,7 @@ from .state import StateSyncManager
 if TYPE_CHECKING:
     from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.integration.registry import DeviceRegistry
-    from csp_lib.manager.base import BatchUploader
+    from csp_lib.manager.base import BatchUploader, LeaderGate
     from csp_lib.notification import NotificationDispatcher
     from csp_lib.redis import RedisClient
     from csp_lib.statistics import StatisticsConfig, StatisticsManager
@@ -69,6 +69,39 @@ class UnifiedConfig:
     device_registry: DeviceRegistry | None = None
 
 
+# ================ 觀測狀態 ================
+
+
+@dataclass(frozen=True, slots=True)
+class UnifiedManagerStatus:
+    """UnifiedDeviceManager 觀測快照。
+
+    ``describe()`` 的回傳型別，供外部（GUI / Monitor / Cluster 狀態報告）
+    讀取當前 manager 狀態。所有欄位皆為讀 snapshot，無 I/O。
+
+    Attributes:
+        devices_count: 目前註冊的設備總數（standalone + group 內設備）
+        running: Manager 是否處於執行中（委派 ``device_manager.is_running``）
+        is_leader: 當前 leader 狀態；``None`` 代表未注入 ``leader_gate``
+        alarms_active_count: 活躍告警數量；``None`` 代表未配置 alarm_manager
+            或 alarm_manager 不暴露 ``active_count`` 屬性
+        command_queue_depth: 寫入指令佇列深度；Wave 2a 先回 ``None``
+            （待子 manager 補 ``describe``）
+        upload_queue_depth: 上傳佇列深度；Wave 2a 先回 ``None``（同上）
+        state_sync_enabled: 是否啟用 StateSyncManager
+        statistics_enabled: 是否啟用 StatisticsManager
+    """
+
+    devices_count: int
+    running: bool
+    is_leader: bool | None
+    alarms_active_count: int | None
+    command_queue_depth: int | None
+    upload_queue_depth: int | None
+    state_sync_enabled: bool
+    statistics_enabled: bool
+
+
 # ================ 統一管理器 ================
 
 
@@ -110,16 +143,50 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         async with manager:
             await asyncio.sleep(3600)
         ```
+
+    Example (cluster / HA 部署 — 注入 leader_gate)::
+
+        from csp_lib.manager import AlwaysLeaderGate  # or cluster-provided gate
+
+        # 注入 leader_gate：非 leader 節點不會啟動 device I/O，
+        # 且內部 WriteCommandManager 會在非 leader 時 raise NotLeaderError。
+        manager = UnifiedDeviceManager(config, leader_gate=cluster_gate)
+
+        async with manager:
+            # follower 節點：_on_start 跳過 device_manager.start()
+            # leader 節點：正常啟動並處理事件
+            await asyncio.sleep(3600)
+
+        # 查詢觀測狀態
+        status = manager.describe()
+        print(status.is_leader, status.devices_count)
     """
 
-    def __init__(self, config: UnifiedConfig) -> None:
+    def __init__(
+        self,
+        config: UnifiedConfig,
+        *,
+        leader_gate: LeaderGate | None = None,
+    ) -> None:
         """
         初始化統一設備管理器
 
         Args:
             config: 統一管理器配置
+            leader_gate: Leader 閘門（keyword-only，可選）。注入後：
+
+                - ``_on_start`` 會檢查 ``is_leader``，非 leader 跳過
+                  ``device_manager.start()``（不啟動讀取 / 不連線）
+                - 若有 ``command_manager``，其 ``execute()`` 在非 leader 時
+                  會 raise ``NotLeaderError``
+                - 若有 ``state_manager``，其事件 handler 在非 leader 時
+                  會早退不寫 Redis
+
+                未注入時 manager 視為永遠是 leader（等同傳入
+                ``AlwaysLeaderGate``）。
         """
         self._config = config
+        self._leader_gate = leader_gate
         self._device_manager = DeviceManager()
 
         # 解析 uploader（支援 deprecated mongo_uploader 過渡）
@@ -132,13 +199,15 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             else None
         )
         self._command_manager: WriteCommandManager | None = (
-            WriteCommandManager(config.command_repository) if config.command_repository else None
+            WriteCommandManager(config.command_repository, leader_gate=leader_gate)
+            if config.command_repository
+            else None
         )
         self._data_manager: DataUploadManager | None = (
             DataUploadManager(resolved_uploader) if resolved_uploader else None
         )
         self._state_manager: StateSyncManager | None = (
-            StateSyncManager(config.redis_client) if config.redis_client else None
+            StateSyncManager(config.redis_client, leader_gate=leader_gate) if config.redis_client else None
         )
 
         # Statistics manager（需要 uploader + statistics_config + csp_lib.statistics）
@@ -354,14 +423,169 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         if self._statistics_manager:
             self._statistics_manager.subscribe(device)
 
+    # ================ 解除註冊 ================
+
+    def _cascade_unsubscribe_device(self, device: DeviceProtocol, *, log_prefix: str) -> None:
+        """級聯解除 device 在所有子 manager + registry 的訂閱。
+
+        每步獨立 ``try/except``，單步失敗僅 ``warn``，不中斷其他步驟；
+        確保部分失敗（如 Redis 斷線）不會導致設備卡在 half-registered 狀態。
+
+        呼叫順序為「倒序相依」：先拆事件訂閱再拆 registry，
+        供 ``unregister`` 與 ``unregister_group`` 共用。
+        """
+        did = device.device_id
+
+        def _step(name: str, action: Callable[[], None]) -> None:
+            try:
+                action()
+            except Exception as e:
+                logger.warning("{}: {} 失敗 {} err={}", log_prefix, name, did, e)
+
+        alarm = self._alarm_manager
+        if alarm is not None:
+            _step("alarm_manager", lambda: alarm.unsubscribe(device))
+        command = self._command_manager
+        if command is not None:
+            _step("command_manager", lambda: command.unregister_device(did))
+        data = self._data_manager
+        if data is not None:
+            _step("data_manager", lambda: data.unsubscribe(device))
+        state = self._state_manager
+        if state is not None:
+            _step("state_manager", lambda: state.unsubscribe(device))
+        stats = self._statistics_manager
+        if stats is not None:
+            _step("statistics_manager", lambda: stats.unsubscribe(device))
+        registry = self._config.device_registry
+        if registry is not None:
+            _step("device_registry", lambda: registry.unregister(did))
+
+    async def unregister(self, device_id: str) -> bool:
+        """
+        解除單一獨立設備註冊
+
+        級聯順序：先呼叫 ``_cascade_unsubscribe_device``（在 register_lock
+        內同步拆事件訂閱與 registry），最後在鎖外以 async 呼叫
+        ``device_manager.unregister``（避免 async I/O 持有 thread lock）。
+
+        Args:
+            device_id: 要解除註冊的設備 ID
+
+        Returns:
+            True 若在 standalone 或 group 中找到設備並已觸發卸載流程；
+            False 若 device_id 不在任何已註冊設備中
+        """
+        with self._register_lock:
+            device = self._find_registered_device(device_id)
+            if device is None:
+                logger.debug("UnifiedDeviceManager.unregister: 找不到設備 {}", device_id)
+                return False
+            self._cascade_unsubscribe_device(device, log_prefix="UnifiedDeviceManager.unregister")
+
+        try:
+            removed = await self._device_manager.unregister(device_id)
+        except Exception as e:
+            logger.warning("UnifiedDeviceManager.unregister: device_manager 失敗 {} err={}", device_id, e)
+            removed = False
+
+        logger.info("UnifiedDeviceManager: 已解除註冊設備 {} (device_manager_removed={})", device_id, removed)
+        return True
+
+    async def unregister_group(self, device_ids: Sequence[str]) -> bool:
+        """
+        解除整個群組註冊
+
+        對稱 ``register_group``：對 group 內每個 device 呼叫
+        ``_cascade_unsubscribe_device``，最後呼叫
+        ``device_manager.unregister_group``。
+
+        Args:
+            device_ids: 群組內所有設備 ID（順序無關，但集合需完全相符）
+
+        Returns:
+            True 若找到符合的群組並已觸發卸載流程；False 若找不到符合的群組
+        """
+        target_set = set(device_ids)
+        with self._register_lock:
+            target_group = None
+            for group in self._device_manager.groups:
+                if set(group.device_ids) == target_set:
+                    target_group = group
+                    break
+            if target_group is None:
+                logger.debug("UnifiedDeviceManager.unregister_group: 找不到符合的群組 {}", list(device_ids))
+                return False
+            for device in target_group.devices:
+                self._cascade_unsubscribe_device(device, log_prefix="UnifiedDeviceManager.unregister_group")
+
+        try:
+            removed = await self._device_manager.unregister_group(device_ids)
+        except Exception as e:
+            logger.warning("UnifiedDeviceManager.unregister_group: device_manager 失敗 err={}", e)
+            removed = False
+
+        logger.info("UnifiedDeviceManager: 已解除註冊群組 {} (device_manager_removed={})", list(device_ids), removed)
+        return True
+
+    def _find_registered_device(self, device_id: str) -> DeviceProtocol | None:
+        """在 DeviceManager 的 standalone / group 中尋找指定 device_id 的 device 物件。
+
+        Args:
+            device_id: 設備 ID
+
+        Returns:
+            DeviceProtocol 物件，若找不到則回 None
+        """
+        # standalone list
+        for dev in self._device_manager._standalone:
+            if dev.device_id == device_id:
+                return dev
+        # groups
+        for group in self._device_manager.groups:
+            for dev in group.devices:
+                if dev.device_id == device_id:
+                    return dev
+        return None
+
+    # ================ 觀測 ================
+
+    def describe(self) -> UnifiedManagerStatus:
+        """回傳目前 manager 的觀測快照。
+
+        此方法為 O(1)~O(n_groups) 的快照讀取，不 await、不做 I/O；
+        供外部 GUI / Monitor / Cluster 狀態報告使用。
+
+        Returns:
+            ``UnifiedManagerStatus``，欄位定義見該 dataclass docstring。
+        """
+        devices_count = self._device_manager.standalone_count + sum(len(g.devices) for g in self._device_manager.groups)
+        is_leader = self._leader_gate.is_leader if self._leader_gate is not None else None
+        alarms_active = getattr(self._alarm_manager, "active_count", None) if self._alarm_manager is not None else None
+        return UnifiedManagerStatus(
+            devices_count=devices_count,
+            running=self.is_running,
+            is_leader=is_leader,
+            alarms_active_count=alarms_active,
+            command_queue_depth=None,
+            upload_queue_depth=None,
+            state_sync_enabled=self._state_manager is not None,
+            statistics_enabled=self._statistics_manager is not None,
+        )
+
     # ================ 生命週期 ================
 
     async def _on_start(self) -> None:
         """
         啟動管理器
 
-        啟動所有已註冊設備的讀取循環。
+        啟動所有已註冊設備的讀取循環。若注入 leader_gate 且目前非 leader，
+        會跳過 ``device_manager.start()``（不連線 / 不讀取 / 不訂閱底層事件），
+        避免 follower 節點重複對設備執行 I/O。
         """
+        if self._leader_gate is not None and not self._leader_gate.is_leader:
+            logger.info("UnifiedDeviceManager: 非 leader 節點，_on_start 跳過 device_manager.start()")
+            return
         await self._device_manager.start()
         logger.info("UnifiedDeviceManager 已啟動")
 
@@ -422,4 +646,5 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
 __all__ = [
     "UnifiedConfig",
     "UnifiedDeviceManager",
+    "UnifiedManagerStatus",
 ]

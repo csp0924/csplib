@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from csp_lib.controller.system.schedule_mode import ScheduleModeController
@@ -20,6 +21,9 @@ from .config import ScheduleServiceConfig
 from .factory import StrategyFactory
 from .repository import ScheduleRepository
 from .schema import ScheduleRule
+
+if TYPE_CHECKING:
+    from csp_lib.manager.base import LeaderGate
 
 logger = get_logger(__name__)
 
@@ -53,6 +57,8 @@ class ScheduleService(AsyncLifecycleMixin):
         repository: ScheduleRepository,
         factory: StrategyFactory,
         mode_controller: ScheduleModeController,
+        *,
+        leader_gate: LeaderGate | None = None,
     ) -> None:
         """
         初始化排程服務
@@ -62,11 +68,15 @@ class ScheduleService(AsyncLifecycleMixin):
             repository: 排程規則資料存取層
             factory: 策略工廠
             mode_controller: 排程模式控制器（實作 ScheduleModeController Protocol）
+            leader_gate: Leader 閘門（keyword-only，可選）。非 leader 時
+                輪詢迴圈會跳過 ``_poll_once()``（不查 repository、不觸發
+                模式切換），但迴圈本身仍運作以便節點升格後立即恢復。
         """
         self._config = config
         self._repository = repository
         self._factory = factory
         self._mode_controller = mode_controller
+        self._leader_gate = leader_gate
 
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -98,10 +108,14 @@ class ScheduleService(AsyncLifecycleMixin):
     async def _poll_loop(self) -> None:
         """週期輪詢主迴圈"""
         while not self._stop_event.is_set():
-            try:
-                await self._poll_once()
-            except Exception:
-                logger.opt(exception=True).warning("ScheduleService: 輪詢失敗")
+            # Leader 閘門：非 leader 跳過本輪輪詢（仍維持迴圈以便升格後恢復）
+            if self._leader_gate is None or self._leader_gate.is_leader:
+                try:
+                    await self._poll_once()
+                except Exception:
+                    logger.opt(exception=True).warning("ScheduleService: 輪詢失敗")
+            else:
+                logger.trace("ScheduleService: skip poll (not leader)")
 
             # 等待下次輪詢或被停止
             try:
