@@ -113,8 +113,9 @@ class _RealDevice:
     """非 MagicMock 的最小 DeviceProtocol stand-in，可指定（或不指定）used_unit_ids。
 
     同時補上 DeviceManager register/register_group 所需 lifecycle stub
-    （connect/start/stop/disconnect/read_once/_emitter），以通過 fail-fast 檢查。
-    本測試檔關注 _build_metadata 行為，lifecycle stub 僅為滿足 runtime 檢查。
+    （connect/start/stop/disconnect/read_once/ensure_event_loop_started/stopped），
+    以通過 fail-fast 檢查。本測試檔關注 _build_metadata 行為，lifecycle stub
+    僅為滿足 runtime 檢查。
     """
 
     def __init__(self, device_id: str, *, used_unit_ids=None) -> None:
@@ -137,6 +138,9 @@ class _RealDevice:
     async def start(self) -> None: ...
     async def stop(self) -> None: ...
     async def read_once(self) -> dict: ...
+    # Wave 2b：public helper 取代私有 _emitter.start/stop 存取。
+    async def ensure_event_loop_started(self) -> None: ...
+    async def ensure_event_loop_stopped(self) -> None: ...
 
 
 class TestBuildMetadataAutoInjectUsedUnitIds:

@@ -24,10 +24,12 @@ class AlarmType(str, Enum):
     Values:
         DISCONNECT: 設備斷線告警（通訊中斷）
         DEVICE_ALARM: 設備內部告警（如過溫、過載等）
+        CAPABILITY_DEGRADED: 設備能力降級告警（capability 被移除 → 功能受限）
     """
 
     DISCONNECT = "disconnect"
     DEVICE_ALARM = "device_alarm"
+    CAPABILITY_DEGRADED = "capability_degraded"
 
 
 class AlarmStatus(str, Enum):
