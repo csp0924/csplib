@@ -224,6 +224,10 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
 
         self._register_lock = threading.Lock()
 
+        # Capability trait 動態 refresh：訂閱 device EVENT_CAPABILITY_ADDED/REMOVED
+        # 時保留 unsubscribe callbacks，以便 unregister 時清理避免 event leak。
+        self._capability_unsubscribes: dict[str, list[Callable[[], None]]] = {}
+
         logger.info(
             f"UnifiedDeviceManager 初始化: "
             f"alarm={self._alarm_manager is not None}, "
@@ -355,12 +359,64 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             traits: trait 標籤列表（可選）
             metadata: 靜態資訊（可選）
         """
-        if self._config.device_registry is not None:
-            self._config.device_registry.register(
-                device,
-                traits=list(traits) if traits else [],
-                metadata=self._build_metadata(device, metadata),
+        registry = self._config.device_registry
+        if registry is None:
+            return
+        registry.register(
+            device,
+            traits=list(traits) if traits else [],
+            metadata=self._build_metadata(device, metadata),
+        )
+        # 初始 cap: trait 同步：DeviceRegistry.register() 本身不自動 index device.capabilities
+        # 為 cap: trait，先做一次 refresh 讓既有 capabilities 立即反映到索引；
+        # 後續 capability 變動由 _subscribe_capability_refresh 維持同步。
+        try:
+            registry.refresh_capability_traits(device.device_id)
+        except Exception as e:
+            logger.warning("UnifiedDeviceManager: 初始 refresh_capability_traits 失敗 {} err={}", device.device_id, e)
+        self._subscribe_capability_refresh(device)
+
+    def _subscribe_capability_refresh(self, device: DeviceProtocol) -> None:
+        """訂閱 device 的 capability 變更事件，自動 refresh registry 的 cap: trait 索引。
+
+        幂等：同一 device 重複呼叫會先清理舊 unsubscribes 再重新訂閱，避免重複回 callback。
+        """
+        from csp_lib.equipment.device.events import EVENT_CAPABILITY_ADDED, EVENT_CAPABILITY_REMOVED
+
+        registry = self._config.device_registry
+        if registry is None:
+            return
+
+        device_id = device.device_id
+        # 清理舊訂閱（幂等）
+        for unsub in self._capability_unsubscribes.pop(device_id, []):
+            unsub()
+
+        on_method = getattr(device, "on", None)
+        if not callable(on_method):
+            # Device 不支援事件訂閱（minimal mock / DerivedDevice 未實作 on）
+            # → 跳過 dynamic refresh；仍可由呼叫者手動觸發 registry.refresh_capability_traits()
+            logger.debug(
+                "UnifiedDeviceManager: device {} 不支援事件訂閱，跳過 capability trait dynamic refresh",
+                device_id,
             )
+            return
+
+        async def _on_capability_change(_payload: Any) -> None:
+            try:
+                registry.refresh_capability_traits(device_id)
+            except KeyError:
+                # device 已從 registry unregister 但事件仍在排隊
+                logger.debug(
+                    "UnifiedDeviceManager: refresh_capability_traits skipped for {} (not in registry)", device_id
+                )
+            except Exception as e:
+                logger.warning("UnifiedDeviceManager: refresh_capability_traits 失敗 {} err={}", device_id, e)
+
+        self._capability_unsubscribes[device_id] = [
+            on_method(EVENT_CAPABILITY_ADDED, _on_capability_change),
+            on_method(EVENT_CAPABILITY_REMOVED, _on_capability_change),
+        ]
 
     def _build_metadata(
         self,
@@ -457,6 +513,10 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         stats = self._statistics_manager
         if stats is not None:
             _step("statistics_manager", lambda: stats.unsubscribe(device))
+        # 拆 capability refresh 訂閱（若有）
+        capability_unsubs = self._capability_unsubscribes.pop(did, [])
+        for unsub in capability_unsubs:
+            _step("capability_refresh", unsub)
         registry = self._config.device_registry
         if registry is not None:
             _step("device_registry", lambda: registry.unregister(did))
