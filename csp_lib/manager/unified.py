@@ -529,7 +529,10 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         return True
 
     def _find_registered_device(self, device_id: str) -> DeviceProtocol | None:
-        """在 DeviceManager 的 standalone / group 中尋找指定 device_id 的 device 物件。
+        """在 DeviceManager 中尋找指定 device_id 的 device 物件。
+
+        走 ``DeviceManager.all_devices`` public API（standalone + group 合併），
+        避免觸碰私有屬性。
 
         Args:
             device_id: 設備 ID
@@ -537,15 +540,9 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         Returns:
             DeviceProtocol 物件，若找不到則回 None
         """
-        # standalone list
-        for dev in self._device_manager._standalone:
+        for dev in self._device_manager.all_devices:
             if dev.device_id == device_id:
                 return dev
-        # groups
-        for group in self._device_manager.groups:
-            for dev in group.devices:
-                if dev.device_id == device_id:
-                    return dev
         return None
 
     # ================ 觀測 ================
