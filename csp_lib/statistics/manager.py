@@ -21,7 +21,7 @@ from csp_lib.statistics.config import StatisticsConfig
 from csp_lib.statistics.engine import StatisticsEngine
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.integration.registry import DeviceRegistry
     from csp_lib.manager.base import BatchUploader
 
@@ -89,12 +89,12 @@ class StatisticsManager(DeviceEventSubscriber):
 
     # ================ 訂閱管理 ================
 
-    def subscribe(self, device: AsyncModbusDevice, collection_name: str | None = None) -> None:  # type: ignore[override]
+    def subscribe(self, device: DeviceProtocol, collection_name: str | None = None) -> None:  # type: ignore[override]
         """
         訂閱設備事件
 
         Args:
-            device: 要訂閱的 Modbus 設備
+            device: 要訂閱的設備（任何實作 DeviceProtocol 的裝置）
             collection_name: 未使用，保持介面一致性
         """
         device_id = device.device_id
@@ -104,7 +104,7 @@ class StatisticsManager(DeviceEventSubscriber):
         self._unsubscribes[device_id] = self._register_events(device)
         logger.info(f"統計管理器已訂閱設備: {device_id}")
 
-    def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
+    def _register_events(self, device: DeviceProtocol) -> list[Callable[[], None]]:
         """註冊設備的 read_complete 事件"""
         return [
             device.on(EVENT_READ_COMPLETE, self._on_read_complete),

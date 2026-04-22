@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Callable
 
 from csp_lib.core import get_logger
 from csp_lib.equipment.alarm import AlarmLevel
-from csp_lib.equipment.device import AsyncModbusDevice
 from csp_lib.equipment.device.events import (
     EVENT_ALARM_CLEARED,
     EVENT_ALARM_TRIGGERED,
@@ -33,6 +32,7 @@ from .repository import AlarmRepository
 from .schema import AlarmRecord, AlarmType
 
 if TYPE_CHECKING:
+    from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.mongo.local_buffer import LocalBufferedUploader
     from csp_lib.notification import NotificationSender
 
@@ -90,7 +90,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
 
     # ================ 訂閱管理 ================
 
-    def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
+    def _register_events(self, device: DeviceProtocol) -> list[Callable[[], None]]:
         """註冊設備的連線/斷線與告警觸發/解除事件"""
         logger.info(f"告警持久化管理器已訂閱設備: {device.device_id}")
         return [

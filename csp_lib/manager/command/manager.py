@@ -17,7 +17,7 @@ from .repository import CommandRepository
 from .schema import CommandRecord, CommandSource, CommandStatus, WriteCommand
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import DeviceProtocol
 
 logger = get_logger(__name__)
 
@@ -62,22 +62,22 @@ class WriteCommandManager:
             repository: 指令記錄儲存庫
         """
         self._repository = repository
-        self._devices: dict[str, AsyncModbusDevice] = {}
+        self._devices: dict[str, DeviceProtocol] = {}
 
     # ================ 設備註冊 ================
 
-    def subscribe(self, device: AsyncModbusDevice) -> None:
+    def subscribe(self, device: DeviceProtocol) -> None:
         """
         註冊可寫入的設備（統一訂閱 API）
 
         這是所有子管理器的標準訂閱介面。內部委派至 ``register_device()``。
 
         Args:
-            device: Modbus 設備實例
+            device: 實作 DeviceProtocol 的設備實例
         """
         self.register_device(device)
 
-    def register_device(self, device: AsyncModbusDevice) -> None:
+    def register_device(self, device: DeviceProtocol) -> None:
         """
         註冊可寫入的設備
 
@@ -85,7 +85,7 @@ class WriteCommandManager:
             請改用 ``subscribe()``，此方法保留作為向後相容別名。
 
         Args:
-            device: Modbus 設備實例
+            device: 實作 DeviceProtocol 的設備實例
         """
         device_id = device.device_id
         if device_id in self._devices:
@@ -104,7 +104,7 @@ class WriteCommandManager:
             del self._devices[device_id]
             logger.info(f"寫入指令管理器: 已取消註冊設備 {device_id}")
 
-    def get_device(self, device_id: str) -> AsyncModbusDevice | None:
+    def get_device(self, device_id: str) -> DeviceProtocol | None:
         """
         取得已註冊的設備
 

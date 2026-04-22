@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.equipment.transport import WriteStatus
@@ -23,6 +23,7 @@ from .config import CommandAdapterConfig
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
+    from csp_lib.equipment.device import AsyncModbusDevice
     from csp_lib.integration.orchestrator import SystemCommandOrchestrator
 
     from ..manager import WriteCommandManager
@@ -254,7 +255,9 @@ class RedisCommandAdapter(AsyncLifecycleMixin):
             )
 
         logger.info(f"執行 action: {command.device_id}.{command.action}, value={command.value}")
-        result = await device.execute_action(command.action, **command.params)
+        # execute_action 尚未納入 DeviceProtocol；WriteCommandManager 鬆綁為 DeviceProtocol 後
+        # 這裡仍僅支援 AsyncModbusDevice，故以 cast 保留原行為（追蹤 B-P2 補進 Protocol）。
+        result = await cast("AsyncModbusDevice", device).execute_action(command.action, **command.params)
         if result.status != WriteStatus.SUCCESS:
             logger.error(
                 f"Action 執行失敗: device_id={command.device_id}, action={command.action}, value={command.value}, error={result.error_message}"

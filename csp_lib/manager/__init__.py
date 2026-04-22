@@ -20,7 +20,7 @@ from .alarm import (
     InMemoryAlarmRepository,
     MongoAlarmRepository,
 )
-from .base import AsyncRepository, BatchUploader, DeviceEventSubscriber
+from .base import AlwaysLeaderGate, AsyncRepository, BatchUploader, DeviceEventSubscriber, LeaderGate
 from .command import (
     ActionCommand,
     CommandAdapterConfig,
@@ -60,6 +60,8 @@ __all__ = [
     "AsyncRepository",
     "BatchUploader",
     "DeviceEventSubscriber",
+    "LeaderGate",
+    "AlwaysLeaderGate",
     # Alarm
     "AlarmPersistenceConfig",
     "AlarmPersistenceManager",
