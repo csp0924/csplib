@@ -90,17 +90,56 @@ class MockDeviceProtocol:
         return None
 
 
+def _attach_lifecycle(device: MockDeviceProtocol) -> MockDeviceProtocol:
+    """在 MockDeviceProtocol 上補掛 DeviceManager 所需 lifecycle 能力。
+
+    DeviceManager.register/register_group 以 fail-fast 檢查 connect/start/stop/
+    disconnect（standalone）或 connect/disconnect/read_once/_emitter（group）。
+    此 helper 讓同一個 MockDeviceProtocol 類別能同時用於
+    「純 Protocol」（驗證 subscribe 類 API 鬆綁）與「含 lifecycle」（驗證
+    DeviceManager 鬆綁）兩種情境。
+    """
+    device.connect = AsyncMock()  # type: ignore[attr-defined]
+    device.disconnect = AsyncMock()  # type: ignore[attr-defined]
+    device.start = AsyncMock()  # type: ignore[attr-defined]
+    device.stop = AsyncMock()  # type: ignore[attr-defined]
+
+    class _MockEmitter:
+        def __init__(self) -> None:
+            self.start = AsyncMock()
+            self.stop = AsyncMock()
+
+    device._emitter = _MockEmitter()  # type: ignore[attr-defined]
+    return device
+
+
 @pytest.fixture
 def mock_device_protocol() -> MockDeviceProtocol:
-    """單一 MockDeviceProtocol 實例。"""
+    """單一 MockDeviceProtocol 實例（**純 Protocol**，不含 lifecycle）。"""
     return MockDeviceProtocol("mock_protocol_01")
 
 
 @pytest.fixture
-def make_mock_device_protocol():
-    """MockDeviceProtocol factory（可指定 device_id）。"""
+def mock_device_protocol_with_lifecycle() -> MockDeviceProtocol:
+    """MockDeviceProtocol 補掛 lifecycle（connect/start/stop/disconnect/_emitter）。
 
-    def _factory(device_id: str = "mock_protocol_01") -> MockDeviceProtocol:
-        return MockDeviceProtocol(device_id)
+    供 DeviceManager 測試使用 —— 驗證「型別鬆綁 + lifecycle 齊全」場景。
+    """
+    return _attach_lifecycle(MockDeviceProtocol("mock_protocol_lifecycle_01"))
+
+
+@pytest.fixture
+def make_mock_device_protocol():
+    """MockDeviceProtocol factory（可指定 device_id，可選擇是否補 lifecycle）。"""
+
+    def _factory(
+        device_id: str = "mock_protocol_01",
+        *,
+        with_lifecycle: bool = False,
+    ) -> MockDeviceProtocol:
+        device = MockDeviceProtocol(device_id)
+        if with_lifecycle:
+            _attach_lifecycle(device)
+        return device
 
     return _factory

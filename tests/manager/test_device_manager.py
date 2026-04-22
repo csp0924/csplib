@@ -312,15 +312,61 @@ class TestDeviceManagerProperties:
 
 
 class TestDeviceManagerAcceptsDeviceProtocol:
-    """驗證 register / register_group 接受任何實作 DeviceProtocol 的設備（而非僅 AsyncModbusDevice）。"""
+    """驗證 register / register_group 接受任何實作 DeviceProtocol 的設備（而非僅 AsyncModbusDevice）。
 
-    def test_register_accepts_mock_device_protocol(self, mock_device_protocol):
-        """MockDeviceProtocol（非 AsyncModbusDevice）可被 register。"""
+    註：DeviceManager 在 register/register_group 時會 fail-fast 檢查 lifecycle 能力
+    （connect/start/stop/disconnect 或 group 的 connect/disconnect/read_once/_emitter），
+    因為這些方法尚未納入 DeviceProtocol（追蹤 B-P2）。因此本節測試用
+    ``mock_device_protocol_with_lifecycle`` fixture（補掛 lifecycle AsyncMock）。
+    缺 lifecycle 之情境另見 ``TestDeviceManagerLifecycleFailFast``。
+    """
+
+    def test_register_accepts_mock_device_protocol(self, mock_device_protocol_with_lifecycle):
+        """MockDeviceProtocol（非 AsyncModbusDevice）+ lifecycle 可被 register。"""
         manager = DeviceManager()
-        manager.register(mock_device_protocol)
+        manager.register(mock_device_protocol_with_lifecycle)
 
         assert manager.standalone_count == 1
-        assert mock_device_protocol in manager.all_devices
+        assert mock_device_protocol_with_lifecycle in manager.all_devices
+
+
+class TestDeviceManagerLifecycleFailFast:
+    """驗證 register/register_group 對缺 lifecycle 之裝置 fail-fast（PR#104 Copilot review）。"""
+
+    def test_register_pure_protocol_without_lifecycle_raises(self, mock_device_protocol):
+        """純 DeviceProtocol 實作（缺 connect/start/stop/disconnect）應在 register 時 raise。"""
+        manager = DeviceManager()
+        with pytest.raises(ValueError, match="lifecycle"):
+            manager.register(mock_device_protocol)
+
+    def test_register_partial_lifecycle_raises(self, mock_device_protocol):
+        """僅補部分 lifecycle（缺 stop）仍應 raise。"""
+        mock_device_protocol.connect = AsyncMock()
+        mock_device_protocol.disconnect = AsyncMock()
+        mock_device_protocol.start = AsyncMock()
+        # 刻意不補 stop
+
+        manager = DeviceManager()
+        with pytest.raises(ValueError, match="stop"):
+            manager.register(mock_device_protocol)
+
+    def test_register_group_pure_protocol_raises(self, mock_device_protocol):
+        """純 DeviceProtocol 實作（缺 read_once/_emitter）應在 register_group 時 raise。"""
+        manager = DeviceManager()
+        with pytest.raises(ValueError, match="lifecycle"):
+            manager.register_group([mock_device_protocol])
+
+    def test_register_group_missing_emitter_raises(self, make_mock_device_protocol):
+        """補了 connect/disconnect/read_once 但缺 _emitter 仍應 raise。"""
+        device = make_mock_device_protocol("partial_group_device")
+        device.connect = AsyncMock()
+        device.disconnect = AsyncMock()
+        # read_once 已由 MockDeviceProtocol 預設提供
+        # 刻意不補 _emitter
+
+        manager = DeviceManager()
+        with pytest.raises(ValueError, match="_emitter"):
+            manager.register_group([device])
 
 
 # ======================== Unregister (Standalone) Tests ========================
@@ -417,12 +463,12 @@ class TestDeviceManagerUnregister:
         finally:
             await manager.stop()
 
-    async def test_unregister_accepts_device_protocol(self, mock_device_protocol):
-        """非 AsyncModbusDevice（MockDeviceProtocol）亦可 unregister（非 running 狀態）。"""
+    async def test_unregister_accepts_device_protocol(self, mock_device_protocol_with_lifecycle):
+        """非 AsyncModbusDevice（MockDeviceProtocol + lifecycle）亦可 unregister（非 running 狀態）。"""
         manager = DeviceManager()
-        manager.register(mock_device_protocol)
+        manager.register(mock_device_protocol_with_lifecycle)
 
-        result = await manager.unregister(mock_device_protocol.device_id)
+        result = await manager.unregister(mock_device_protocol_with_lifecycle.device_id)
         assert result is True
         assert manager.standalone_count == 0
 

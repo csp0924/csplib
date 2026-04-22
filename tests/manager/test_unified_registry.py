@@ -110,7 +110,12 @@ class TestRegistryQueryAfterRegister:
 
 
 class _RealDevice:
-    """非 MagicMock 的最小 DeviceProtocol stand-in，可指定（或不指定）used_unit_ids。"""
+    """非 MagicMock 的最小 DeviceProtocol stand-in，可指定（或不指定）used_unit_ids。
+
+    同時補上 DeviceManager register/register_group 所需 lifecycle stub
+    （connect/start/stop/disconnect/read_once/_emitter），以通過 fail-fast 檢查。
+    本測試檔關注 _build_metadata 行為，lifecycle stub 僅為滿足 runtime 檢查。
+    """
 
     def __init__(self, device_id: str, *, used_unit_ids=None) -> None:
         self.device_id = device_id
@@ -118,8 +123,20 @@ class _RealDevice:
         if used_unit_ids is not None:
             self.used_unit_ids = used_unit_ids
 
+        class _Emitter:
+            async def start(self) -> None: ...
+            async def stop(self) -> None: ...
+
+        self._emitter = _Emitter()
+
     def has_capability(self, _capability) -> bool:
         return False
+
+    async def connect(self) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def start(self) -> None: ...
+    async def stop(self) -> None: ...
+    async def read_once(self) -> dict: ...
 
 
 class TestBuildMetadataAutoInjectUsedUnitIds:
@@ -158,16 +175,16 @@ class TestBuildMetadataAutoInjectUsedUnitIds:
 
         assert registry.get_metadata("pcs_list")["used_unit_ids"] == [1, 7, 10]
 
-    def test_device_without_used_unit_ids_not_injected(self, mock_device_protocol) -> None:
-        """MockDeviceProtocol 預設不設 used_unit_ids → metadata 不含該 key。"""
+    def test_device_without_used_unit_ids_not_injected(self, mock_device_protocol_with_lifecycle) -> None:
+        """MockDeviceProtocol（+lifecycle）預設不設 used_unit_ids → metadata 不含該 key。"""
         registry = DeviceRegistry()
         config = UnifiedConfig(device_registry=registry)
         manager = UnifiedDeviceManager(config)
 
-        assert not hasattr(mock_device_protocol, "used_unit_ids")
-        manager.register(mock_device_protocol)
+        assert not hasattr(mock_device_protocol_with_lifecycle, "used_unit_ids")
+        manager.register(mock_device_protocol_with_lifecycle)
 
-        meta = registry.get_metadata(mock_device_protocol.device_id)
+        meta = registry.get_metadata(mock_device_protocol_with_lifecycle.device_id)
         assert "used_unit_ids" not in meta
 
     def test_magicmock_device_auto_attr_is_skipped_by_isinstance_guard(self) -> None:

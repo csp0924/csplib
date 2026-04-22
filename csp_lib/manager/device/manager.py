@@ -26,6 +26,40 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _require_lifecycle_methods(device: "DeviceProtocol", *, for_group: bool) -> None:
+    """Fail-fast 驗證 device 具備 DeviceManager 執行期所需的 lifecycle 能力。
+
+    ``DeviceProtocol`` 目前尚未納入 ``connect/disconnect/start/stop/read_once/_emitter``
+    （追蹤 B-P2），因此 ``register/register_group`` 在接受 ``DeviceProtocol`` 型別的同時
+    必須在 runtime 確認能力齊全；否則會延後到 ``_on_start`` / ``unregister`` 才炸
+    ``AttributeError``（symptom 離 root cause 較遠，也容易被上層 ``except Exception``
+    吞掉）。
+
+    Args:
+        device: 欲註冊的設備
+        for_group: True 代表為群組註冊（額外要求 ``read_once`` / ``_emitter``）
+
+    Raises:
+        ValueError: 缺少任一必要 lifecycle 方法/屬性
+    """
+    required_methods = ["connect", "disconnect"]
+    if for_group:
+        required_methods.append("read_once")
+    else:
+        required_methods.extend(["start", "stop"])
+
+    missing = [name for name in required_methods if not callable(getattr(device, name, None))]
+    if for_group and not hasattr(device, "_emitter"):
+        missing.append("_emitter")
+
+    if missing:
+        device_id = getattr(device, "device_id", "<unknown>")
+        raise ValueError(
+            f"Device '{device_id}' 缺少 DeviceManager 所需 lifecycle "
+            f"{'(group)' if for_group else '(standalone)'}: {', '.join(missing)}"
+        )
+
+
 class DeviceManager(AsyncLifecycleMixin):
     """
     設備讀取管理器
@@ -85,8 +119,9 @@ class DeviceManager(AsyncLifecycleMixin):
             device: 要註冊的設備（任何實作 DeviceProtocol 的裝置）
 
         Raises:
-            ValueError: 設備 ID 已被註冊
+            ValueError: 設備 ID 已被註冊，或 device 缺少 connect/start/stop/disconnect
         """
+        _require_lifecycle_methods(device, for_group=False)
         if device.device_id in self._registered_ids:
             raise ValueError(f"Device '{device.device_id}' already registered")
         self._standalone.append(device)
@@ -108,10 +143,11 @@ class DeviceManager(AsyncLifecycleMixin):
             interval: 完整讀取一輪的間隔時間（秒）
 
         Raises:
-            ValueError: 設備 ID 已被註冊
+            ValueError: 設備 ID 已被註冊，或 device 缺少 connect/disconnect/read_once/_emitter
         """
         new_ids: set[str] = set()
         for device in devices:
+            _require_lifecycle_methods(device, for_group=True)
             if device.device_id in self._registered_ids or device.device_id in new_ids:
                 raise ValueError(f"Device '{device.device_id}' already registered")
             new_ids.add(device.device_id)
@@ -193,7 +229,9 @@ class DeviceManager(AsyncLifecycleMixin):
             except Exception as e:
                 logger.warning("DeviceManager.unregister_group: group.stop 失敗 err={}", e)
 
-            # 逐台 disconnect，以 gather + return_exceptions 收斂所有錯誤（CancelledError 向上拋）
+            # 逐台 disconnect 並行執行；例外在 _disconnect_one 內被吞為 warning，
+            # CancelledError 不吃（向上拋以保留取消語意）。因此 gather 可用
+            # return_exceptions=False（正常流程下不會有例外到達 gather）。
             async def _disconnect_one(dev: "AsyncModbusDevice") -> None:
                 try:
                     await dev.disconnect()
