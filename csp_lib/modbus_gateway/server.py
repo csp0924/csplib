@@ -19,13 +19,15 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
+from csp_lib.core.health import HealthReport, HealthStatus
 
 from .config import GatewayRegisterDef, GatewayServerConfig, RegisterType
-from .hooks import StatePersistHook
+from .hooks import CallbackHook, StatePersistHook
 from .pipeline import WritePipeline
 from .register_map import GatewayRegisterMap
 from .watchdog import CommunicationWatchdog
@@ -76,6 +78,11 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
         self._server: Any = None
         self._serve_event: asyncio.Event = asyncio.Event()
 
+        # Write observability（supply to health()）
+        self._last_write_ts: float | None = None
+        self._total_writes: int = 0
+        self._pipeline.add_hook(CallbackHook(self._record_write))
+
     # ─────────────────────── Public API ───────────────────────
 
     @property
@@ -121,6 +128,71 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
     async def serve(self) -> None:
         """Block until the server is stopped (via stop() or context manager exit)."""
         await self._serve_event.wait()
+
+    def health(self) -> HealthReport:
+        """回傳 gateway 當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        狀態判定：
+
+        - ``UNHEALTHY``：server 未啟動（``_server is None``）
+        - ``DEGRADED``：server running，但 watchdog 判定通訊逾時
+          （``CommunicationWatchdog.is_timed_out() is True``）
+        - ``HEALTHY``：server running 且 watchdog 未逾時；或 watchdog 未啟用
+
+        ``details`` 欄位包含：
+
+        - ``running``：server 是否啟動
+        - ``host`` / ``port`` / ``unit_id``：綁定資訊
+        - ``registers_count`` / ``validators_count`` / ``hooks_count`` / ``sync_sources_count``
+        - ``watchdog``：``{enabled, is_timed_out, elapsed_seconds, last_communication}``
+        - ``last_write_ts``：最近一次 EMS/SCADA 寫入 unix timestamp（``None`` 代表尚未收到寫入）
+        - ``total_writes``：啟動以來處理成功的寫入筆數（含本次 gateway 生命週期）
+        """
+        running = self._server is not None
+        watchdog_enabled = self._watchdog._config.enabled
+        watchdog_timed_out = self._watchdog.is_timed_out if running and watchdog_enabled else False
+
+        if not running:
+            status = HealthStatus.UNHEALTHY
+            message = "server not running"
+        elif watchdog_timed_out:
+            status = HealthStatus.DEGRADED
+            message = f"watchdog timeout ({self._watchdog.elapsed:.1f}s since last communication)"
+        else:
+            status = HealthStatus.HEALTHY
+            message = f"listening on {self._config.host}:{self._config.port} unit_id={self._config.unit_id}"
+
+        watchdog_detail: dict[str, Any] = {
+            "enabled": watchdog_enabled,
+            "is_timed_out": watchdog_timed_out,
+        }
+        if running and watchdog_enabled:
+            watchdog_detail["elapsed_seconds"] = self._watchdog.elapsed
+            watchdog_detail["last_communication"] = self._watchdog.last_communication
+
+        return HealthReport(
+            status=status,
+            component="ModbusGatewayServer",
+            message=message,
+            details={
+                "running": running,
+                "host": self._config.host,
+                "port": self._config.port,
+                "unit_id": self._config.unit_id,
+                "registers_count": len(self._register_defs),
+                "validators_count": len(self._pipeline._validators),
+                "hooks_count": len(self._pipeline.hooks),
+                "sync_sources_count": len(self._sync_sources),
+                "watchdog": watchdog_detail,
+                "last_write_ts": self._last_write_ts,
+                "total_writes": self._total_writes,
+            },
+        )
+
+    async def _record_write(self, register_name: str, old_value: Any, new_value: Any) -> None:
+        """Internal hook：WritePipeline 成功寫入後更新 last_write_ts / total_writes。"""
+        self._last_write_ts = time.time()
+        self._total_writes += 1
 
     # ─────────────────────── Lifecycle ───────────────────────
 
