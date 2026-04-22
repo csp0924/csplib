@@ -9,12 +9,6 @@
 #   「Operator Pattern」是設計概念名稱（K8s controller/operator），
 #   Protocol 命名為 Reconciler 是因為 csp_lib.equipment.alarm.evaluator
 #   已有 public class Operator(Enum) — 避免衝突。
-#
-# 位置說明：
-#   v0.9.x 之前此 Protocol 位於 ``csp_lib.integration.reconciler``；
-#   Wave 2c-F 下移至 core 以便 manager 層（如 ScheduleService）實作
-#   而不產生「manager → integration」反向依賴。原位置保留 re-export
-#   維持向後相容。
 
 from __future__ import annotations
 

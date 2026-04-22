@@ -3,7 +3,7 @@
 # ScheduleService 單元測試
 #
 # 測試覆蓋：
-# - _poll_once 有/無匹配規則
+# - reconcile_once 有/無匹配規則
 # - 同規則不重複切換
 # - Factory 建立失敗保持現狀
 # - 生命週期 start/stop
@@ -69,7 +69,7 @@ class TestScheduleServiceConfig:
 
 
 class TestPollOnce:
-    """_poll_once 測試"""
+    """reconcile_once 測試"""
 
     @pytest.mark.asyncio
     async def test_matching_rule_switches_strategy(self):
@@ -86,7 +86,7 @@ class TestPollOnce:
         mode_controller = AsyncMock()
 
         service = ScheduleService(config, repo, factory, mode_controller)
-        await service._poll_once()
+        await service.reconcile_once()
 
         factory.create.assert_called_once_with(StrategyType.PQ, {"p": 100})
         mode_controller.activate_schedule_mode.assert_called_once()
@@ -108,7 +108,7 @@ class TestPollOnce:
         # 模擬之前有活躍規則
         service._current_rule_key = "previous_key"
 
-        await service._poll_once()
+        await service.reconcile_once()
 
         mode_controller.deactivate_schedule_mode.assert_called_once()
         assert service.current_rule_key is None
@@ -124,7 +124,7 @@ class TestPollOnce:
         mode_controller = AsyncMock()
 
         service = ScheduleService(config, repo, factory, mode_controller)
-        await service._poll_once()
+        await service.reconcile_once()
 
         mode_controller.activate_schedule_mode.assert_not_called()
         mode_controller.deactivate_schedule_mode.assert_not_called()
@@ -146,11 +146,11 @@ class TestPollOnce:
         service = ScheduleService(config, repo, factory, mode_controller)
 
         # First call - should switch
-        await service._poll_once()
+        await service.reconcile_once()
         assert mode_controller.activate_schedule_mode.call_count == 1
 
         # Second call - same rule, should skip
-        await service._poll_once()
+        await service.reconcile_once()
         assert mode_controller.activate_schedule_mode.call_count == 1  # Still 1
 
     @pytest.mark.asyncio
@@ -169,7 +169,7 @@ class TestPollOnce:
         service = ScheduleService(config, repo, factory, mode_controller)
         service._current_rule_key = "old_key"
 
-        await service._poll_once()
+        await service.reconcile_once()
 
         mode_controller.activate_schedule_mode.assert_not_called()
         assert service.current_rule_key == "old_key"  # 保持不變
@@ -192,7 +192,7 @@ class TestPollOnce:
         mode_controller = AsyncMock()
 
         service = ScheduleService(config, repo, factory, mode_controller)
-        await service._poll_once()
+        await service.reconcile_once()
 
         factory.create.assert_called_once_with(StrategyType.PQ, {"p": 200})
 
@@ -281,11 +281,10 @@ class TestErrorResilience:
     """錯誤恢復測試"""
 
     @pytest.mark.asyncio
-    async def test_poll_once_repo_error_recorded_in_status(self):
+    async def test_reconcile_once_repo_error_recorded_in_status(self):
         """Repository 錯誤由 ReconcilerMixin 吞掉並記到 status.last_error。
 
-        v0.10.x 後 ``_poll_once`` 委派至 ``reconcile_once``（實作 Reconciler
-        Protocol），contract 是「non-cancel Exception 吞掉並記 status」，
+        Contract: ``reconcile_once`` non-cancel Exception 吞掉並記 status，
         而非 raise。錯誤由上層透過 ``service.status.last_error`` 觀察。
         """
         config = _make_config()
@@ -297,8 +296,8 @@ class TestErrorResilience:
 
         service = ScheduleService(config, repo, factory, mode_controller)
 
-        # _poll_once 不再 raise；錯誤寫入 status
-        await service._poll_once()
+        # reconcile_once 不 raise；錯誤寫入 status
+        await service.reconcile_once()
 
         assert service.status.last_error is not None
         assert "DB error" in service.status.last_error

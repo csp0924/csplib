@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -26,6 +27,20 @@ if TYPE_CHECKING:
     from csp_lib.manager.base import LeaderGate
 
 logger = get_logger(__name__)
+
+
+class ScheduleAction(StrEnum):
+    """``_reconcile_work`` 每輪的結果分類，寫入 ``ReconcilerStatus.detail['action']``。
+
+    StrEnum 與字串互通，測試可用 ``detail["action"] == "switched"`` 或
+    ``ScheduleAction.SWITCHED`` 斷言。
+    """
+
+    NO_MATCH = "no_match"
+    DEACTIVATED = "deactivated"
+    UNCHANGED = "unchanged"
+    SWITCHED = "switched"
+    FACTORY_FAILED = "factory_failed"
 
 
 class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
@@ -75,7 +90,7 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
             factory: 策略工廠
             mode_controller: 排程模式控制器（實作 ScheduleModeController Protocol）
             leader_gate: Leader 閘門（keyword-only，可選）。非 leader 時
-                輪詢迴圈會跳過 ``_poll_once()``（不查 repository、不觸發
+                輪詢迴圈會跳過 ``reconcile_once()``（不查 repository、不觸發
                 模式切換），但迴圈本身仍運作以便節點升格後立即恢復。
         """
         self._config = config
@@ -115,17 +130,15 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
     # ---- 輪詢迴圈 ----
 
     async def _poll_loop(self) -> None:
-        """週期輪詢主迴圈 — 透過 ``_poll_once()`` 執行單次收斂。
+        """週期輪詢主迴圈 — 透過 ``reconcile_once()`` 執行單次收斂。
 
-        ``_poll_once`` 委派至 ``ReconcilerMixin.reconcile_once``，後者吞
-        non-cancel Exception 並記到 ``self.status.last_error``；迴圈本身
-        不需再包 try/except。保留 ``_poll_once`` 當作測試 hook point
-        與向後相容 alias。
+        ``ReconcilerMixin.reconcile_once`` 吞 non-cancel Exception 並記到
+        ``self.status.last_error``，迴圈本身不需再包 try/except。
         """
         while not self._stop_event.is_set():
             # Leader 閘門：非 leader 跳過本輪輪詢（仍維持迴圈以便升格後恢復）
             if self._leader_gate is None or self._leader_gate.is_leader:
-                await self._poll_once()
+                await self.reconcile_once()
             else:
                 logger.trace("ScheduleService: skip poll (not leader)")
 
@@ -139,10 +152,9 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
     async def _reconcile_work(self, detail: dict[str, Any]) -> None:
         """執行一次排程 reconcile（desired schedule rule → current strategy）。
 
-        把 diagnostic metadata 寫入 ``detail``，供 ``status.detail`` 觀測：
-        - ``rules_matched``: 本輪匹配規則數
-        - ``action``: "no_match" / "deactivated" / "unchanged" / "switched" / "factory_failed"
-        - ``rule_name`` / ``rule_key``: 匹配或切換的規則資訊
+        把 diagnostic metadata 寫入 ``detail``（見 :class:`ScheduleAction`
+        列舉所有可能的 ``action`` 值；其他欄位 ``rules_matched`` /
+        ``rule_name`` / ``rule_key`` 供 debug 觀察）。
         """
         tz = ZoneInfo(self._config.timezone_name)
         now = datetime.now(tz)
@@ -151,31 +163,27 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
         detail["rules_matched"] = len(rules)
 
         if not rules:
-            # 無匹配規則
             if self._current_rule_key is not None:
                 logger.info("ScheduleService: 無匹配規則，停用排程模式")
                 await self._mode_controller.deactivate_schedule_mode()
                 self._current_rule_key = None
-                detail["action"] = "deactivated"
+                detail["action"] = ScheduleAction.DEACTIVATED
             else:
-                detail["action"] = "no_match"
+                detail["action"] = ScheduleAction.NO_MATCH
             return
 
-        # 取最高優先級規則
         winning_rule = rules[0]
         rule_key = self._make_rule_key(winning_rule)
         detail["rule_name"] = winning_rule.name
 
-        # 相同規則不重複切換
         if rule_key == self._current_rule_key:
-            detail["action"] = "unchanged"
+            detail["action"] = ScheduleAction.UNCHANGED
             return
 
-        # 建立新策略
         strategy = self._factory.create(winning_rule.strategy_type, winning_rule.strategy_config)
         if strategy is None:
             logger.warning(f"ScheduleService: 無法建立策略 {winning_rule.strategy_type.value}，保持現狀")
-            detail["action"] = "factory_failed"
+            detail["action"] = ScheduleAction.FACTORY_FAILED
             return
 
         logger.info(f"ScheduleService: 切換策略 → {winning_rule.name} ({winning_rule.strategy_type.value})")
@@ -184,13 +192,8 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
             description=f"{winning_rule.name} ({winning_rule.strategy_type.value})",
         )
         self._current_rule_key = rule_key
-        detail["action"] = "switched"
+        detail["action"] = ScheduleAction.SWITCHED
         detail["rule_key"] = rule_key
-
-    # Backward-compat alias：既有測試 / caller 仍可直呼 _poll_once
-    async def _poll_once(self) -> None:
-        """執行一次輪詢（委派至 ``reconcile_once()``；保留為 backward-compat alias）。"""
-        await self.reconcile_once()
 
     @staticmethod
     def _make_rule_key(rule: ScheduleRule) -> str:
@@ -210,5 +213,6 @@ class ScheduleService(ReconcilerMixin, AsyncLifecycleMixin):
 
 
 __all__ = [
+    "ScheduleAction",
     "ScheduleService",
 ]
