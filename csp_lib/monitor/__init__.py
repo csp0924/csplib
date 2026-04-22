@@ -28,7 +28,7 @@ try:
         NodeMetricsSummary,
         NodeRegistration,
     )
-    from .manager import SystemMonitor
+    from .manager import MonitorStatus, SystemMonitor
     from .publisher import RedisMonitorPublisher
 except ImportError as _exc:
     raise ImportError(
@@ -45,6 +45,7 @@ __all__ = [
     "ModuleHealthSnapshot",
     "ModuleStatus",
     "MonitorConfig",
+    "MonitorStatus",
     "NetworkThresholds",
     "NodeMetricsSummary",
     "NodeRegistration",

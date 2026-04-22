@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from csp_lib.core import AsyncLifecycleMixin, HealthCheckable, HealthReport, HealthStatus, get_logger
@@ -28,6 +29,35 @@ if TYPE_CHECKING:
     from csp_lib.redis import RedisClient
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorStatus:
+    """``SystemMonitor.describe()`` 的快照回傳型別。
+
+    設計對齊 ``csp_lib.manager.UnifiedManagerStatus`` — frozen dataclass、
+    O(1) 讀取、可序列化供 observability；未啟動時 ``running=False`` 仍回傳合法快照。
+
+    Attributes:
+        running: 監控迴圈是否在跑（``_run_loop`` 尚未被 cancel）。
+        registered_modules: 已透過 ``register_module`` 註冊的模組名列表（排序）。
+        registered_checks: 已透過 ``register_check`` 註冊的檢查名列表（排序）。
+        publisher_enabled: 是否配置了 Redis publisher。
+        dispatcher_enabled: 是否配置了 NotificationSender dispatcher。
+        module_health_enabled: ``MonitorConfig.enable_module_health`` 是否開啟。
+        last_tick_ts: 最近一次 ``_tick()`` 完成的 unix timestamp；``None`` 代表尚未跑過。
+        last_overall_health: 最近一次模組健康聚合結果（``HealthStatus.value``）；
+            模組健康關閉或尚未 tick 過為 ``None``。
+    """
+
+    running: bool
+    registered_modules: tuple[str, ...]
+    registered_checks: tuple[str, ...]
+    publisher_enabled: bool
+    dispatcher_enabled: bool
+    module_health_enabled: bool
+    last_tick_ts: float | None
+    last_overall_health: str | None
 
 
 class SystemMonitor(AsyncLifecycleMixin):
@@ -68,6 +98,7 @@ class SystemMonitor(AsyncLifecycleMixin):
         self._running = False
         self._last_metrics: SystemMetrics | None = None
         self._last_module_health: ModuleHealthSnapshot | None = None
+        self._last_tick_ts: float | None = None
 
     def register_module(self, name: str, module: HealthCheckable) -> None:
         """註冊 HealthCheckable 模組"""
@@ -164,6 +195,9 @@ class SystemMonitor(AsyncLifecycleMixin):
                 except Exception:
                     logger.opt(exception=True).warning("Redis 發布模組健康失敗")
 
+        # 6. 更新最後 tick 時間戳（供 describe() 觀測）
+        self._last_tick_ts = time.time()
+
     async def _notify_alarm(self, event: AlarmEvent) -> None:
         """透過 NotificationDispatcher 發送告警通知"""
         if not self._dispatcher:
@@ -218,6 +252,30 @@ class SystemMonitor(AsyncLifecycleMixin):
             status=HealthStatus.HEALTHY,
             component="SystemMonitor",
             message="正常運行",
+        )
+
+    # ================ ManagerDescribable ================
+
+    def describe(self) -> MonitorStatus:
+        """回傳 ``SystemMonitor`` 當前觀測狀態（結構性滿足 ``ManagerDescribable`` Protocol）。
+
+        O(1) 讀取、不 await 不 I/O；非 running / 尚未 tick 時仍回傳合法快照。
+
+        供 ``SystemController.describe()`` 聚合 monitor 子系統狀態。
+        """
+        last_overall: str | None = None
+        if self._last_module_health is not None:
+            last_overall = self._last_module_health.overall_status.value
+
+        return MonitorStatus(
+            running=self._running,
+            registered_modules=tuple(sorted(self._health_collector._modules.keys())),
+            registered_checks=tuple(sorted(self._health_collector._checks.keys())),
+            publisher_enabled=self._publisher is not None,
+            dispatcher_enabled=self._dispatcher is not None,
+            module_health_enabled=self._config.enable_module_health,
+            last_tick_ts=self._last_tick_ts,
+            last_overall_health=last_overall,
         )
 
     # ================ Properties ================
