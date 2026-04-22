@@ -2,7 +2,7 @@
 tags:
   - type/class
   - layer/manager
-  - status/stable
+  - status/complete
 source: csp_lib/manager/command/manager.py
 updated: 2026-04-23
 version: ">=0.10.0"

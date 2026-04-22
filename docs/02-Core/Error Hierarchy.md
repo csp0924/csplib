@@ -1,8 +1,8 @@
 ---
 tags: [type/concept, layer/core, status/complete]
 source: csp_lib/core/errors.py
-updated: 2026-04-04
-version: v0.6.1
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 # Error Hierarchy
 
@@ -26,6 +26,8 @@ version: v0.6.1
 | `StrategyExecutionError` | `Exception` | `strategy_name`, `message` | 策略執行失敗（非設備層級） |
 | `ProtectionError` | `Exception` | `rule_name`, `message` | 保護鏈失敗（非設備層級） |
 | `DeviceRegistryError` | `DeviceError` | `device_id`, `message` | 設備註冊/查詢失敗 |
+| `NotLeaderError` | `Exception` | `operation`, `message="not leader"` | 操作需 leader 身份但目前非 leader（v0.10.0） |
+| `WriteValidationError` | `Exception` | `point_name`, `value`, `reason` | 寫入前驗證失敗（v0.10.0） |
 
 > [!info] v0.5.1 新增
 > `StrategyExecutionError`、`ProtectionError`、`DeviceRegistryError` 於 v0.5.1 加入。
@@ -41,7 +43,9 @@ Exception
 │   └── DeviceRegistryError
 ├── ConfigurationError(message)
 ├── StrategyExecutionError(strategy_name, message)
-└── ProtectionError(rule_name, message)
+├── ProtectionError(rule_name, message)
+├── NotLeaderError(operation, message)          # v0.10.0
+└── WriteValidationError(point_name, value, reason)  # v0.10.0
 ```
 
 ## Quick Example
@@ -123,6 +127,37 @@ except DeviceRegistryError as e:
     logger.error(f"設備 {e.device_id} 註冊查詢失敗: {e}")
 ```
 
+### NotLeaderError（v0.10.0）
+
+> [!info] v0.10.0 新增（PR #106）
+
+```python
+from csp_lib.core import NotLeaderError
+
+try:
+    result = await command_manager.execute(command)
+except NotLeaderError as e:
+    logger.warning(f"指令 {e.operation} 被拒絕（非 leader）: {e}")
+    # 可重路由到 leader 節點
+```
+
+### WriteValidationError（v0.10.0）
+
+> [!info] v0.10.0 新增（PR #114）
+
+```python
+from csp_lib.core import WriteValidationError
+
+# WriteCommandManager.execute() 本身不 raise 此例外（回傳 WriteResult）
+# 供純 Python 直接呼叫 rule 的場景或測試斷言使用
+try:
+    rule.validate(point_name="setpoint", value=float("nan"))
+except WriteValidationError as e:
+    logger.warning(f"[{e.point_name}] 驗證拒絕: value={e.value!r}, reason={e.reason}")
+```
+
+---
+
 ## 設計備註
 
 - `DeviceError` 及其子類別皆攜帶 `device_id` 屬性，方便日誌與監控系統識別問題設備
@@ -131,4 +166,6 @@ except DeviceRegistryError as e:
 - `StrategyExecutionError` 攜帶 `strategy_name` 屬性，訊息格式：`Strategy '{strategy_name}': {message}`
 - `ProtectionError` 攜帶 `rule_name` 屬性，訊息格式：`Protection rule '{rule_name}': {message}`
 - `DeviceRegistryError` 繼承 `DeviceError`，因為設備註冊/查詢與特定設備相關
+- `NotLeaderError` 刻意繼承 `Exception`（非 `DeviceError`），因為 leader 身份屬集群層次，不應被 device-scoped 例外處理誤當成設備故障
+- `WriteValidationError` 同樣繼承 `Exception`，屬指令層語意錯誤；`WriteCommandManager.execute()` 維持回傳 `WriteResult` 的契約（不 raise）
 - 錯誤訊息格式：`[{device_id}] {message}`

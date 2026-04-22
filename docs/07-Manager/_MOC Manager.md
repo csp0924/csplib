@@ -3,8 +3,8 @@ tags:
   - type/moc
   - layer/manager
   - status/complete
-updated: 2026-04-18
-version: ">=0.8.2"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # Manager 模組總覽
@@ -21,6 +21,9 @@ Manager 模組建構在 [[_MOC Equipment|Equipment]] 與 [[_MOC Integration|Inte
 |------|------|------|
 | [[DeviceEventSubscriber]] | class | 所有 Manager 的基底類別，事件訂閱框架 |
 | [[BatchUploader]] | Protocol | 批次上傳器介面（v0.6.0 新增，解耦 MongoBatchUploader 依賴） |
+| [[LeaderGate]] | Protocol | Leader 閘門（v0.10.0）；`AlwaysLeaderGate` 為單節點 no-op 實作 |
+| [[ManagerDescribable]] | Protocol | 統一觀測狀態介面；`UnifiedManagerStatus` 為具體快照型別（v0.10.0） |
+| [[MongoRepositoryBase]] | class | Mongo Repository 共用基底（v0.10.0，收斂三個 Mongo repo 樣板） |
 
 ### 設備管理
 

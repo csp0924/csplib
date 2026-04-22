@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/controller/services/pv_data_service.py
 created: 2026-02-17
-updated: 2026-04-04
-version: ">=0.4.2"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # PVDataService
@@ -14,6 +14,23 @@ version: ">=0.4.2"
 PV 功率資料服務，收集並維護 PV 功率歷史資料。
 
 > [!info] 回到 [[_MOC Controller]]
+
+> [!warning] Deprecated（v0.10.0）
+> `PVDataService` 已被語義中性的 [[HistoryBuffer]] 取代（PR #108）。
+> `PVDataService` 現在繼承 `HistoryBuffer`，保持向後相容但會發出 `DeprecationWarning`。
+>
+> 遷移方式：
+> ```python
+> # 舊寫法（觸發 DeprecationWarning）
+> from csp_lib.controller.services import PVDataService
+> buf = PVDataService(max_history=300)
+>
+> # 新寫法
+> from csp_lib.controller.services import HistoryBuffer
+> buf = HistoryBuffer(max_history=300)
+> ```
+>
+> `DeviceDataFeed` 的 `pv_service=` 參數也可改為 `history_buffers={"pv_power": buf}`。
 
 ## 概述
 
