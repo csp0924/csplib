@@ -16,7 +16,7 @@ from csp_lib.core import get_logger
 from .events import AsyncHandler
 
 if TYPE_CHECKING:
-    from .base import AsyncModbusDevice
+    from .protocol import DeviceProtocol
 
 logger = get_logger(__name__)
 
@@ -60,8 +60,12 @@ class EventBridge:
         self._debounce_tasks: dict[str, asyncio.Task[None]] = {}
         self._last_result: dict[str, bool] = {}  # edge-detection：上次 predicate 結果
 
-    def attach(self, devices: Sequence[AsyncModbusDevice]) -> None:
-        """訂閱所有設備的事件"""
+    def attach(self, devices: Sequence[DeviceProtocol]) -> None:
+        """訂閱所有設備的事件
+
+        接受任何滿足 ``DeviceProtocol`` 的設備（含 ``AsyncModbusDevice``、
+        ``AsyncCANDevice``、``DerivedDevice`` 等），實現跨協定事件聚合。
+        """
         for device in devices:
             for cond in self._conditions:
                 cancel = device.on(cond.source_event, self._make_handler(cond, device.device_id))
