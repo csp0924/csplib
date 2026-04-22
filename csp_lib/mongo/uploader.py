@@ -13,6 +13,7 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from csp_lib.core import get_logger
+from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.mongo.config import UploaderConfig
 from csp_lib.mongo.queue import BatchQueue
 from csp_lib.mongo.writer import MongoWriter, WriteResult
@@ -81,6 +82,66 @@ class MongoBatchUploader:
             MongoWriter: 目前使用的 writer 實例
         """
         return self._writer
+
+    def health(self) -> HealthReport:
+        """
+        回傳 uploader 當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        狀態判定規則：
+
+        - ``UNHEALTHY``：``_flush_task`` 未啟動、已 done（含崩潰），或 ``_stop_event``
+          已設置但仍有 queue 內含未上傳資料
+        - ``DEGRADED``：running 中，但有任一 queue 使用率 >= 80%（接近 ``max_queue_size``
+          容量會觸發 ``popleft`` 丟資料），或有 collection 正在重試（retry_count > 0）
+        - ``HEALTHY``：running，所有 queue 使用率 < 80%，無 retry 中
+
+        ``details`` 包含每個已註冊 collection 的 ``queue_size`` / ``max_size`` /
+        ``usage_ratio`` 以及 ``retry_counts`` 字典，供 SystemController 聚合觀測。
+        """
+        running = self._flush_task is not None and not self._flush_task.done()
+        stopped_with_pending = self._stop_event.is_set() and any(q.size_sync() > 0 for q in self._queues.values())
+
+        queues_detail: dict[str, dict[str, Any]] = {}
+        max_usage_ratio = 0.0
+        for name, queue in self._queues.items():
+            size = queue.size_sync()
+            max_size = queue.max_size
+            usage_ratio = size / max_size if max_size > 0 else 0.0
+            queues_detail[name] = {"queue_size": size, "max_size": max_size, "usage_ratio": usage_ratio}
+            if usage_ratio > max_usage_ratio:
+                max_usage_ratio = usage_ratio
+
+        active_retries = {name: count for name, count in self._retry_counts.items() if count > 0}
+
+        if not running or stopped_with_pending:
+            status = HealthStatus.UNHEALTHY
+            if not running:
+                message = "flush task not running" if self._flush_task is None else "flush task already done"
+            else:
+                message = "stopped with pending data in queues"
+        elif max_usage_ratio >= 0.8 or active_retries:
+            status = HealthStatus.DEGRADED
+            reasons: list[str] = []
+            if max_usage_ratio >= 0.8:
+                reasons.append(f"queue usage {max_usage_ratio:.0%} >= 80%")
+            if active_retries:
+                reasons.append(f"retrying collections: {sorted(active_retries.keys())}")
+            message = "; ".join(reasons)
+        else:
+            status = HealthStatus.HEALTHY
+            message = f"{len(self._queues)} collection(s) running"
+
+        return HealthReport(
+            status=status,
+            component="MongoBatchUploader",
+            message=message,
+            details={
+                "running": running,
+                "queues": queues_detail,
+                "retry_counts": dict(self._retry_counts),
+                "max_queue_usage_ratio": max_usage_ratio,
+            },
+        )
 
     def register_collection(self, collection_name: str) -> None:
         """
