@@ -219,6 +219,25 @@ class TestLeaderGateVsValidation:
 # ============== Device 未找到優先序 ==============
 
 
+class TestLegacyTupleRuleGuard:
+    """Rule 若誤回 tuple（例：WriteRule.apply 未經 adapter 包裝）必須被 runtime guard 擋住。"""
+
+    async def test_legacy_tuple_rule_raises_typeerror(self) -> None:
+        class LegacyTupleRule:
+            """Simulates modbus_gateway.WriteRule.apply() legacy tuple interface."""
+
+            def apply(self, point_name: str, value: Any) -> tuple[Any, bool]:  # type: ignore[override]
+                return value, False
+
+        repo = MockRepository()
+        manager = WriteCommandManager(repo, validation_rules=[LegacyTupleRule()])
+        manager.subscribe(MockDevice("d1"))
+
+        cmd = WriteCommand(device_id="d1", point_name="sp", value=1)
+        with pytest.raises(TypeError, match="must return ValidationResult"):
+            await manager.execute(cmd)
+
+
 class TestDeviceLookupVsValidation:
     async def test_unknown_device_reports_device_not_found_before_validation(self) -> None:
         """設備未註冊時應回 DEVICE_NOT_FOUND，不應該先跑驗證。

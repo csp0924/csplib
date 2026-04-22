@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
 from csp_lib.core.errors import NotLeaderError
-from csp_lib.equipment.transport import WriteResult, WriteStatus
+from csp_lib.equipment.transport import ValidationResult, WriteResult, WriteStatus
 
 from .repository import CommandRepository
 from .schema import CommandRecord, CommandSource, CommandStatus, WriteCommand
@@ -288,6 +288,16 @@ class WriteCommandManager:
 
         for rule in applicable:
             validation = rule.apply(command.point_name, effective_value)
+            # @runtime_checkable Protocol 只檢查 method 存在，不驗回傳型別。
+            # 誤傳 legacy tuple rule（如 modbus_gateway.WriteRule 未經 adapter 包裝）
+            # 會在此被擋住並給出可診斷訊息，避免 AttributeError 在 .accepted 爆。
+            if not isinstance(validation, ValidationResult):
+                raise TypeError(
+                    f"validation rule {type(rule).__name__}.apply() must return "
+                    f"ValidationResult, got {type(validation).__name__}. "
+                    f"Legacy tuple rules (e.g. modbus_gateway.WriteRule.apply) must be "
+                    f"wrapped in an adapter — see tests/modbus_gateway/test_write_rule_compat.py."
+                )
             if not validation.accepted:
                 await self._repository.update_status(
                     command.command_id,

@@ -58,9 +58,26 @@ class WriteValidationRule(Protocol):
     - ``accepted=True`` → 使用 ``effective_value`` 繼續執行（可能是 clamp 後的值）
     - ``accepted=False`` → 中止寫入，記錄 ``reason`` 至 CommandRecord
 
-    **Structural compatibility**：
-        ``modbus_gateway.WriteRule`` 透過 ``apply_v2`` 結構相容本 Protocol，
-        允許直接作為 ``WriteCommandManager(validation_rules=...)`` 成員。
+    **與 legacy rule 相容**：
+        本 Protocol 要求 ``apply(point_name, value) -> ValidationResult``。
+        ``modbus_gateway.WriteRule`` 的 ``apply()`` 回傳 legacy tuple，
+        **不**符合此簽名；其 ``apply_v2()`` 雖回傳 ``ValidationResult`` 但
+        method 名不符 Protocol，無法直接傳入 ``WriteCommandManager``。
+        若要共用，請用薄 adapter 包裝：
+
+        ```python
+        class WriteRuleAdapter:
+            def __init__(self, rule: WriteRule) -> None:
+                self._rule = rule
+
+            def apply(self, point_name: str, value: Any) -> ValidationResult:
+                return self._rule.apply_v2(point_name, value)
+        ```
+
+        注意：``@runtime_checkable`` 只檢查 method 是否存在、不驗回傳型別。
+        ``isinstance(WriteRule(...), WriteValidationRule)`` 會 True，但直接傳入
+        ``WriteCommandManager`` 會在 ``_run_validation`` 被 runtime guard 以
+        清楚錯誤 raise。
 
     Example:
         ```python

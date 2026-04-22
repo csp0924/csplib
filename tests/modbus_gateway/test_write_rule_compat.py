@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 
 from csp_lib.equipment.transport import ValidationResult, WriteValidationRule
-from csp_lib.modbus_gateway.config import WriteRule
+from csp_lib.modbus_gateway.config import WriteRule, WriteRuleAdapter
 
 
 class TestLegacyApplyUntouched:
@@ -84,23 +84,29 @@ class TestApplyV2Protocol:
         assert rule.apply_v2("sp", -math.inf).accepted is False
 
 
-class TestAdapterWrappingWriteRule:
-    """實務做法：用 adapter 把 WriteRule 包成合 Protocol 的 rule，
-    才能塞進 WriteCommandManager(validation_rules=...)。
-
-    此測試也演示使用方式供 docs 引用。"""
+class TestWriteRuleAdapter:
+    """官方 adapter：把 WriteRule 包成符合 Protocol 的 rule，
+    用於 WriteCommandManager(validation_rules=...)。"""
 
     def test_adapter_satisfies_protocol(self) -> None:
         wr = WriteRule(register_name="sp", min_value=0, max_value=100)
-
-        class WriteRuleAdapter:
-            def __init__(self, rule: WriteRule) -> None:
-                self._rule = rule
-
-            def apply(self, point_name: str, value: object) -> ValidationResult:
-                return self._rule.apply_v2(point_name, value)
-
         adapter = WriteRuleAdapter(wr)
         assert isinstance(adapter, WriteValidationRule)
+
+    def test_adapter_accept(self) -> None:
+        adapter = WriteRuleAdapter(WriteRule(register_name="sp", min_value=0, max_value=100))
+        r = adapter.apply("sp", 50)
+        assert isinstance(r, ValidationResult)
+        assert r.accepted is True
+        assert r.effective_value == 50
+
+    def test_adapter_reject(self) -> None:
+        adapter = WriteRuleAdapter(WriteRule(register_name="sp", min_value=0, max_value=100, clamp=False))
         r = adapter.apply("sp", 150)
         assert r.accepted is False
+
+    def test_adapter_clamp(self) -> None:
+        adapter = WriteRuleAdapter(WriteRule(register_name="sp", min_value=0, max_value=100, clamp=True))
+        r = adapter.apply("sp", 150)
+        assert r.accepted is True
+        assert r.effective_value == 100
