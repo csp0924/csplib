@@ -57,3 +57,4 @@ Manager 模組建構在 [[_MOC Equipment|Equipment]] 與 [[_MOC Integration|Inte
 
 - 上游：[[_MOC Equipment]]、[[_MOC Integration]]
 - 下游：[[_MOC Storage]]
+- 架構總覽：[[Manager Layer]]（層級職責、Reconciler 對應、LeaderGate 閘門點）
