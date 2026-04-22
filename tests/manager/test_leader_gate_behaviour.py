@@ -8,7 +8,7 @@
 #   E.3  UnifiedDeviceManager.leader_gate → _on_start 守門
 #   E.6  WriteCommandManager.leader_gate → execute 早期拒絕（repository.create 零呼叫）
 #   E.7  StateSyncManager.leader_gate → 5 handler 全部早退
-#   E.8  ScheduleService.leader_gate → _poll_once 不被呼叫；中途升格恢復
+#   E.8  ScheduleService.leader_gate → reconcile_once 不被呼叫；中途升格恢復
 #
 # 注意：
 #   - asyncio_mode=auto → async test 不加 decorator
@@ -429,7 +429,7 @@ class TestScheduleServiceLeaderGate:
         defaults.update(overrides)
         return ScheduleServiceConfig(**defaults)
 
-    async def test_leader_calls_poll_once(self) -> None:
+    async def test_leader_callsreconcile_once(self) -> None:
         """is_leader=True → 啟動後 repository.find_active_rules 會被呼叫。"""
         gate = ToggleLeaderGate(initial=True)
         repo = MagicMock()
@@ -449,10 +449,10 @@ class TestScheduleServiceLeaderGate:
         finally:
             await service.stop()
 
-    async def test_follower_skips_poll_once(self) -> None:
-        """is_leader=False → 輪詢迴圈仍跑，但 _poll_once 不被呼叫。
+    async def test_follower_skipsreconcile_once(self) -> None:
+        """is_leader=False → 輪詢迴圈仍跑，但 reconcile_once 不被呼叫。
 
-        負斷言做法：把 ``_poll_once`` 換成「被呼叫就立刻炸」的 AsyncMock，
+        負斷言做法：把 ``reconcile_once`` 換成「被呼叫就立刻炸」的 AsyncMock，
         這樣若守門失敗，測試會立即 raise，不依賴 sleep 時序 race。
         同時用 wait_for_condition 等「迴圈存活」的正向訊號確認測試有跑到。
         """
@@ -463,26 +463,26 @@ class TestScheduleServiceLeaderGate:
         mode_ctrl = AsyncMock()
 
         service = ScheduleService(self._make_config(poll_interval=0.02), repo, factory, mode_ctrl, leader_gate=gate)
-        # 任何對 _poll_once 的呼叫都應立即 fail（守門應擋下）
-        service._poll_once = AsyncMock(  # type: ignore[method-assign]
-            side_effect=AssertionError("follower 不該呼叫 _poll_once")
+        # 任何對 reconcile_once 的呼叫都應立即 fail（守門應擋下）
+        service.reconcile_once = AsyncMock(  # type: ignore[method-assign]
+            side_effect=AssertionError("follower 不該呼叫 reconcile_once")
         )
 
         await service.start()
         try:
             # 正向等待「迴圈 task 確實啟動且存活」，確認測試有跑到；
-            # 期間若守門失效 → _poll_once 的 side_effect 會立即炸。
+            # 期間若守門失效 → reconcile_once 的 side_effect 會立即炸。
             await wait_for_condition(
                 lambda: service._task is not None and not service._task.done(),
                 timeout=2.0,
                 message="poll loop task should start and stay alive",
             )
             # 再讓 event loop 跑幾輪給迴圈繞好幾次 poll_interval 的機會
-            # （若守門失效，此時 _poll_once 一定已經被呼叫過並炸掉 side_effect）
+            # （若守門失效，此時 reconcile_once 一定已經被呼叫過並炸掉 side_effect）
             for _ in range(10):
                 await asyncio.sleep(0.01)
-            # 正向斷言：_poll_once 從未被呼叫
-            service._poll_once.assert_not_called()
+            # 正向斷言：reconcile_once 從未被呼叫
+            service.reconcile_once.assert_not_called()
             # 迴圈仍存活
             assert not service._task.done(), "迴圈 task 不該提前結束"
         finally:
@@ -508,9 +508,9 @@ class TestScheduleServiceLeaderGate:
             leader_gate=gate,
         )
 
-        # 階段 1：follower 期間，_poll_once 被呼叫就立即 fail
+        # 階段 1：follower 期間，reconcile_once 被呼叫就立即 fail
         follower_guard = AsyncMock(side_effect=AssertionError("follower 不該 poll"))
-        service._poll_once = follower_guard  # type: ignore[method-assign]
+        service.reconcile_once = follower_guard  # type: ignore[method-assign]
 
         await service.start()
         try:
@@ -522,7 +522,7 @@ class TestScheduleServiceLeaderGate:
             )
             # 階段 2：替換回正常 AsyncMock，再 promote
             promoted_poll = AsyncMock()
-            service._poll_once = promoted_poll  # type: ignore[method-assign]
+            service.reconcile_once = promoted_poll  # type: ignore[method-assign]
             # follower_guard 至今應該都沒被呼叫（因為有守門）
             follower_guard.assert_not_called()
 
