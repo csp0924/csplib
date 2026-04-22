@@ -281,8 +281,13 @@ class TestErrorResilience:
     """錯誤恢復測試"""
 
     @pytest.mark.asyncio
-    async def test_poll_once_repo_error_propagates(self):
-        """Repository 錯誤應被 _poll_loop 捕獲"""
+    async def test_poll_once_repo_error_recorded_in_status(self):
+        """Repository 錯誤由 ReconcilerMixin 吞掉並記到 status.last_error。
+
+        v0.10.x 後 ``_poll_once`` 委派至 ``reconcile_once``（實作 Reconciler
+        Protocol），contract 是「non-cancel Exception 吞掉並記 status」，
+        而非 raise。錯誤由上層透過 ``service.status.last_error`` 觀察。
+        """
         config = _make_config()
         repo = AsyncMock()
         repo.find_active_rules = AsyncMock(side_effect=Exception("DB error"))
@@ -292,6 +297,10 @@ class TestErrorResilience:
 
         service = ScheduleService(config, repo, factory, mode_controller)
 
-        # _poll_once 應拋出例外（由 _poll_loop 捕獲）
-        with pytest.raises(Exception, match="DB error"):
-            await service._poll_once()
+        # _poll_once 不再 raise；錯誤寫入 status
+        await service._poll_once()
+
+        assert service.status.last_error is not None
+        assert "DB error" in service.status.last_error
+        assert service.status.healthy is False
+        assert service.status.run_count == 1

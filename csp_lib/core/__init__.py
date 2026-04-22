@@ -41,6 +41,7 @@ from .logging import (
     SinkInfo,
     SinkManager,
 )
+from .reconciler import Reconciler, ReconcilerMixin, ReconcilerStatus
 from .resilience import CircuitBreaker, CircuitState, RetryPolicy
 from .runtime_params import RuntimeParameters
 
@@ -265,4 +266,8 @@ __all__ = [
     "RetryPolicy",
     # Runtime Parameters
     "RuntimeParameters",
+    # Reconciler (Operator Pattern)
+    "Reconciler",
+    "ReconcilerMixin",
+    "ReconcilerStatus",
 ]
