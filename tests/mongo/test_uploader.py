@@ -317,3 +317,86 @@ class TestWriterProperty:
 
         with pytest.raises(AttributeError):
             uploader.writer = MagicMock()  # type: ignore[misc]
+
+
+class TestHealthCheck:
+    """MongoBatchUploader.health() 實作 HealthCheckable Protocol"""
+
+    def _make_uploader(self, max_queue_size: int = 100) -> MongoBatchUploader:
+        mock_db = MagicMock()
+        config = UploaderConfig(max_queue_size=max_queue_size)
+        return MongoBatchUploader(mock_db, config)
+
+    def test_health_unhealthy_when_not_started(self):
+        """未 start 時 flush_task 為 None → UNHEALTHY"""
+        from csp_lib.core.health import HealthCheckable, HealthStatus
+
+        uploader = self._make_uploader()
+        report = uploader.health()
+
+        assert report.status == HealthStatus.UNHEALTHY
+        assert report.component == "MongoBatchUploader"
+        assert "not running" in report.message
+        assert report.details["running"] is False
+        # 實作 HealthCheckable Protocol
+        assert isinstance(uploader, HealthCheckable)
+
+    @pytest.mark.asyncio
+    async def test_health_healthy_when_running_with_empty_queues(self):
+        """running + queues 空 → HEALTHY"""
+        from csp_lib.core.health import HealthStatus
+
+        uploader = self._make_uploader()
+        uploader.register_collection("col1")
+        uploader.start()
+        try:
+            # poll-until-condition 避免 async task 排程 race
+            deadline = asyncio.get_event_loop().time() + 1.0
+            while asyncio.get_event_loop().time() < deadline:
+                if uploader._flush_task is not None and not uploader._flush_task.done():
+                    break
+                await asyncio.sleep(0.01)
+
+            report = uploader.health()
+            assert report.status == HealthStatus.HEALTHY
+            assert report.details["running"] is True
+            assert report.details["queues"]["col1"]["queue_size"] == 0
+            assert report.details["queues"]["col1"]["usage_ratio"] == 0.0
+        finally:
+            await uploader.stop()
+
+    @pytest.mark.asyncio
+    async def test_health_degraded_when_queue_usage_high(self):
+        """queue 使用率 >= 80% → DEGRADED"""
+        from csp_lib.core.health import HealthStatus
+
+        uploader = self._make_uploader(max_queue_size=10)
+        uploader.register_collection("col1")
+        # 塞滿到 80%（8/10）
+        for i in range(8):
+            await uploader.enqueue("col1", {"n": i})
+        uploader.start()
+        try:
+            report = uploader.health()
+            assert report.status == HealthStatus.DEGRADED
+            assert "80%" in report.message
+            assert report.details["max_queue_usage_ratio"] >= 0.8
+        finally:
+            await uploader.stop()
+
+    @pytest.mark.asyncio
+    async def test_health_degraded_when_retrying(self):
+        """有 retry_count > 0 的 collection → DEGRADED"""
+        from csp_lib.core.health import HealthStatus
+
+        uploader = self._make_uploader()
+        uploader.register_collection("col1")
+        uploader._retry_counts["col1"] = 1
+        uploader.start()
+        try:
+            report = uploader.health()
+            assert report.status == HealthStatus.DEGRADED
+            assert "retrying" in report.message
+            assert report.details["retry_counts"]["col1"] == 1
+        finally:
+            await uploader.stop()
