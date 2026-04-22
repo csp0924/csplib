@@ -4,6 +4,26 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.0](https://github.com/csp0924/csplib/compare/v0.9.1...v0.10.0) (2026-04-22)
+
+
+### Added
+
+* **controller:** HistoryBuffer 通用時序緩衝（取代 PVDataService 綁定語義） ([#108](https://github.com/csp0924/csplib/issues/108)) ([e3ce234](https://github.com/csp0924/csplib/commit/e3ce234a5409e6a1c22f3cc91e1a208b273df28e))
+* **manager:** Reconciler Protocol 下移 core + ScheduleService 實作 ([#113](https://github.com/csp0924/csplib/issues/113)) ([5ed1b23](https://github.com/csp0924/csplib/commit/5ed1b23379ca2dd09c62c8a5b6ddddb9b188b6ed))
+* **manager:** StateSyncConfig key/channel prefix + Redis pipeline 批次 ([#112](https://github.com/csp0924/csplib/issues/112)) ([ace4757](https://github.com/csp0924/csplib/commit/ace4757db1f21aa800bc27a1741074a161697cd9))
+* **manager:** UnifiedDeviceManager 動態 refresh capability traits ([#111](https://github.com/csp0924/csplib/issues/111)) ([c3c27f0](https://github.com/csp0924/csplib/commit/c3c27f05fa062555cce6fdcb30b41398f6003c0b))
+* **manager:** Wave 1 — DeviceProtocol 鬆綁 + LeaderGate + unregister + outputs fan-out ([#104](https://github.com/csp0924/csplib/issues/104)) ([234df66](https://github.com/csp0924/csplib/commit/234df66922a73030764049a466bc1e4229ffa8e4))
+* **manager:** Wave 2a — LeaderGate 整合 + ManagerDescribable + UnifiedDeviceManager.unregister ([#106](https://github.com/csp0924/csplib/issues/106)) ([9c54d6e](https://github.com/csp0924/csplib/commit/9c54d6e13cfff31806467080922958bdb3ade520))
+* **manager:** Wave 2b — DeviceManager 部分失敗策略 + CAPABILITY_DEGRADED 告警 ([#107](https://github.com/csp0924/csplib/issues/107)) ([39263d8](https://github.com/csp0924/csplib/commit/39263d81f1d98848d4f33375974a61333b46f0b9))
+* **manager:** WriteValidationRule Protocol + WriteCommandManager 驗證鏈 (Wave 2b C-P2) ([#114](https://github.com/csp0924/csplib/issues/114)) ([bdaffc6](https://github.com/csp0924/csplib/commit/bdaffc674d6d28010fcccb1e9b5b0b9652d9355b))
+
+
+### Changed
+
+* **integration:** orchestrator 型別鬆綁 + ActionDeviceProtocol ([#109](https://github.com/csp0924/csplib/issues/109)) ([28a34b5](https://github.com/csp0924/csplib/commit/28a34b5ae2d266d76615d84edb06be8e4e44d853))
+* **manager:** MongoRepositoryBase 收斂 Mongo Repo 樣板 ([#110](https://github.com/csp0924/csplib/issues/110)) ([5e629b8](https://github.com/csp0924/csplib/commit/5e629b8b6ea748588c8ae3e9a1f284c5fb557bd2))
+
 ## [0.9.1](https://github.com/csp0924/csplib/compare/v0.9.0...v0.9.1) (2026-04-21)
 
 
