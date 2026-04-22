@@ -68,18 +68,30 @@ class TestCapabilityRefreshSubscription:
         subscribed_events = {call.args[0] for call in dev.on.call_args_list}
         assert subscribed_events == {EVENT_CAPABILITY_ADDED, EVENT_CAPABILITY_REMOVED}
 
-    async def test_capability_added_event_triggers_refresh(self):
+    def test_register_triggers_initial_refresh(self):
+        """register() 本身會呼叫一次 refresh_capability_traits 讓既有 capabilities 立即索引。"""
         reg = _FakeRegistry()
         mgr = UnifiedDeviceManager(UnifiedConfig(device_registry=reg))  # type: ignore[arg-type]
 
         dev = _make_event_capable_device("dev1")
         mgr.register(dev)
 
-        # 模擬 device emit EVENT_CAPABILITY_ADDED
+        assert reg.refreshed == ["dev1"]
+
+    async def test_capability_added_event_triggers_refresh(self):
+        reg = _FakeRegistry()
+        mgr = UnifiedDeviceManager(UnifiedConfig(device_registry=reg))  # type: ignore[arg-type]
+
+        dev = _make_event_capable_device("dev1")
+        mgr.register(dev)
+        # 初始 refresh 已記 1 次；再觸發事件應再多 1 次
+        refresh_count_before = len(reg.refreshed)
+
         handler = dev._handlers[EVENT_CAPABILITY_ADDED][0]
         await handler({"capability_name": "pq_control"})
 
-        assert reg.refreshed == ["dev1"]
+        assert len(reg.refreshed) == refresh_count_before + 1
+        assert reg.refreshed[-1] == "dev1"
 
     async def test_capability_removed_event_triggers_refresh(self):
         reg = _FakeRegistry()
@@ -87,11 +99,13 @@ class TestCapabilityRefreshSubscription:
 
         dev = _make_event_capable_device("dev1")
         mgr.register(dev)
+        refresh_count_before = len(reg.refreshed)
 
         handler = dev._handlers[EVENT_CAPABILITY_REMOVED][0]
         await handler({"capability_name": "qv_control"})
 
-        assert reg.refreshed == ["dev1"]
+        assert len(reg.refreshed) == refresh_count_before + 1
+        assert reg.refreshed[-1] == "dev1"
 
     async def test_refresh_key_error_suppressed(self):
         """device 已從 registry unregister 但事件在排隊 → KeyError 吞掉不影響其他流程。"""

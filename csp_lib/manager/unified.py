@@ -367,7 +367,13 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             traits=list(traits) if traits else [],
             metadata=self._build_metadata(device, metadata),
         )
-        # Capability trait 動態 refresh：capability 變動時同步 registry 的 cap:xxx 索引
+        # 初始 cap: trait 同步：DeviceRegistry.register() 本身不自動 index device.capabilities
+        # 為 cap: trait，先做一次 refresh 讓既有 capabilities 立即反映到索引；
+        # 後續 capability 變動由 _subscribe_capability_refresh 維持同步。
+        try:
+            registry.refresh_capability_traits(device.device_id)
+        except Exception as e:
+            logger.warning("UnifiedDeviceManager: 初始 refresh_capability_traits 失敗 {} err={}", device.device_id, e)
         self._subscribe_capability_refresh(device)
 
     def _subscribe_capability_refresh(self, device: DeviceProtocol) -> None:
