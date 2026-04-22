@@ -30,7 +30,7 @@ from csp_lib.manager.base import DeviceEventSubscriber
 from csp_lib.manager.state.config import StateSyncConfig
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.redis import RedisClient
 
 logger = get_logger(__name__)
@@ -134,7 +134,7 @@ class StateSyncManager(DeviceEventSubscriber):
 
     # ================ 訂閱管理 ================
 
-    def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
+    def _register_events(self, device: DeviceProtocol) -> list[Callable[[], None]]:
         """註冊設備的 read/連線/告警事件"""
         logger.info(f"狀態同步管理器已訂閱設備: {device.device_id}")
         return [

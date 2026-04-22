@@ -184,3 +184,35 @@ class TestWriteCommandManagerExecute:
 
         assert result.status == WriteStatus.SUCCESS
         device.write.assert_called_once_with(name="setpoint", value=100, verify=True)
+
+
+# ======================== subscribe() API Tests ========================
+
+
+class TestWriteCommandManagerSubscribe:
+    """subscribe() 與 register_device() 等價性，以及對 DeviceProtocol 的型別鬆綁。"""
+
+    @pytest.fixture
+    def manager(self) -> WriteCommandManager:
+        return WriteCommandManager(repository=MockRepository())
+
+    def test_subscribe_equivalent_to_register_device(self, manager: WriteCommandManager):
+        """subscribe(device) 與 register_device(device) 效果應相同（_devices 內含 device_id）。"""
+        device_a = MockDevice("dev_sub_a")
+        device_b = MockDevice("dev_sub_b")
+
+        manager.subscribe(device_a)
+        manager.register_device(device_b)
+
+        ids = set(manager.registered_device_ids)
+        assert "dev_sub_a" in ids
+        assert "dev_sub_b" in ids
+        assert manager.get_device("dev_sub_a") is device_a
+        assert manager.get_device("dev_sub_b") is device_b
+
+    def test_subscribe_accepts_mock_device_protocol(self, manager: WriteCommandManager, mock_device_protocol):
+        """subscribe 應接受任何實作 DeviceProtocol 的設備（型別鬆綁驗證）。"""
+        manager.subscribe(mock_device_protocol)
+
+        assert mock_device_protocol.device_id in manager.registered_device_ids
+        assert manager.get_device(mock_device_protocol.device_id) is mock_device_protocol

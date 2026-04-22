@@ -10,18 +10,18 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 
 from .alarm import AlarmPersistenceManager, AlarmRepository
 from .command import CommandRepository, WriteCommandManager
-from .data import DataUploadManager
+from .data import DataUploadManager, UploadTarget
 from .device import DeviceManager
 from .state import StateSyncManager
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.integration.registry import DeviceRegistry
     from csp_lib.manager.base import BatchUploader
     from csp_lib.notification import NotificationDispatcher
@@ -182,12 +182,24 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
 
     # ================ 註冊 ================
 
+    @staticmethod
+    def _check_output_exclusivity(
+        *,
+        label: str,
+        collection_name: str | None,
+        outputs: Sequence[UploadTarget] | None,
+    ) -> None:
+        if collection_name is not None and outputs is not None:
+            raise ValueError(f"{label}: collection_name 與 outputs 不可同時提供")
+
     def register(
         self,
-        device: AsyncModbusDevice,
+        device: DeviceProtocol,
         collection_name: str | None = None,
         traits: Sequence[str] | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        *,
+        outputs: Sequence[UploadTarget] | None = None,
     ) -> None:
         """
         註冊獨立設備
@@ -196,58 +208,81 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         若配置了 DeviceRegistry，會同時將設備註冊到 Registry。
 
         Args:
-            device: Modbus 設備
-            collection_name: MongoDB collection 名稱（Data Upload 用，選填）
+            device: 實作 DeviceProtocol 的設備
+            collection_name: Legacy 單一 collection 名稱（Data Upload 用，與 ``outputs`` 互斥）
             traits: 設備 trait 標籤列表（選填，用於 DeviceRegistry）
             metadata: 設備靜態資訊（選填，用於 DeviceRegistry）
+            outputs: Fan-out 模式的 ``UploadTarget`` 列表（keyword-only，與 ``collection_name`` 互斥）
+
+        Raises:
+            ValueError: 同時提供 ``collection_name`` 與 ``outputs``
         """
+        self._check_output_exclusivity(
+            label=f"UnifiedDeviceManager.register(device_id={device.device_id!r})",
+            collection_name=collection_name,
+            outputs=outputs,
+        )
         with self._register_lock:
             self._device_manager.register(device)
-            self._subscribe_all(device, collection_name)
+            self._subscribe_all(device, collection_name, outputs)
             self._register_to_registry(device, traits, metadata)
         logger.info(f"UnifiedDeviceManager: 已註冊設備 {device.device_id}")
 
     def register_group(
         self,
-        devices: Sequence[AsyncModbusDevice],
+        devices: Sequence[DeviceProtocol],
         interval: float = 1.0,
         collection_name: str | None = None,
         traits: Sequence[str] | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        *,
+        outputs: Sequence[UploadTarget] | None = None,
     ) -> None:
         """
         註冊設備群組
 
         群組內設備將順序讀取，並自動訂閱所有已啟用的子管理器。
-        群組內設備共用同一 collection_name。
+        群組內設備共用同一 collection_name 或同一份 outputs。
         若配置了 DeviceRegistry，所有設備會同時註冊（共用相同 traits/metadata）。
 
         Args:
             devices: 設備列表（必須共用同一 Client）
             interval: 完整讀取一輪的間隔時間（秒）
-            collection_name: MongoDB collection 名稱（群組共用，選填）
+            collection_name: Legacy 單一 collection 名稱（群組共用，與 ``outputs`` 互斥）
             traits: 設備 trait 標籤列表（選填，套用到群組所有設備）
             metadata: 設備靜態資訊（選填，套用到群組所有設備）
+            outputs: Fan-out 模式的 ``UploadTarget`` 列表（群組共用，與 ``collection_name`` 互斥）
+
+        Raises:
+            ValueError: 同時提供 ``collection_name`` 與 ``outputs``
         """
+        self._check_output_exclusivity(
+            label=f"UnifiedDeviceManager.register_group(devices={[d.device_id for d in devices]!r})",
+            collection_name=collection_name,
+            outputs=outputs,
+        )
         with self._register_lock:
             self._device_manager.register_group(devices, interval)
             for device in devices:
-                self._subscribe_all(device, collection_name)
+                self._subscribe_all(device, collection_name, outputs)
                 self._register_to_registry(device, traits, metadata)
         device_ids = [d.device_id for d in devices]
         logger.info(f"UnifiedDeviceManager: 已註冊設備群組 {device_ids}")
 
     def _register_to_registry(
         self,
-        device: AsyncModbusDevice,
+        device: DeviceProtocol,
         traits: Sequence[str] | None,
-        metadata: dict[str, Any] | None,
+        metadata: Mapping[str, Any] | None,
     ) -> None:
         """
         若配置了 DeviceRegistry，將設備註冊到 Registry。
 
+        自動從 ``device`` 探測可注入的 metadata（如 ``used_unit_ids``），
+        使用者提供的 metadata 一律覆蓋 auto 值。
+
         Args:
-            device: Modbus 設備
+            device: 實作 DeviceProtocol 的設備
             traits: trait 標籤列表（可選）
             metadata: 靜態資訊（可選）
         """
@@ -255,30 +290,63 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
             self._config.device_registry.register(
                 device,
                 traits=list(traits) if traits else [],
-                metadata=metadata or {},
+                metadata=self._build_metadata(device, metadata),
             )
+
+    def _build_metadata(
+        self,
+        device: DeviceProtocol,
+        user_metadata: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        """建構 DeviceRegistry metadata，自動注入 device 可探測的屬性。
+
+        注入規則（低優先，使用者提供的 metadata 永遠覆蓋 auto 值）：
+            - ``used_unit_ids``: 若 device 有此屬性且型別為集合類，轉 sorted list
+              後注入（sorted 確保 JSON 序列化穩定）。
+
+        Args:
+            device: 實作 DeviceProtocol 的設備
+            user_metadata: 使用者提供的 metadata（可為 ``None``）
+
+        Returns:
+            合併後的 metadata dict
+        """
+        auto: dict[str, Any] = {}
+        used = getattr(device, "used_unit_ids", None)
+        # 用 isinstance 檢查避開 MagicMock 物件（它有 used_unit_ids 但不是真的集合）
+        if isinstance(used, (frozenset, set, list, tuple)):
+            auto["used_unit_ids"] = sorted(used)
+        return {**auto, **(dict(user_metadata) if user_metadata else {})}
 
     def _subscribe_all(
         self,
-        device: AsyncModbusDevice,
+        device: DeviceProtocol,
         collection_name: str | None,
+        outputs: Sequence[UploadTarget] | None,
     ) -> None:
         """
         訂閱所有已啟用的子管理器
 
         Args:
-            device: Modbus 設備
-            collection_name: MongoDB collection 名稱（可選）
+            device: 實作 DeviceProtocol 的設備
+            collection_name: Legacy 單一 collection 名稱（可選）
+            outputs: Fan-out 模式的 ``UploadTarget`` 列表（可選）
         """
         if self._alarm_manager:
             self._alarm_manager.subscribe(device)
 
         if self._command_manager:
-            self._command_manager.register_device(device)
+            # 統一走 subscribe()（v0.8 新 API）；內部仍委派至 register_device 保持向後相容。
+            self._command_manager.subscribe(device)
 
-        if self._data_manager and collection_name:
-            self._data_manager.configure(device.device_id, collection_name)
-            self._data_manager.subscribe(device)
+        if self._data_manager:
+            # 優先走 fan-out 路徑；其次 legacy collection_name；兩者皆無則跳過 data_manager。
+            if outputs is not None:
+                self._data_manager.configure(device.device_id, outputs=list(outputs))
+                self._data_manager.subscribe(device)
+            elif collection_name is not None:
+                self._data_manager.configure(device.device_id, collection_name)
+                self._data_manager.subscribe(device)
 
         if self._state_manager:
             self._state_manager.subscribe(device)

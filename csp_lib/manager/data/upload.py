@@ -31,7 +31,7 @@ from csp_lib.manager.base import DeviceEventSubscriber
 from .targets import TransformFn, TransformResult, UploadTarget, WritePolicy
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import DeviceProtocol
     from csp_lib.manager.base import BatchUploader
     from csp_lib.mongo.local_buffer import LocalBufferedUploader
 
@@ -292,7 +292,7 @@ class DataUploadManager(DeviceEventSubscriber):
             save_interval,
         )
 
-    def subscribe(self, device: AsyncModbusDevice) -> None:
+    def subscribe(self, device: DeviceProtocol) -> None:
         """
         訂閱設備事件
 
@@ -303,7 +303,7 @@ class DataUploadManager(DeviceEventSubscriber):
         ``"device_data"``。
 
         Args:
-            device: 要訂閱的 Modbus 設備
+            device: 要訂閱的設備（任何實作 DeviceProtocol 的裝置）
         """
         device_id = device.device_id
         if device_id in self._unsubscribes:
@@ -323,7 +323,7 @@ class DataUploadManager(DeviceEventSubscriber):
             collections,
         )
 
-    def _register_events(self, device: AsyncModbusDevice) -> list[Callable[[], None]]:
+    def _register_events(self, device: DeviceProtocol) -> list[Callable[[], None]]:
         """註冊設備的 read_complete 與 disconnected 事件"""
         return [
             device.on(EVENT_READ_COMPLETE, self._on_read_complete),

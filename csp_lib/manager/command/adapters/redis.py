@@ -254,7 +254,23 @@ class RedisCommandAdapter(AsyncLifecycleMixin):
             )
 
         logger.info(f"執行 action: {command.device_id}.{command.action}, value={command.value}")
-        result = await device.execute_action(command.action, **command.params)
+        # execute_action 尚未納入 DeviceProtocol（追蹤 B-P2）；此處 fail-fast 避免在缺
+        # 能力時拋 AttributeError 被 _handle_message 的 except Exception 吞掉，
+        # 導致 CommandResult 不 publish（silent failure）。
+        execute_action = getattr(device, "execute_action", None)
+        if not callable(execute_action):
+            error_message = f"Device '{command.device_id}' does not support action '{command.action}'"
+            logger.error(error_message)
+            return CommandResult(
+                command_id=command.command_id,
+                device_id=command.device_id,
+                status=WriteStatus.WRITE_FAILED.value,
+                action=command.action,
+                value=command.value,
+                error_message=error_message,
+            )
+
+        result = await execute_action(command.action, **command.params)
         if result.status != WriteStatus.SUCCESS:
             logger.error(
                 f"Action 執行失敗: device_id={command.device_id}, action={command.action}, value={command.value}, error={result.error_message}"
