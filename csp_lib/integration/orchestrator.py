@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from csp_lib.core import get_logger
 
 if TYPE_CHECKING:
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device.protocol import ActionDeviceProtocol, DeviceProtocol
 
     from .registry import DeviceRegistry
 
@@ -264,13 +264,24 @@ class SystemCommandOrchestrator:
                 error_message="No devices found for step",
             )
 
-        # 3. 並行執行動作
+        # 3. 並行執行動作（runtime 篩選：設備必須有 callable execute_action 才能執行）
+        # 用 hasattr+callable 結構性檢查而非 isinstance(ActionDeviceProtocol)，
+        # 對 MagicMock / 使用者 duck-typed 實作更友善。
         device_results: dict[str, str] = {}
         tasks = []
         device_ids_ordered = []
         for device in devices:
+            action_fn = getattr(device, "execute_action", None)
+            if not callable(action_fn):
+                device_results[device.device_id] = "action not supported"
+                logger.warning(
+                    "Orchestrator: device {} does not support execute_action, skipping step action",
+                    device.device_id,
+                )
+                continue
             device_ids_ordered.append(device.device_id)
-            tasks.append(self._execute_device_action(device, step.action, step.params))
+            # hasattr+callable 已驗證 execute_action 結構性存在 → cast 給 mypy narrow
+            tasks.append(self._execute_device_action(cast("ActionDeviceProtocol", device), step.action, step.params))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -324,12 +335,12 @@ class SystemCommandOrchestrator:
             check_passed=True if step.check_after is not None else None,
         )
 
-    def _resolve_devices(self, trait: str | None, device_ids: list[str] | None) -> list:
+    def _resolve_devices(self, trait: str | None, device_ids: list[str] | None) -> list["DeviceProtocol"]:
         """解析目標設備（依 trait 或 device_ids）"""
         if trait is not None:
             return self._registry.get_devices_by_trait(trait)
         if device_ids is not None:
-            devices = []
+            devices: list[DeviceProtocol] = []
             for did in device_ids:
                 device = self._registry.get_device(did)
                 if device is not None:
@@ -340,8 +351,17 @@ class SystemCommandOrchestrator:
         return []
 
     @staticmethod
-    async def _execute_device_action(device: AsyncModbusDevice, action: str, params: dict[str, Any]) -> Any:
-        """執行單一設備的動作"""
+    async def _execute_device_action(device: ActionDeviceProtocol, action: str, params: dict[str, Any]) -> Any:
+        """執行單一設備的動作
+
+        Args:
+            device: 支援 ``execute_action`` 的設備（結構性符合 ``ActionDeviceProtocol``）
+            action: 動作名稱（如 "start"、"stop"、"reset"）
+            params: 傳給 ``execute_action`` 的額外參數
+
+        Returns:
+            設備實作自行定義；通常為 ``WriteResult`` 或帶 ``status`` 屬性的物件。
+        """
         return await device.execute_action(action, **params)
 
     async def _run_check(self, check: StepCheck) -> bool:

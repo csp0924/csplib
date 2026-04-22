@@ -382,6 +382,61 @@ class TestOrchestratorExecute:
         assert "Register locked" in result.step_results[0].device_results["d1"]
 
 
+class TestOrchestratorActionDeviceProtocol:
+    """驗證 orchestrator 對不支援 execute_action 的設備會 gracefully skip。"""
+
+    async def test_device_without_execute_action_is_skipped(self):
+        """若 device 缺 execute_action，該設備記為 'action not supported'、其他設備仍執行。"""
+        from csp_lib.integration.registry import DeviceRegistry
+
+        # d1 缺 execute_action（模擬 DerivedDevice / RemoteSnapshotDevice）
+        d1 = MagicMock()
+        type(d1).device_id = PropertyMock(return_value="d1")
+        type(d1).is_responsive = PropertyMock(return_value=True)
+        type(d1).is_connected = PropertyMock(return_value=True)
+        type(d1).is_protected = PropertyMock(return_value=False)
+        del d1.execute_action  # 明確移除 MagicMock auto-attr
+
+        d2 = _make_device("d2")
+
+        reg = DeviceRegistry()
+        reg.register(d1, traits=["test"])
+        reg.register(d2, traits=["test"])
+
+        orch = SystemCommandOrchestrator(reg)
+        orch.register(SystemCommand(name="test", steps=[CommandStep(action="start", trait="test")]))
+
+        result = await orch.execute("test")
+
+        # d1 被跳過（記 'action not supported'）、d2 正常執行（未出現在 failure list）
+        assert result.status == "success"
+        step = result.step_results[0]
+        assert step.device_results["d1"] == "action not supported"
+        assert step.device_results["d2"] == "success"
+        d2.execute_action.assert_called_once_with("start")
+
+    async def test_all_devices_without_action_still_succeeds(self):
+        """若所有 device 都不支援 execute_action，step 仍視為 success（沒執行任何 action、也無 failure）。"""
+        from csp_lib.integration.registry import DeviceRegistry
+
+        d1 = MagicMock()
+        type(d1).device_id = PropertyMock(return_value="d1")
+        type(d1).is_responsive = PropertyMock(return_value=True)
+        type(d1).is_connected = PropertyMock(return_value=True)
+        type(d1).is_protected = PropertyMock(return_value=False)
+        del d1.execute_action
+
+        reg = DeviceRegistry()
+        reg.register(d1, traits=["test"])
+
+        orch = SystemCommandOrchestrator(reg)
+        orch.register(SystemCommand(name="test", steps=[CommandStep(action="start", trait="test")]))
+
+        result = await orch.execute("test")
+        assert result.status == "success"
+        assert result.step_results[0].device_results["d1"] == "action not supported"
+
+
 class TestOrchestratorDelayAndCheck:
     """Test delay and health check functionality."""
 
