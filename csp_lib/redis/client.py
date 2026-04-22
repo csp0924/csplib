@@ -18,6 +18,8 @@ from redis.asyncio.sentinel import Sentinel
 from csp_lib.core import get_logger
 
 if TYPE_CHECKING:
+    from redis.asyncio.client import Pipeline
+
     from csp_lib.redis.config import RedisConfig
 
 logger = get_logger(__name__)
@@ -494,6 +496,39 @@ class RedisClient:
         if not self._client:
             raise ConnectionError("Redis 尚未連線")
         return await self._client.smembers(name)
+
+    # ================ Pipeline ================
+
+    def pipeline(self, transaction: bool = True) -> Pipeline:
+        """取得底層 redis-py Pipeline 以批次執行多個命令。
+
+        Args:
+            transaction: 是否以 MULTI/EXEC 包裝（預設 True，原子執行）。
+                若僅需減少 round trip 不要求原子性，可傳 False 跳過 MULTI。
+
+        Returns:
+            底層 ``redis.asyncio.client.Pipeline``。Pipeline 物件本身為 **async
+            context manager**（可 ``async with`` 使用），命令方法（``hset`` /
+            ``set`` / ``publish`` 等）為同步鏈式呼叫，**只有 ``execute()``
+            需要 await**。
+            **Caller 直接用原生 redis-py API**，本 client 的高階封裝（如
+            ``hset`` 的 JSON encoding）不適用，需自行處理編碼以保持與
+            ``RedisClient`` 方法一致的行為。
+
+        Example::
+
+            pipe = client.pipeline()
+            pipe.hset("k", mapping={"f": "v"})  # 同步
+            pipe.expire("k", 60)                # 同步
+            pipe.publish("ch", "msg")           # 同步
+            await pipe.execute()                # 這裡才 await
+
+        Raises:
+            ConnectionError: Redis 尚未連線
+        """
+        if not self._client:
+            raise ConnectionError("Redis 尚未連線")
+        return self._client.pipeline(transaction=transaction)
 
     # ================ Pub/Sub ================
 

@@ -54,6 +54,32 @@ class MockDevice:
             await handler(payload)
 
 
+class MockPipeline:
+    """Mock redis-py pipeline：記錄命令、execute() 一次回傳 list 結果。"""
+
+    def __init__(self) -> None:
+        self.commands: list[tuple[str, tuple, dict]] = []
+
+    def hset(self, *args, **kwargs):
+        self.commands.append(("hset", args, kwargs))
+        return self
+
+    def expire(self, *args, **kwargs):
+        self.commands.append(("expire", args, kwargs))
+        return self
+
+    def set(self, *args, **kwargs):
+        self.commands.append(("set", args, kwargs))
+        return self
+
+    def publish(self, *args, **kwargs):
+        self.commands.append(("publish", args, kwargs))
+        return self
+
+    async def execute(self) -> list[int]:
+        return [1] * len(self.commands)
+
+
 class MockRedisClient:
     """Mock RedisClient for testing"""
 
@@ -64,6 +90,12 @@ class MockRedisClient:
         self.srem = AsyncMock(return_value=1)
         self.publish = AsyncMock(return_value=1)
         self.expire = AsyncMock(return_value=True)
+        # 每次 pipeline() 回傳新 MockPipeline，保留最近一次供斷言
+        self.last_pipeline: MockPipeline | None = None
+
+    def pipeline(self, transaction: bool = True) -> MockPipeline:  # noqa: ARG002
+        self.last_pipeline = MockPipeline()
+        return self.last_pipeline
 
 
 # ======================== Subscribe/Unsubscribe Tests ========================
@@ -134,7 +166,7 @@ class TestStateSyncManagerReadComplete:
 
     @pytest.mark.asyncio
     async def test_on_read_complete_updates_hash(self, manager: StateSyncManager, redis_client: MockRedisClient):
-        """read_complete 應更新 Redis Hash"""
+        """read_complete 應於 pipeline 內以 hset + expire 更新 Redis Hash"""
         device = MockDevice("device_001")
         manager.subscribe(device)
 
@@ -145,14 +177,19 @@ class TestStateSyncManagerReadComplete:
         )
         await device.emit(EVENT_READ_COMPLETE, payload)
 
-        redis_client.hset.assert_called_once()
-        call_args = redis_client.hset.call_args[0]
-        assert call_args[0] == "device:device_001:state"
-        assert call_args[1] == {"temperature": 25.5, "humidity": 60}
+        assert redis_client.last_pipeline is not None
+        hset_cmds = [c for c in redis_client.last_pipeline.commands if c[0] == "hset"]
+        assert len(hset_cmds) == 1
+        name, kwargs = hset_cmds[0][1][0], hset_cmds[0][2]
+        assert name == "device:device_001:state"
+        # pipeline 內會 JSON encode 非字串值（RedisClient.hset 的封裝不適用原生 pipeline）
+        mapping = kwargs["mapping"]
+        assert json.loads(mapping["temperature"]) == 25.5
+        assert json.loads(mapping["humidity"]) == 60
 
     @pytest.mark.asyncio
     async def test_on_read_complete_publishes(self, manager: StateSyncManager, redis_client: MockRedisClient):
-        """read_complete 應發布至 data channel"""
+        """read_complete 應於 pipeline 內 publish 至 data channel"""
         device = MockDevice("device_001")
         manager.subscribe(device)
 
@@ -163,14 +200,34 @@ class TestStateSyncManagerReadComplete:
         )
         await device.emit(EVENT_READ_COMPLETE, payload)
 
-        redis_client.publish.assert_called_once()
-        call_args = redis_client.publish.call_args[0]
-        assert call_args[0] == "channel:device:device_001:data"
+        assert redis_client.last_pipeline is not None
+        publish_cmds = [c for c in redis_client.last_pipeline.commands if c[0] == "publish"]
+        assert len(publish_cmds) == 1
+        channel, message_json = publish_cmds[0][1]
+        assert channel == "channel:device:device_001:data"
 
-        # 解析 message
-        message = json.loads(call_args[1])
+        message = json.loads(message_json)
         assert "timestamp" in message
         assert message["values"] == {"temperature": 25.5}
+
+    @pytest.mark.asyncio
+    async def test_on_read_complete_batches_commands_in_single_pipeline(
+        self, manager: StateSyncManager, redis_client: MockRedisClient
+    ):
+        """read_complete 應將 hset + expire + set + publish 4 個指令批次進同一 pipeline"""
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        payload = ReadCompletePayload(
+            device_id="device_001",
+            values={"a": 1},
+            duration_ms=10.0,
+        )
+        await device.emit(EVENT_READ_COMPLETE, payload)
+
+        assert redis_client.last_pipeline is not None
+        cmd_names = [c[0] for c in redis_client.last_pipeline.commands]
+        assert cmd_names == ["hset", "expire", "set", "publish"]
 
 
 # ======================== Connected/Disconnected Tests ========================

@@ -125,36 +125,33 @@ class StateSyncManager(DeviceEventSubscriber):
         return False
 
     # ================ Key/Channel 命名 ================
+    #
+    # 所有命名函式以 ``self._config.key_prefix`` / ``self._config.channel_prefix``
+    # 為前綴，支援多站共用 Redis 時以站 ID 隔離（見 StateSyncConfig docstring）。
 
-    @staticmethod
-    def _state_key(device_id: str) -> str:
+    def _state_key(self, device_id: str) -> str:
         """設備狀態 Hash key"""
-        return f"device:{device_id}:state"
+        return f"{self._config.key_prefix}:{device_id}:state"
 
-    @staticmethod
-    def _online_key(device_id: str) -> str:
+    def _online_key(self, device_id: str) -> str:
         """設備連線狀態 key"""
-        return f"device:{device_id}:online"
+        return f"{self._config.key_prefix}:{device_id}:online"
 
-    @staticmethod
-    def _alarms_key(device_id: str) -> str:
+    def _alarms_key(self, device_id: str) -> str:
         """設備活躍告警 Set key"""
-        return f"device:{device_id}:alarms"
+        return f"{self._config.key_prefix}:{device_id}:alarms"
 
-    @staticmethod
-    def _data_channel(device_id: str) -> str:
+    def _data_channel(self, device_id: str) -> str:
         """資料更新 channel"""
-        return f"channel:device:{device_id}:data"
+        return f"{self._config.channel_prefix}:{device_id}:data"
 
-    @staticmethod
-    def _status_channel(device_id: str) -> str:
+    def _status_channel(self, device_id: str) -> str:
         """連線狀態 channel"""
-        return f"channel:device:{device_id}:status"
+        return f"{self._config.channel_prefix}:{device_id}:status"
 
-    @staticmethod
-    def _alarm_channel(device_id: str) -> str:
+    def _alarm_channel(self, device_id: str) -> str:
         """告警事件 channel"""
-        return f"channel:device:{device_id}:alarm"
+        return f"{self._config.channel_prefix}:{device_id}:alarm"
 
     # ================ 訂閱管理 ================
 
@@ -178,7 +175,8 @@ class StateSyncManager(DeviceEventSubscriber):
         """
         處理讀取完成事件
 
-        更新 Redis Hash 並發布至 data channel。
+        批次更新 Redis Hash（state + TTL）、刷新 online 心跳、發布至 data channel。
+        所有操作透過 pipeline 一次送出，從 4 次 round trip 降為 1 次。
 
         Args:
             payload: 讀取完成事件資料
@@ -186,25 +184,25 @@ class StateSyncManager(DeviceEventSubscriber):
         device_id = payload.device_id
         if self._skip_if_not_leader("read_complete", device_id):
             return
+
         state_key = self._state_key(device_id)
         online_key = self._online_key(device_id)
 
-        # 更新 Hash + TTL
-        await self._redis.hset(state_key, payload.values)
-        await self._redis.expire(state_key, self._state_ttl)
-
-        # 同時刷新 online 狀態（作為心跳）
-        await self._redis.set(online_key, "1", ex=self._online_ttl)
-
-        # 發布至 channel
+        # Hash 值需字串化。redis-py 原生 pipeline 不走 RedisClient.hset 的 JSON encode，
+        # 此處沿用 RedisClient.hset 的編碼策略（``json.dumps(v)`` 不加 ``default=str``）
+        # 讓不可序列化值 fail-loud，與非 pipeline 路徑行為一致。
+        str_mapping = {k: v if isinstance(v, str) else json.dumps(v) for k, v in payload.values.items()}
         message = json.dumps(
-            {
-                "timestamp": payload.timestamp.isoformat(),
-                "values": payload.values,
-            },
+            {"timestamp": payload.timestamp.isoformat(), "values": payload.values},
             default=str,
         )
-        await self._redis.publish(self._data_channel(device_id), message)
+
+        pipe = self._redis.pipeline()
+        pipe.hset(state_key, mapping=str_mapping)
+        pipe.expire(state_key, self._state_ttl)
+        pipe.set(online_key, "1", ex=self._online_ttl)
+        pipe.publish(self._data_channel(device_id), message)
+        await pipe.execute()
 
     async def _on_connected(self, payload: ConnectedPayload) -> None:
         """

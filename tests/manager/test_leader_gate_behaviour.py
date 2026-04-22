@@ -72,8 +72,22 @@ class _FakeAsyncDevice:
             await h(payload)
 
 
+class _FakePipeline:
+    """Fake redis-py pipeline：record commands；execute() 回 list。"""
+
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+        self.hset = MagicMock(side_effect=lambda *a, **kw: self.commands.append("hset") or self)
+        self.expire = MagicMock(side_effect=lambda *a, **kw: self.commands.append("expire") or self)
+        self.set = MagicMock(side_effect=lambda *a, **kw: self.commands.append("set") or self)
+        self.publish = MagicMock(side_effect=lambda *a, **kw: self.commands.append("publish") or self)
+
+    async def execute(self) -> list[int]:
+        return [1] * len(self.commands)
+
+
 def _mock_redis() -> MagicMock:
-    """Redis client mock：所有 method 均為 AsyncMock 以便 await。"""
+    """Redis client mock：所有 method 均為 AsyncMock 以便 await；pipeline 每次回新 _FakePipeline。"""
     redis = MagicMock()
     redis.hset = AsyncMock()
     redis.set = AsyncMock()
@@ -81,6 +95,15 @@ def _mock_redis() -> MagicMock:
     redis.srem = AsyncMock()
     redis.publish = AsyncMock()
     redis.expire = AsyncMock()
+    # read_complete 改走 pipeline（4 命令批次），其他 handler 仍走直呼
+    redis._last_pipeline = None
+
+    def _pipeline(*_args, **_kwargs):  # noqa: ANN202
+        pipe = _FakePipeline()
+        redis._last_pipeline = pipe
+        return pipe
+
+    redis.pipeline = MagicMock(side_effect=_pipeline)
     return redis
 
 
@@ -268,7 +291,7 @@ class TestStateSyncManagerLeaderGate:
         return DeviceAlarmPayload(device_id=device_id, alarm_event=alarm_event)
 
     async def test_leader_read_complete_writes_redis(self) -> None:
-        """is_leader=True：read_complete → hset + publish 都被呼叫。"""
+        """is_leader=True：read_complete → pipeline 內含 hset + publish。"""
         gate = ToggleLeaderGate(initial=True)
         redis = _mock_redis()
         manager = StateSyncManager(redis, leader_gate=gate)
@@ -280,11 +303,12 @@ class TestStateSyncManagerLeaderGate:
             ReadCompletePayload(device_id="ssm_leader", values={"x": 1}, duration_ms=10.0),
         )
 
-        redis.hset.assert_awaited_once()
-        redis.publish.assert_awaited_once()
+        assert redis._last_pipeline is not None
+        assert "hset" in redis._last_pipeline.commands
+        assert "publish" in redis._last_pipeline.commands
 
     async def test_follower_read_complete_skips_all_redis_ops(self) -> None:
-        """is_leader=False：read_complete handler 早退，Redis 動作全零呼叫。"""
+        """is_leader=False：read_complete handler 早退，pipeline 也不建立。"""
         gate = ToggleLeaderGate(initial=False)
         redis = _mock_redis()
         manager = StateSyncManager(redis, leader_gate=gate)
@@ -296,6 +320,7 @@ class TestStateSyncManagerLeaderGate:
             ReadCompletePayload(device_id="ssm_follower", values={"x": 1}, duration_ms=10.0),
         )
 
+        redis.pipeline.assert_not_called()
         redis.hset.assert_not_called()
         redis.set.assert_not_called()
         redis.publish.assert_not_called()
@@ -377,7 +402,7 @@ class TestStateSyncManagerLeaderGate:
         redis.publish.assert_not_called()
 
     async def test_no_gate_baseline(self) -> None:
-        """leader_gate=None → baseline 行為不變（Redis 被呼叫）。"""
+        """leader_gate=None → baseline 行為不變（pipeline 內含 hset + publish）。"""
         redis = _mock_redis()
         manager = StateSyncManager(redis)  # no gate
         device = _FakeAsyncDevice("legacy_ssm")
@@ -388,8 +413,9 @@ class TestStateSyncManagerLeaderGate:
             ReadCompletePayload(device_id="legacy_ssm", values={"x": 1}, duration_ms=1.0),
         )
 
-        redis.hset.assert_awaited_once()
-        redis.publish.assert_awaited_once()
+        assert redis._last_pipeline is not None
+        assert "hset" in redis._last_pipeline.commands
+        assert "publish" in redis._last_pipeline.commands
 
 
 # ================ E.8 ScheduleService.leader_gate ================
