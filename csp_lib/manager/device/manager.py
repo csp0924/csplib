@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Sequence, cast
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
@@ -176,8 +177,6 @@ class DeviceManager(AsyncLifecycleMixin):
         Returns:
             True 若成功解除，False 若找不到符合的群組
         """
-        import asyncio
-
         target_ids = set(device_ids)
         target_group: DeviceGroup | None = None
         for group in self._groups:

@@ -182,6 +182,16 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
 
     # ================ 註冊 ================
 
+    @staticmethod
+    def _check_output_exclusivity(
+        *,
+        label: str,
+        collection_name: str | None,
+        outputs: Sequence[UploadTarget] | None,
+    ) -> None:
+        if collection_name is not None and outputs is not None:
+            raise ValueError(f"{label}: collection_name 與 outputs 不可同時提供")
+
     def register(
         self,
         device: DeviceProtocol,
@@ -207,11 +217,11 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         Raises:
             ValueError: 同時提供 ``collection_name`` 與 ``outputs``
         """
-        if collection_name is not None and outputs is not None:
-            raise ValueError(
-                f"UnifiedDeviceManager.register(device_id={device.device_id!r}): "
-                "collection_name 與 outputs 不可同時提供"
-            )
+        self._check_output_exclusivity(
+            label=f"UnifiedDeviceManager.register(device_id={device.device_id!r})",
+            collection_name=collection_name,
+            outputs=outputs,
+        )
         with self._register_lock:
             self._device_manager.register(device)
             self._subscribe_all(device, collection_name, outputs)
@@ -246,11 +256,11 @@ class UnifiedDeviceManager(AsyncLifecycleMixin):
         Raises:
             ValueError: 同時提供 ``collection_name`` 與 ``outputs``
         """
-        if collection_name is not None and outputs is not None:
-            device_ids = [d.device_id for d in devices]
-            raise ValueError(
-                f"UnifiedDeviceManager.register_group(devices={device_ids!r}): collection_name 與 outputs 不可同時提供"
-            )
+        self._check_output_exclusivity(
+            label=f"UnifiedDeviceManager.register_group(devices={[d.device_id for d in devices]!r})",
+            collection_name=collection_name,
+            outputs=outputs,
+        )
         with self._register_lock:
             self._device_manager.register_group(devices, interval)
             for device in devices:

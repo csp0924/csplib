@@ -16,16 +16,7 @@ import asyncio
 import pytest
 
 from csp_lib.manager.base import AlwaysLeaderGate, LeaderGate
-
-
-async def _wait_for_condition(pred, timeout: float = 2.0, interval: float = 0.01) -> None:
-    """輪詢斷言（bug-lesson async-test-state-race）。"""
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        if pred():
-            return
-        await asyncio.sleep(interval)
-    raise AssertionError(f"condition not met within {timeout}s")
+from tests.helpers import wait_for_condition
 
 
 class TestAlwaysLeaderGate:
@@ -100,7 +91,7 @@ class TestToggleLeaderGateSemantics:
         gate.promote()
 
         # 輪詢等待 task 完成（避免 race）
-        await _wait_for_condition(lambda: task.done(), timeout=1.0)
+        await wait_for_condition(lambda: task.done(), timeout=1.0)
         assert gate.is_leader is True
         # 取結果（應為 None 且無例外）
         assert task.result() is None
