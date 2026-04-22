@@ -26,7 +26,7 @@ from .type_registry import TypeRegistry, device_type_registry, strategy_type_reg
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import DeviceProtocol
 
 logger = get_logger(__name__)
 
@@ -38,9 +38,13 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class BoundDeviceSpec:
-    """解析後的 device spec：kind 已對映到 class，但尚未 instantiate。"""
+    """解析後的 device spec：kind 已對映到 class，但尚未 instantiate。
 
-    cls: type["AsyncModbusDevice"]
+    ``cls`` 型別為 ``type[DeviceProtocol]``，相容 AsyncModbusDevice / AsyncCANDevice /
+    DerivedDevice 等結構性滿足 DeviceProtocol 的設備類別。
+    """
+
+    cls: type["DeviceProtocol"]
     source: DeviceSpec
 
 
@@ -83,7 +87,7 @@ def apply_manifest_to_builder(
     builder: Any,
     manifest: SiteManifest,
     *,
-    device_registry: TypeRegistry["AsyncModbusDevice"] | None = None,
+    device_registry: TypeRegistry["DeviceProtocol"] | None = None,
     strategy_registry: TypeRegistry["Strategy"] | None = None,
 ) -> ManifestBindResult:
     """把 SiteManifest 內容 bind 到 SystemControllerConfigBuilder。
@@ -134,7 +138,7 @@ def apply_manifest_to_builder(
     )
 
 
-def _resolve_device(spec: DeviceSpec, registry: TypeRegistry["AsyncModbusDevice"]) -> BoundDeviceSpec:
+def _resolve_device(spec: DeviceSpec, registry: TypeRegistry["DeviceProtocol"]) -> BoundDeviceSpec:
     try:
         cls = registry.get(spec.kind)
     except ConfigurationError as e:

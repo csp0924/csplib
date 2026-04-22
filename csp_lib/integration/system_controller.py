@@ -69,7 +69,7 @@ from .schema import (
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import AsyncModbusDevice, DeviceProtocol
 
     from .manifest import SiteManifest
     from .type_registry import TypeRegistry
@@ -553,7 +553,7 @@ class SystemControllerConfigBuilder:
         cls,
         manifest: "SiteManifest | str | Path | Mapping[str, Any]",
         *,
-        device_registry: "TypeRegistry[AsyncModbusDevice] | None" = None,
+        device_registry: "TypeRegistry[DeviceProtocol] | None" = None,
         strategy_registry: "TypeRegistry[Strategy] | None" = None,
     ) -> "SystemControllerConfigBuilder":
         """從 SiteManifest 建構 builder（可再 chain 既有 fluent methods 覆寫）。

@@ -3,7 +3,7 @@
 # Decorator-driven 類型註冊表。K8s Operator Pattern 的 "Kind" 查找層。
 #
 # 兩個獨立 singleton：
-#   - device_type_registry:   kind → AsyncModbusDevice 子類
+#   - device_type_registry:   kind → DeviceProtocol 實作類（含 AsyncModbusDevice / AsyncCANDevice / DerivedDevice 等）
 #   - strategy_type_registry: kind → Strategy 實作類
 #
 # 與 entry_points 的互補關係：
@@ -23,7 +23,7 @@ from csp_lib.core.errors import ConfigurationError
 
 if TYPE_CHECKING:
     from csp_lib.controller.core import Strategy
-    from csp_lib.equipment.device import AsyncModbusDevice
+    from csp_lib.equipment.device import DeviceProtocol
 
 logger = get_logger(__name__)
 
@@ -96,7 +96,7 @@ class TypeRegistry(Generic[T]):
 
 # ─────────── Singleton instances ───────────
 
-device_type_registry: TypeRegistry["AsyncModbusDevice"] = TypeRegistry("device")
+device_type_registry: TypeRegistry["DeviceProtocol"] = TypeRegistry("device")
 strategy_type_registry: TypeRegistry["Strategy"] = TypeRegistry("strategy")
 
 
@@ -105,8 +105,11 @@ strategy_type_registry: TypeRegistry["Strategy"] = TypeRegistry("strategy")
 
 def register_device_type(
     kind: str, *, force: bool = False
-) -> Callable[[type["AsyncModbusDevice"]], type["AsyncModbusDevice"]]:
-    """Decorator：把 AsyncModbusDevice 子類註冊到 device_type_registry。
+) -> Callable[[type["DeviceProtocol"]], type["DeviceProtocol"]]:
+    """Decorator：把 DeviceProtocol 實作類註冊到 device_type_registry。
+
+    結構性相容：``AsyncModbusDevice`` / ``AsyncCANDevice`` / ``DerivedDevice`` 等
+    滿足 DeviceProtocol 的類別皆可註冊，無需為 Modbus 以外的設備另外開 registry。
 
     Usage::
 
@@ -114,12 +117,16 @@ def register_device_type(
         class ExamplePCSDevice(AsyncModbusDevice):
             ...
 
+        @register_device_type("VirtualAggregator")
+        class VirtualAggregator(DerivedDevice):
+            ...
+
     Args:
         kind:  類型識別字串
         force: 覆寫既有註冊（預設 False）
     """
 
-    def _wrap(cls: type["AsyncModbusDevice"]) -> type["AsyncModbusDevice"]:
+    def _wrap(cls: type["DeviceProtocol"]) -> type["DeviceProtocol"]:
         device_type_registry.register(kind, cls, force=force)
         return cls
 
