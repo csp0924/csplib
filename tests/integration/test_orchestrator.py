@@ -395,7 +395,7 @@ class TestOrchestratorActionDeviceProtocol:
         type(d1).is_responsive = PropertyMock(return_value=True)
         type(d1).is_connected = PropertyMock(return_value=True)
         type(d1).is_protected = PropertyMock(return_value=False)
-        del d1.execute_action  # 明確移除 MagicMock auto-attr
+        d1.execute_action = None  # callable(None) is False → 走 skip 分支（比 del 更可靠）
 
         d2 = _make_device("d2")
 

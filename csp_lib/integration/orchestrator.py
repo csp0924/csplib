@@ -265,8 +265,9 @@ class SystemCommandOrchestrator:
             )
 
         # 3. 並行執行動作（runtime 篩選：設備必須有 callable execute_action 才能執行）
-        # 用 hasattr+callable 結構性檢查而非 isinstance(ActionDeviceProtocol)，
-        # 對 MagicMock / 使用者 duck-typed 實作更友善。
+        # 用 getattr+callable 結構性檢查而非 isinstance(ActionDeviceProtocol)，
+        # 對 MagicMock / 使用者 duck-typed 實作更友善（Protocol runtime_checkable
+        # 對 MagicMock 會因屬性不完整回 False）。
         device_results: dict[str, str] = {}
         tasks = []
         device_ids_ordered = []
