@@ -206,3 +206,66 @@ class TestEventBridgeEdgeDetection:
         await d1._emit(EVENT_CONNECTED, {"device_id": "pcs1"})
         await asyncio.sleep(0.1)
         assert handler.await_count == 1  # Still 1, not 2
+
+
+class TestEventBridgeDeviceProtocolAcceptance:
+    """確保 attach() 簽名鬆綁為 DeviceProtocol 後，非 AsyncModbusDevice 的實作可直接注入。"""
+
+    @pytest.mark.asyncio
+    async def test_attach_accepts_minimal_device_protocol_impl(self):
+        """手刻一個純 DeviceProtocol 實作（非 AsyncModbusDevice），attach 應可接受並正常觸發聚合。
+
+        重點：attach 只透過 ``device_id`` 與 ``on()`` 互動；鬆綁後非 AsyncModbusDevice
+        的設備抽象（如 DerivedDevice / RemoteSnapshotDevice）可直接注入。
+        """
+        from csp_lib.equipment.device.events import AsyncHandler
+
+        class MinimalProtocolDevice:
+            """只實作 attach 需要的兩個成員：device_id + on()。"""
+
+            def __init__(self, device_id: str) -> None:
+                self.device_id = device_id
+                self._handlers: dict[str, list[AsyncHandler]] = {}
+
+            def on(self, event, handler):
+                self._handlers.setdefault(event, []).append(handler)
+
+                def cancel():
+                    self._handlers[event].remove(handler)
+
+                return cancel
+
+            async def fire(self, event, payload):
+                for h in self._handlers.get(event, []):
+                    await h(payload)
+
+        d1 = MinimalProtocolDevice("pcs1")
+        d2 = MinimalProtocolDevice("pcs2")
+
+        handler = AsyncMock()
+        cond = AggregateCondition(
+            source_event=EVENT_CONNECTED,
+            target_event="system_ready",
+            predicate=lambda p: len(p) >= 2,
+            debounce_seconds=0.05,
+        )
+        bridge = EventBridge([cond])
+
+        # 型別層：attach 應接受 DeviceProtocol sequence（mypy / IDE 不會報錯）
+        bridge.attach([d1, d2])
+        bridge.on("system_ready", handler)
+
+        await d1.fire(EVENT_CONNECTED, {"device_id": "pcs1"})
+        await d2.fire(EVENT_CONNECTED, {"device_id": "pcs2"})
+
+        # poll-until-condition 避免 sleep-then-assert race（bug-lesson: async-test-state-race）
+        async def _wait_for(pred, timeout=1.0, interval=0.01):
+            deadline = asyncio.get_event_loop().time() + timeout
+            while asyncio.get_event_loop().time() < deadline:
+                if pred():
+                    return
+                await asyncio.sleep(interval)
+            raise AssertionError(f"condition not met within {timeout}s")
+
+        await _wait_for(lambda: handler.await_count >= 1)
+        handler.assert_awaited_once()
