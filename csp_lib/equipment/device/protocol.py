@@ -60,6 +60,20 @@ class DeviceProtocol(Protocol):
     def health(self) -> HealthReport: ...
 
 
+@runtime_checkable
+class ActionDeviceProtocol(DeviceProtocol, Protocol):
+    """支援高階動作執行（``execute_action``）的設備協定。
+
+    ``DeviceProtocol`` 的延伸，加入 ``execute_action`` 契約。orchestrator /
+    maintenance procedure 等需要觸發 action（如 "start"、"stop"、"reset"）
+    的流程用此型別。``AsyncModbusDevice`` 透過 ``WriteMixin.execute_action``
+    結構性滿足；``AsyncCANDevice`` 等其他裝置可自行實作。
+    """
+
+    async def execute_action(self, action: str, **params: Any) -> Any: ...
+
+
 __all__ = [
     "DeviceProtocol",
+    "ActionDeviceProtocol",
 ]
