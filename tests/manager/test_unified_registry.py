@@ -104,3 +104,119 @@ class TestRegistryQueryAfterRegister:
         meter_devices = registry.get_devices_by_trait("meter")
         assert len(meter_devices) == 1
         assert meter_devices[0].device_id == "meter_01"
+
+
+# ======================== _build_metadata (auto inject used_unit_ids) ========================
+
+
+class _RealDevice:
+    """非 MagicMock 的最小 DeviceProtocol stand-in，可指定（或不指定）used_unit_ids。"""
+
+    def __init__(self, device_id: str, *, used_unit_ids=None) -> None:
+        self.device_id = device_id
+        self.is_responsive = True
+        if used_unit_ids is not None:
+            self.used_unit_ids = used_unit_ids
+
+    def has_capability(self, _capability) -> bool:
+        return False
+
+
+class TestBuildMetadataAutoInjectUsedUnitIds:
+    """UnifiedDeviceManager._build_metadata auto-inject used_unit_ids 行為測試。"""
+
+    def test_device_with_frozenset_used_unit_ids_injected_as_sorted_list(self) -> None:
+        """device.used_unit_ids 是 frozenset → metadata 含 sorted list。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _RealDevice("pcs_fs", used_unit_ids=frozenset({3, 1, 2}))
+
+        manager.register(device)
+
+        meta = registry.get_metadata("pcs_fs")
+        assert meta["used_unit_ids"] == [1, 2, 3]
+
+    def test_device_with_set_used_unit_ids_injected(self) -> None:
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _RealDevice("pcs_set", used_unit_ids={5, 4})
+
+        manager.register(device)
+
+        meta = registry.get_metadata("pcs_set")
+        assert meta["used_unit_ids"] == [4, 5]
+
+    def test_device_with_list_used_unit_ids_injected_sorted(self) -> None:
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _RealDevice("pcs_list", used_unit_ids=[10, 1, 7])
+
+        manager.register(device)
+
+        assert registry.get_metadata("pcs_list")["used_unit_ids"] == [1, 7, 10]
+
+    def test_device_without_used_unit_ids_not_injected(self, mock_device_protocol) -> None:
+        """MockDeviceProtocol 預設不設 used_unit_ids → metadata 不含該 key。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+
+        assert not hasattr(mock_device_protocol, "used_unit_ids")
+        manager.register(mock_device_protocol)
+
+        meta = registry.get_metadata(mock_device_protocol.device_id)
+        assert "used_unit_ids" not in meta
+
+    def test_magicmock_device_auto_attr_is_skipped_by_isinstance_guard(self) -> None:
+        """MagicMock 物件會自動產生 .used_unit_ids（MagicMock 實例），
+        isinstance guard 應讓 metadata 不包含該 key（避免序列化失敗）。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _make_mock_device("mm_dev")  # MagicMock device
+
+        manager.register(device)
+
+        meta = registry.get_metadata("mm_dev")
+        assert "used_unit_ids" not in meta
+
+    def test_user_metadata_overrides_auto_used_unit_ids(self) -> None:
+        """user 提供的 metadata['used_unit_ids'] 應覆蓋 auto 值。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _RealDevice("pcs_override", used_unit_ids=frozenset({1, 2, 3}))
+
+        manager.register(device, metadata={"used_unit_ids": ["custom"]})
+
+        meta = registry.get_metadata("pcs_override")
+        assert meta["used_unit_ids"] == ["custom"]
+
+    def test_user_metadata_none_keeps_auto_only(self) -> None:
+        """user metadata 為 None 時，metadata 僅含 auto 值（若 device 有該屬性）。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+        device = _RealDevice("pcs_auto_only", used_unit_ids=frozenset({7, 8}))
+
+        manager.register(device, metadata=None)
+
+        meta = registry.get_metadata("pcs_auto_only")
+        assert meta == {"used_unit_ids": [7, 8]}
+
+    def test_register_group_auto_injects_used_unit_ids_per_device(self) -> None:
+        """register_group 也應對每個 device 自動注入。"""
+        registry = DeviceRegistry()
+        config = UnifiedConfig(device_registry=registry)
+        manager = UnifiedDeviceManager(config)
+
+        d1 = _RealDevice("grp_a", used_unit_ids=frozenset({1}))
+        d2 = _RealDevice("grp_b", used_unit_ids=frozenset({2, 3}))
+
+        manager.register_group([d1, d2])
+
+        assert registry.get_metadata("grp_a") == {"used_unit_ids": [1]}
+        assert registry.get_metadata("grp_b") == {"used_unit_ids": [2, 3]}

@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from csp_lib.manager import UnifiedConfig, UnifiedDeviceManager
+from csp_lib.manager.data import UploadTarget
 
 # ================ Fixtures ================
 
@@ -206,7 +207,7 @@ class TestRegister:
         manager.register(mock_device)
 
         mock_apm.subscribe.assert_called_once_with(mock_device)
-        mock_wcm.register_device.assert_called_once_with(mock_device)
+        mock_wcm.subscribe.assert_called_once_with(mock_device)
         mock_ssm.subscribe.assert_called_once_with(mock_device)
 
     @patch("csp_lib.manager.unified.DataUploadManager")
@@ -395,3 +396,120 @@ class TestProperties:
         assert "UnifiedDeviceManager" in repr_str
         assert "devices=" in repr_str
         assert "running=" in repr_str
+
+
+# ================ 測試：outputs fan-out 與互斥 ================
+
+
+def _make_target(collection: str = "t1") -> UploadTarget:
+    """建立一個最小 UploadTarget（測試用，transform 回傳空 dict）。"""
+    return UploadTarget(collection=collection, transform=lambda values: {})
+
+
+class TestRegisterOutputs:
+    """register() 新增 outputs= 與 collection_name 互斥測試"""
+
+    @patch("csp_lib.manager.unified.DataUploadManager")
+    def test_register_with_outputs(self, mock_dum_cls, mock_device, mock_uploader):
+        """register(outputs=[target]) 應呼叫 data_manager.configure(device_id, outputs=...)。"""
+        mock_dum = MagicMock()
+        mock_dum_cls.return_value = mock_dum
+
+        target = _make_target("out_coll")
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+        manager.register(mock_device, outputs=[target])
+
+        mock_dum.configure.assert_called_once_with(mock_device.device_id, outputs=[target])
+        mock_dum.subscribe.assert_called_once_with(mock_device)
+
+    def test_register_collection_and_outputs_conflict_raises(self, mock_device, mock_uploader):
+        """同時提供 collection_name 與 outputs 應 raise ValueError，訊息含 device_id。"""
+        target = _make_target()
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+
+        with pytest.raises(ValueError) as exc:
+            manager.register(mock_device, collection_name="x", outputs=[target])
+        assert mock_device.device_id in str(exc.value)
+        assert "collection_name" in str(exc.value)
+        assert "outputs" in str(exc.value)
+
+    @patch("csp_lib.manager.unified.DataUploadManager")
+    def test_register_neither_skips_data_manager(self, mock_dum_cls, mock_device, mock_uploader):
+        """都不給 collection_name 與 outputs 時不 raise，也不呼叫 configure/subscribe。"""
+        mock_dum = MagicMock()
+        mock_dum_cls.return_value = mock_dum
+
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+
+        # 不應 raise
+        manager.register(mock_device)
+
+        mock_dum.configure.assert_not_called()
+        mock_dum.subscribe.assert_not_called()
+
+    @patch("csp_lib.manager.unified.DataUploadManager")
+    def test_register_collection_only_backcompat(self, mock_dum_cls, mock_device, mock_uploader):
+        """純 collection_name 路徑（向後相容）：用位置參數呼叫 configure。"""
+        mock_dum = MagicMock()
+        mock_dum_cls.return_value = mock_dum
+
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+        manager.register(mock_device, collection_name="legacy")
+
+        mock_dum.configure.assert_called_once_with(mock_device.device_id, "legacy")
+        mock_dum.subscribe.assert_called_once_with(mock_device)
+
+
+class TestRegisterGroupOutputs:
+    """register_group() 新增 outputs= 與 collection_name 互斥測試"""
+
+    @patch("csp_lib.manager.unified.DataUploadManager")
+    def test_register_group_with_outputs(self, mock_dum_cls, mock_devices, mock_uploader):
+        """register_group(outputs=[target]) 應為每個 device 呼叫 configure(device_id, outputs=...)。"""
+        mock_dum = MagicMock()
+        mock_dum_cls.return_value = mock_dum
+
+        target = _make_target("grp_coll")
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+        manager.register_group(mock_devices, outputs=[target])
+
+        assert mock_dum.configure.call_count == len(mock_devices)
+        assert mock_dum.subscribe.call_count == len(mock_devices)
+        for call in mock_dum.configure.call_args_list:
+            assert call.kwargs == {"outputs": [target]}
+
+    def test_register_group_collection_and_outputs_conflict_raises(self, mock_devices, mock_uploader):
+        """register_group 同時提供 collection_name + outputs → ValueError，訊息含 group device_ids。"""
+        target = _make_target()
+        config = UnifiedConfig(mongo_uploader=mock_uploader)
+        manager = UnifiedDeviceManager(config)
+
+        with pytest.raises(ValueError) as exc:
+            manager.register_group(mock_devices, collection_name="x", outputs=[target])
+        err = str(exc.value)
+        for d in mock_devices:
+            assert d.device_id in err
+        assert "collection_name" in err
+        assert "outputs" in err
+
+
+class TestSubscribeViaCommandManager:
+    """驗證 _subscribe_all 改為呼叫 command_manager.subscribe（而非 register_device）。"""
+
+    @patch("csp_lib.manager.unified.WriteCommandManager")
+    def test_register_calls_command_manager_subscribe(self, mock_wcm_cls, mock_device, mock_command_repo):
+        mock_wcm = MagicMock()
+        mock_wcm_cls.return_value = mock_wcm
+
+        config = UnifiedConfig(command_repository=mock_command_repo)
+        manager = UnifiedDeviceManager(config)
+        manager.register(mock_device)
+
+        mock_wcm.subscribe.assert_called_once_with(mock_device)
+        # 不再直接呼叫 register_device
+        mock_wcm.register_device.assert_not_called()

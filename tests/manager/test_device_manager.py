@@ -306,3 +306,208 @@ class TestDeviceManagerProperties:
         repr_str = repr(manager)
         assert "standalone=1" in repr_str
         assert "groups=0" in repr_str
+
+
+# ======================== Type-loosening (DeviceProtocol) Tests ========================
+
+
+class TestDeviceManagerAcceptsDeviceProtocol:
+    """驗證 register / register_group 接受任何實作 DeviceProtocol 的設備（而非僅 AsyncModbusDevice）。"""
+
+    def test_register_accepts_mock_device_protocol(self, mock_device_protocol):
+        """MockDeviceProtocol（非 AsyncModbusDevice）可被 register。"""
+        manager = DeviceManager()
+        manager.register(mock_device_protocol)
+
+        assert manager.standalone_count == 1
+        assert mock_device_protocol in manager.all_devices
+
+
+# ======================== Unregister (Standalone) Tests ========================
+
+
+class TestDeviceManagerUnregister:
+    """單一 standalone 設備 unregister 測試。
+
+    注意：source code 的 ``unregister`` 回傳 ``bool``（不存在時 False，不 raise KeyError）。
+    若未來改為 raise KeyError，此測試需同步調整。
+    """
+
+    async def test_unregister_nonexistent_returns_false(self):
+        """不存在的 device_id 回傳 False（非 running）。"""
+        manager = DeviceManager()
+        result = await manager.unregister("nonexistent")
+        assert result is False
+
+    async def test_unregister_group_device_returns_false(self):
+        """device 屬於某 group 時，unregister（單一）找不到，回傳 False。
+        （呼叫者應改用 unregister_group）"""
+        manager = DeviceManager()
+        client = MockClient()
+        devices = [MockDevice("g1", client), MockDevice("g2", client)]
+        manager.register_group(devices)
+
+        result = await manager.unregister("g1")
+        assert result is False
+        # group 應完整保留
+        assert manager.group_count == 1
+        assert len(manager.all_devices) == 2
+
+    async def test_unregister_standalone_when_not_running(self):
+        """未 running 時 unregister standalone 設備 → True、從清單移除、不呼叫 stop/disconnect。"""
+        manager = DeviceManager()
+        device = MockDevice("dev_001")
+        manager.register(device)
+
+        result = await manager.unregister("dev_001")
+        assert result is True
+        assert manager.standalone_count == 0
+        assert device not in manager.all_devices
+        # 未 running 不應觸發 stop/disconnect
+        device.stop.assert_not_called()
+        device.disconnect.assert_not_called()
+
+    async def test_unregister_standalone_while_running_calls_stop_disconnect(self):
+        """running 時 unregister 應先呼叫 stop + disconnect。"""
+        manager = DeviceManager()
+        device = MockDevice("dev_001")
+        manager.register(device)
+        await manager.start()
+
+        try:
+            result = await manager.unregister("dev_001")
+            assert result is True
+            device.stop.assert_called_once()
+            device.disconnect.assert_called_once()
+            assert manager.standalone_count == 0
+        finally:
+            await manager.stop()
+
+    async def test_unregister_standalone_stop_exception_is_warned(self):
+        """running 時 stop 拋 Exception，函式仍完成（警告被記錄，CancelledError 不被吃）。"""
+        manager = DeviceManager()
+        device = MockDevice("dev_err")
+        device.stop = AsyncMock(side_effect=RuntimeError("stop boom"))
+        manager.register(device)
+        await manager.start()
+
+        try:
+            result = await manager.unregister("dev_err")
+            # 即使 stop 失敗也應回 True 並完成移除
+            assert result is True
+            device.stop.assert_called_once()
+            device.disconnect.assert_called_once()
+            assert manager.standalone_count == 0
+        finally:
+            # already unregistered，stop 應為 no-op
+            await manager.stop()
+
+    async def test_unregister_standalone_disconnect_exception_is_warned(self):
+        """running 時 disconnect 拋 Exception，函式仍完成。"""
+        manager = DeviceManager()
+        device = MockDevice("dev_dc_err")
+        device.disconnect = AsyncMock(side_effect=RuntimeError("dc boom"))
+        manager.register(device)
+        await manager.start()
+
+        try:
+            result = await manager.unregister("dev_dc_err")
+            assert result is True
+            assert manager.standalone_count == 0
+        finally:
+            await manager.stop()
+
+    async def test_unregister_accepts_device_protocol(self, mock_device_protocol):
+        """非 AsyncModbusDevice（MockDeviceProtocol）亦可 unregister（非 running 狀態）。"""
+        manager = DeviceManager()
+        manager.register(mock_device_protocol)
+
+        result = await manager.unregister(mock_device_protocol.device_id)
+        assert result is True
+        assert manager.standalone_count == 0
+
+
+# ======================== Unregister Group Tests ========================
+
+
+class TestDeviceManagerUnregisterGroup:
+    """群組 unregister 測試。
+
+    source code ``unregister_group`` 要求「完全匹配」：給定的 ids 集合必須等於某群組的 ids 集合，
+    否則回傳 False（不 raise ValueError）。
+    """
+
+    async def test_unregister_group_nonexistent_returns_false(self):
+        manager = DeviceManager()
+        result = await manager.unregister_group(["does_not_exist"])
+        assert result is False
+
+    async def test_unregister_group_partial_match_returns_false(self):
+        """部分匹配（ids 子集）不視為匹配，回傳 False，群組保持不變。"""
+        manager = DeviceManager()
+        client = MockClient()
+        devices = [MockDevice("g1", client), MockDevice("g2", client), MockDevice("g3", client)]
+        manager.register_group(devices)
+
+        result = await manager.unregister_group(["g1", "g2"])  # 缺 g3
+        assert result is False
+        assert manager.group_count == 1
+        assert len(manager.all_devices) == 3
+
+    async def test_unregister_group_exact_match_when_not_running(self):
+        manager = DeviceManager()
+        client = MockClient()
+        devices = [MockDevice("g1", client), MockDevice("g2", client)]
+        manager.register_group(devices)
+
+        result = await manager.unregister_group(["g1", "g2"])
+        assert result is True
+        assert manager.group_count == 0
+        assert len(manager.all_devices) == 0
+
+    async def test_unregister_group_exact_match_order_independent(self):
+        """順序無關（以 set 匹配）。"""
+        manager = DeviceManager()
+        client = MockClient()
+        devices = [MockDevice("a", client), MockDevice("b", client)]
+        manager.register_group(devices)
+
+        result = await manager.unregister_group(["b", "a"])
+        assert result is True
+        assert manager.group_count == 0
+
+    async def test_unregister_group_while_running_stops_and_disconnects(self):
+        manager = DeviceManager()
+        client = MockClient()
+        devices = [MockDevice("g1", client), MockDevice("g2", client)]
+        manager.register_group(devices, interval=0.05)
+        await manager.start()
+
+        try:
+            result = await manager.unregister_group(["g1", "g2"])
+            assert result is True
+            for d in devices:
+                d.disconnect.assert_called_once()
+            assert manager.group_count == 0
+        finally:
+            await manager.stop()
+
+    async def test_unregister_group_disconnect_failures_are_warned(self):
+        """群組內兩個 disconnect 都失敗時，函式仍完成、不拋錯。"""
+        manager = DeviceManager()
+        client = MockClient()
+        d1 = MockDevice("g1", client)
+        d2 = MockDevice("g2", client)
+        d1.disconnect = AsyncMock(side_effect=RuntimeError("dc1"))
+        d2.disconnect = AsyncMock(side_effect=RuntimeError("dc2"))
+        manager.register_group([d1, d2], interval=0.05)
+        await manager.start()
+
+        try:
+            result = await manager.unregister_group(["g1", "g2"])
+            assert result is True
+            d1.disconnect.assert_called_once()
+            d2.disconnect.assert_called_once()
+            assert manager.group_count == 0
+        finally:
+            await manager.stop()
