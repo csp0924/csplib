@@ -39,6 +39,7 @@ from .config import (
     RegisterType,
     WatchdogConfig,
     WriteRule,
+    WriteRuleAdapter,
 )
 from .errors import (
     GatewayError,
@@ -81,6 +82,7 @@ __all__ = [
     "WriteValidator",
     "WriteHook",
     "WriteRule",
+    "WriteRuleAdapter",
     "DataSyncSource",
     "UpdateRegisterCallback",
     # Core

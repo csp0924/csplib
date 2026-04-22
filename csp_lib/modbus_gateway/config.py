@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from csp_lib.modbus import ByteOrder, ModbusDataType, RegisterOrder
+
+if TYPE_CHECKING:
+    from csp_lib.equipment.transport import ValidationResult
 
 
 class RegisterType(Enum):
@@ -148,12 +151,69 @@ class WriteRule:
             raise ValueError(f"min_value must be <= max_value, got min={self.min_value} max={self.max_value}")
 
     def apply(self, name: str, value: float) -> tuple[float, bool]:
-        """Apply rule: return (possibly_clamped_value, rejected)."""
+        """Apply rule: return (possibly_clamped_value, rejected).
+
+        .. note::
+            Legacy tuple interface retained for :class:`WritePipeline`.
+            v1.0 will unify to :meth:`apply_v2` signature returning
+            :class:`~csp_lib.equipment.transport.ValidationResult`.
+        """
         if self.min_value is not None and value < self.min_value:
             return (self.min_value, False) if self.clamp else (value, True)
         if self.max_value is not None and value > self.max_value:
             return (self.max_value, False) if self.clamp else (value, True)
         return value, False
+
+    def apply_v2(self, point_name: str, value: Any) -> ValidationResult:
+        """Same rule as :meth:`apply`, but returns a :class:`ValidationResult`.
+
+        Method name is ``apply_v2`` intentionally — ``WriteRule.apply`` still
+        returns the legacy tuple for :class:`WritePipeline` compatibility.
+        This means ``WriteRule`` is **not** structurally compatible with the
+        Layer 3 :class:`~csp_lib.equipment.transport.WriteValidationRule`
+        Protocol (which requires ``apply(...) -> ValidationResult``). To use a
+        ``WriteRule`` inside ``WriteCommandManager(validation_rules=...)``,
+        wrap it in a thin adapter that forwards ``apply`` to ``apply_v2`` —
+        see ``tests/modbus_gateway/test_write_rule_compat.py`` for one.
+
+        Both :meth:`apply` (tuple) and :meth:`apply_v2` (ValidationResult)
+        will co-exist until v1.0; the legacy tuple interface will be removed
+        then (BREAKING — listed in BACKLOG Breaking Pipeline).
+
+        ``point_name`` is not checked against ``self.register_name`` because
+        callers typically associate a rule to a point via
+        ``Mapping[str, WriteRule]`` at the ``WriteCommandManager`` level.
+        """
+        # Lazy import keeps equipment.transport off the gateway import path
+        # (same pattern as csp_lib/modbus/_pymodbus)
+        from csp_lib.equipment.transport.validation import RangeRule
+
+        return RangeRule(self.min_value, self.max_value, self.clamp).apply(point_name, value)
+
+
+@dataclass(frozen=True, slots=True)
+class WriteRuleAdapter:
+    """Adapter：包裝 :class:`WriteRule` 成符合 ``WriteValidationRule`` Protocol。
+
+    ``WriteRule.apply`` 因 :class:`WritePipeline` 仍需 legacy tuple 介面而保留；
+    此 adapter 把 ``apply(...)`` 轉呼 ``rule.apply_v2(...)`` 回 ``ValidationResult``，
+    使 ``WriteRule`` 可直接塞進 ``WriteCommandManager(validation_rules=...)``：
+
+    ```python
+    from csp_lib.modbus_gateway.config import WriteRule, WriteRuleAdapter
+    from csp_lib.manager.command import WriteCommandManager
+
+    rules = {"sp": WriteRuleAdapter(WriteRule(register_name="sp", min_value=0, max_value=100))}
+    manager = WriteCommandManager(repo, validation_rules=rules)
+    ```
+
+    v1.0 統一 ``WriteRule.apply`` 回傳型別後，本 adapter 可移除（列於 Breaking Pipeline）。
+    """
+
+    rule: WriteRule
+
+    def apply(self, point_name: str, value: Any) -> ValidationResult:
+        return self.rule.apply_v2(point_name, value)
 
 
 __all__ = [
@@ -162,4 +222,5 @@ __all__ = [
     "RegisterType",
     "WatchdogConfig",
     "WriteRule",
+    "WriteRuleAdapter",
 ]

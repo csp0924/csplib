@@ -26,6 +26,7 @@ from .errors import (
     NotLeaderError,
     ProtectionError,
     StrategyExecutionError,
+    WriteValidationError,
 )
 from .health import HealthCheckable, HealthReport, HealthStatus
 from .lifecycle import AsyncLifecycleMixin
@@ -256,6 +257,7 @@ __all__ = [
     "ProtectionError",
     "DeviceRegistryError",
     "NotLeaderError",
+    "WriteValidationError",
     # Health
     "HealthStatus",
     "HealthReport",

@@ -8,17 +8,20 @@
 
 from __future__ import annotations
 
+import dataclasses
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import get_logger
 from csp_lib.core.errors import NotLeaderError
-from csp_lib.equipment.transport import WriteResult, WriteStatus
+from csp_lib.equipment.transport import ValidationResult, WriteResult, WriteStatus
 
 from .repository import CommandRepository
 from .schema import CommandRecord, CommandSource, CommandStatus, WriteCommand
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.protocol import DeviceProtocol
+    from csp_lib.equipment.transport import WriteValidationRule
     from csp_lib.manager.base import LeaderGate
 
 logger = get_logger(__name__)
@@ -61,6 +64,7 @@ class WriteCommandManager:
         repository: CommandRepository,
         *,
         leader_gate: LeaderGate | None = None,
+        validation_rules: (Sequence[WriteValidationRule] | Mapping[str, WriteValidationRule] | None) = None,
     ) -> None:
         """
         初始化寫入指令管理器
@@ -71,10 +75,30 @@ class WriteCommandManager:
                 會在動到 repository/device 之前 raise ``NotLeaderError``，
                 確保寫入指令只在 leader 節點執行。單節點部署可不注入或注入
                 ``AlwaysLeaderGate``。
+            validation_rules: 寫入驗證鏈（keyword-only，可選）。兩種型別：
+
+                - ``Sequence[WriteValidationRule]``：全域 rule，對每個 point 依序全跑
+                - ``Mapping[str, WriteValidationRule]``：per-point rule，僅對 key 指定
+                  的 ``point_name`` 套用；未列名的 point 直接 pass-through
+                - ``None`` (預設)：完全 pass-through，行為與舊版相同
+
+                鏈中任一條 rule reject 即中止（short-circuit），``execute()`` 回傳
+                ``WriteResult(status=WriteStatus.VALIDATION_FAILED)`` 且 repository
+                記錄 ``CommandStatus.VALIDATION_FAILED``。clamp 場景下 rule 回傳新
+                ``effective_value``，後續 rule 以該值繼續驗證，最終以 clamp 後值
+                寫入設備。
         """
         self._repository = repository
         self._devices: dict[str, DeviceProtocol] = {}
         self._leader_gate = leader_gate
+        # Split storage keeps Mapping lookup O(1) at execute time; Sequence runs
+        # in declared order for all points.
+        self._rules_global: tuple[WriteValidationRule, ...] = ()
+        self._rules_by_point: dict[str, WriteValidationRule] = {}
+        if isinstance(validation_rules, Mapping):
+            self._rules_by_point = dict(validation_rules)
+        elif validation_rules:
+            self._rules_global = tuple(validation_rules)
 
     # ================ 設備註冊 ================
 
@@ -183,10 +207,15 @@ class WriteCommandManager:
                 error_message=f"設備 {command.device_id} 未註冊",
             )
 
-        # 3. 更新狀態為執行中
+        # 3. 驗證鏈：通過回 effective command，首條 reject 回 WriteResult 直接 return
+        command, reject_result = await self._run_validation(command)
+        if reject_result is not None:
+            return reject_result
+
+        # 4. 更新狀態為執行中
         await self._repository.update_status(command.command_id, CommandStatus.EXECUTING)
 
-        # 4. 執行寫入
+        # 5. 執行寫入
         try:
             result = await device.write(
                 name=command.point_name,
@@ -232,6 +261,73 @@ class WriteCommandManager:
             logger.warning(f"寫入指令失敗: {command.command_id}, {result.error_message}")
 
         return result
+
+    async def _run_validation(
+        self,
+        command: WriteCommand,
+    ) -> tuple[WriteCommand, WriteResult | None]:
+        """跑驗證鏈。
+
+        Returns:
+            ``(possibly_updated_command, None)`` 通過（值可能被 clamp），或
+            ``(original_command, WriteResult)`` 拒絕（caller 直接 return 該 result）。
+            拒絕情境會先把 VALIDATION_FAILED 寫進 repository。
+        """
+        # Fast path：無 rule 直接放行
+        if not self._rules_global and not self._rules_by_point:
+            return command, None
+
+        original_value = command.value
+        effective_value = original_value
+
+        # Global rules 全跑；per-point rule 直接用 O(1) lookup
+        applicable: list[WriteValidationRule] = list(self._rules_global)
+        point_rule = self._rules_by_point.get(command.point_name)
+        if point_rule is not None:
+            applicable.append(point_rule)
+
+        for rule in applicable:
+            validation = rule.apply(command.point_name, effective_value)
+            # @runtime_checkable Protocol 只檢查 method 存在，不驗回傳型別。
+            # 誤傳 legacy tuple rule（如 modbus_gateway.WriteRule 未經 adapter 包裝）
+            # 會在此被擋住並給出可診斷訊息，避免 AttributeError 在 .accepted 爆。
+            if not isinstance(validation, ValidationResult):
+                raise TypeError(
+                    f"validation rule {type(rule).__name__}.apply() must return "
+                    f"ValidationResult, got {type(validation).__name__}. "
+                    f"Legacy tuple rules (e.g. modbus_gateway.WriteRule.apply) must be "
+                    f"wrapped in an adapter — see tests/modbus_gateway/test_write_rule_compat.py."
+                )
+            if not validation.accepted:
+                await self._repository.update_status(
+                    command.command_id,
+                    CommandStatus.VALIDATION_FAILED,
+                    result={
+                        "point_name": command.point_name,
+                        "value": original_value,
+                        "rejected_reason": validation.reason,
+                    },
+                    error_message=validation.reason,
+                )
+                logger.warning(
+                    f"寫入指令驗證失敗: {command.command_id} "
+                    f"point={command.point_name} value={original_value!r} reason={validation.reason}"
+                )
+                return command, WriteResult(
+                    status=WriteStatus.VALIDATION_FAILED,
+                    point_name=command.point_name,
+                    value=original_value,
+                    error_message=validation.reason,
+                )
+            effective_value = validation.effective_value
+
+        if effective_value != original_value:
+            logger.info(
+                f"寫入指令值已 clamp: {command.command_id} "
+                f"point={command.point_name} {original_value!r} → {effective_value!r}"
+            )
+            command = dataclasses.replace(command, value=effective_value)
+        return command, None
 
     async def execute_from_dict(
         self,

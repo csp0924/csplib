@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from csp_lib.core import get_logger
 
-from .schema import CommandRecord, CommandStatus
+from .schema import TERMINAL_STATUSES, CommandRecord, CommandStatus
 
 logger = get_logger(__name__)
 
@@ -69,7 +69,7 @@ class InMemoryCommandRepository:
 
         依據狀態自動設定時間戳：
         - EXECUTING → 設定 executed_at
-        - SUCCESS/FAILED/DEVICE_NOT_FOUND → 設定 completed_at
+        - SUCCESS/FAILED/DEVICE_NOT_FOUND/VALIDATION_FAILED → 設定 completed_at
 
         Args:
             command_id: 指令 ID
@@ -90,7 +90,7 @@ class InMemoryCommandRepository:
 
             if status == CommandStatus.EXECUTING:
                 record.executed_at = datetime.now(timezone.utc)
-            elif status in (CommandStatus.SUCCESS, CommandStatus.FAILED, CommandStatus.DEVICE_NOT_FOUND):
+            elif status in TERMINAL_STATUSES:
                 record.completed_at = datetime.now(timezone.utc)
 
             if result is not None:

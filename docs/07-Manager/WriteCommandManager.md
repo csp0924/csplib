@@ -2,10 +2,10 @@
 tags:
   - type/class
   - layer/manager
-  - status/stale
+  - status/stable
 source: csp_lib/manager/command/manager.py
-updated: 2026-04-04
-version: ">=0.5.0"
+updated: 2026-04-23
+version: ">=0.10.0"
 ---
 
 # WriteCommandManager
@@ -27,6 +27,8 @@ version: ">=0.5.0"
 | 參數 | 型別 | 說明 |
 |------|------|------|
 | `repository` | `CommandRepository` | 指令記錄儲存庫 |
+| `leader_gate` | `LeaderGate \| None` (kw-only) | Leader 閘門；非 leader 時 `execute()` raise `NotLeaderError`。單節點可省略或傳 `AlwaysLeaderGate` |
+| `validation_rules` | `Sequence[WriteValidationRule] \| Mapping[str, WriteValidationRule] \| None` (kw-only) | 寫入前驗證鏈，預設 `None` 退化為舊行為。Sequence = 全域、Mapping = per-point |
 
 ## API
 
@@ -49,12 +51,34 @@ version: ">=0.5.0"
 
 ## 執行流程
 
-1. 建立 `pending` 記錄至 DB
-2. 查找目標設備（不存在 → 更新為 `DEVICE_NOT_FOUND`）
-3. 更新狀態為 `EXECUTING`
-4. 執行設備寫入（`device.write(name, value, verify)`）
-5. 更新 DB 結果（`SUCCESS` 或 `FAILED`）
-6. 回傳 `WriteResult`
+1. Leader gate 檢查（若注入 `leader_gate` 且非 leader → raise `NotLeaderError`）
+2. 建立 `pending` 記錄至 DB
+3. 查找目標設備（不存在 → 更新為 `DEVICE_NOT_FOUND`）
+4. **驗證鏈**（若注入 `validation_rules`）：
+   - 依序呼叫每條 rule；首條 reject 即中止，repository 寫入 `VALIDATION_FAILED` 並回 `WriteResult(status=WriteStatus.VALIDATION_FAILED)`
+   - Clamp 情境下 `effective_value` 沿鏈累積，最終以 clamp 後值寫入設備
+5. 更新狀態為 `EXECUTING`
+6. 執行設備寫入（`device.write(name, value, verify)`）
+7. 更新 DB 結果（`SUCCESS` 或 `FAILED`）
+8. 回傳 `WriteResult`
+
+## 寫入驗證鏈（validation_rules）
+
+從 v0.10.0 開始，`WriteCommandManager` 可注入 `WriteValidationRule` 鏈（見 [[ValidationResult]] / [[RangeRule]]）於 `device.write()` 之前做宣告式驗證。
+
+### 兩種注入型別
+
+- `Sequence[WriteValidationRule]` — 全域 rule，對每個 point 依序全跑
+- `Mapping[str, WriteValidationRule]` — per-point rule，僅對 key 指定的 `point_name` 套用；未列名的 point 直接 pass-through
+- `None`（預設）— 完全 pass-through，行為與舊版相同
+
+### Clamp vs Reject
+
+- `accepted=True` 時使用 `effective_value` 繼續（可能是 clamp 後新值，後續 rule 以該值繼續驗證）
+- `accepted=False` 時中止寫入；repository 記錄 `CommandStatus.VALIDATION_FAILED` 附原值與 `reason`
+- NaN/Inf 一律 reject（對照 bug-lesson `numerical-safety-layered`）
+
+完整情境見 [`examples/18_write_validation.py`](../../examples/18_write_validation.py)。
 
 ## Quick Example
 

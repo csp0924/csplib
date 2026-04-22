@@ -313,7 +313,7 @@ from datetime import datetime, timezone
 from typing import Any
 import aiosqlite
 
-from csp_lib.manager.command.schema import CommandRecord, CommandStatus
+from csp_lib.manager.command.schema import TERMINAL_STATUSES, CommandRecord, CommandStatus
 
 
 class SQLiteCommandRepository:
@@ -385,7 +385,7 @@ class SQLiteCommandRepository:
         if status == CommandStatus.EXECUTING:
             fields.append("executed_at = ?")
             values.append(now)
-        elif status in (CommandStatus.SUCCESS, CommandStatus.FAILED, CommandStatus.DEVICE_NOT_FOUND):
+        elif status in TERMINAL_STATUSES:
             fields.append("completed_at = ?")
             values.append(now)
 
