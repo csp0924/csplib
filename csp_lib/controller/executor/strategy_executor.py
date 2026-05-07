@@ -11,11 +11,12 @@ import asyncio
 import dataclasses
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
-from csp_lib.controller.core import Command, ExecutionMode, Strategy, StrategyContext
+from csp_lib.controller.core import Command, ExecutionMode, Strategy, StrategyContext, is_no_change
 from csp_lib.core import get_logger
 from csp_lib.core._time_anchor import next_tick_delay
+from csp_lib.core.health import HealthReport, HealthStatus
 
 if TYPE_CHECKING:
     from .compute_offloader import ComputeOffloader
@@ -86,6 +87,77 @@ class StrategyExecutor:
     def is_running(self) -> bool:
         """是否正在執行"""
         return self._is_running
+
+    def health(self) -> HealthReport:
+        """
+        回傳執行器當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        Read-only sync 快照，不取 lock、不 await、不修改任何內部狀態。
+        詳細狀態判定與 details 欄位定義見 ``docs/05-Controller/StrategyExecutor.md``。
+        """
+        task_dead_exc: BaseException | None = None
+        if self._task is not None and self._task.done():
+            try:
+                task_exc = self._task.exception()
+            except (asyncio.CancelledError, asyncio.InvalidStateError):
+                task_exc = None
+            if task_exc is not None:
+                task_dead_exc = task_exc
+
+        strategy = self._strategy
+        current_strategy_name = type(strategy).__name__ if strategy is not None else None
+
+        execution_mode_name: str | None = None
+        interval_seconds: float | None = None
+        if strategy is not None:
+            exec_config = strategy.execution_config
+            execution_mode_name = exec_config.mode.name
+            if exec_config.mode in (ExecutionMode.PERIODIC, ExecutionMode.HYBRID):
+                interval_seconds = float(exec_config.interval_seconds)
+
+        last_command = self._last_command
+        last_command_detail: dict[str, Any] = {
+            "p_target": "NO_CHANGE" if is_no_change(last_command.p_target) else last_command.p_target,
+            "q_target": "NO_CHANGE" if is_no_change(last_command.q_target) else last_command.q_target,
+            "is_fallback": last_command.is_fallback,
+        }
+
+        details: dict[str, Any] = {
+            "is_running": self._is_running,
+            "current_strategy": current_strategy_name,
+            "execution_mode": execution_mode_name,
+            "interval_seconds": interval_seconds,
+            "last_command": last_command_detail,
+            "trigger_pending": self._trigger_event.is_set(),
+            "stop_pending": self._stop_event.is_set(),
+            "has_offloader": self._offloader is not None,
+        }
+
+        if task_dead_exc is not None:
+            status = HealthStatus.UNHEALTHY
+            message = f"executor task died: {task_dead_exc!r}"
+        elif strategy is None and not self._is_running:
+            status = HealthStatus.UNHEALTHY
+            message = "executor not running, no strategy set"
+        elif self._is_running and strategy is None:
+            status = HealthStatus.DEGRADED
+            message = "running but no strategy attached"
+        elif last_command.is_fallback:
+            status = HealthStatus.DEGRADED
+            message = "last execution returned fallback command"
+        elif self._is_running and strategy is not None:
+            status = HealthStatus.HEALTHY
+            message = f"running strategy {current_strategy_name} mode={execution_mode_name}"
+        else:
+            status = HealthStatus.DEGRADED
+            message = f"strategy {current_strategy_name} attached but executor not running"
+
+        return HealthReport(
+            status=status,
+            component="StrategyExecutor",
+            message=message,
+            details=details,
+        )
 
     def set_context_provider(self, provider: Callable[[], StrategyContext]) -> None:
         """設定 context provider（供叢集模式切換用）"""
