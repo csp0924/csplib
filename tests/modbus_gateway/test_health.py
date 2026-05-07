@@ -101,8 +101,11 @@ class TestHealthStatus:
 
 
 class TestWriteTracking:
-    async def test_last_write_ts_initially_none(self):
-        """從未接收到寫入 → last_write_ts = None。"""
+    def test_last_write_ts_initially_none(self):
+        """從未接收到寫入 → last_write_ts = None。
+
+        此 case 不需要 await，宣告為 sync def 避免測試意圖混淆。
+        """
         server = _make_server()
         report = server.health()
 

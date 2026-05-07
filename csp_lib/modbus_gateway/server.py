@@ -136,7 +136,7 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
 
         - ``UNHEALTHY``：server 未啟動（``_server is None``）
         - ``DEGRADED``：server running，但 watchdog 判定通訊逾時
-          （``CommunicationWatchdog.is_timed_out() is True``）
+          （``CommunicationWatchdog.is_timed_out is True``）
         - ``HEALTHY``：server running 且 watchdog 未逾時；或 watchdog 未啟用
 
         ``details`` 欄位包含：
@@ -144,12 +144,14 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
         - ``running``：server 是否啟動
         - ``host`` / ``port`` / ``unit_id``：綁定資訊
         - ``registers_count`` / ``validators_count`` / ``hooks_count`` / ``sync_sources_count``
-        - ``watchdog``：``{enabled, is_timed_out, elapsed_seconds, last_communication}``
+        - ``watchdog``：``{enabled, is_timed_out, elapsed_seconds, last_communication_monotonic}``
+          （``last_communication_monotonic`` 來自 ``time.monotonic()``，
+          與 ``last_write_ts`` 的 unix wall-clock 不同源，欄名已明示 monotonic 避免混淆）
         - ``last_write_ts``：最近一次 EMS/SCADA 寫入 unix timestamp（``None`` 代表尚未收到寫入）
         - ``total_writes``：啟動以來處理成功的寫入筆數（含本次 gateway 生命週期）
         """
         running = self._server is not None
-        watchdog_enabled = self._watchdog._config.enabled
+        watchdog_enabled = self._config.watchdog.enabled
         watchdog_timed_out = self._watchdog.is_timed_out if running and watchdog_enabled else False
 
         if not running:
@@ -168,7 +170,7 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
         }
         if running and watchdog_enabled:
             watchdog_detail["elapsed_seconds"] = self._watchdog.elapsed
-            watchdog_detail["last_communication"] = self._watchdog.last_communication
+            watchdog_detail["last_communication_monotonic"] = self._watchdog.last_communication
 
         return HealthReport(
             status=status,
@@ -180,7 +182,7 @@ class ModbusGatewayServer(AsyncLifecycleMixin):
                 "port": self._config.port,
                 "unit_id": self._config.unit_id,
                 "registers_count": len(self._register_defs),
-                "validators_count": len(self._pipeline._validators),
+                "validators_count": self._pipeline.validator_count,
                 "hooks_count": len(self._pipeline.hooks),
                 "sync_sources_count": len(self._sync_sources),
                 "watchdog": watchdog_detail,
