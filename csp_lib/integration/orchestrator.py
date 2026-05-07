@@ -21,10 +21,12 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from csp_lib.core import get_logger
+from csp_lib.core.health import HealthReport, HealthStatus
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.protocol import ActionDeviceProtocol, DeviceProtocol
@@ -173,6 +175,11 @@ class SystemCommandOrchestrator:
         self._registry = registry
         self._commands: dict[str, SystemCommand] = {}
 
+        self._last_executed_at: float | None = None
+        self._last_result_status: Literal["success", "aborted"] | None = None
+        self._total_executions: int = 0
+        self._total_aborts: int = 0
+
     def register(self, command: SystemCommand) -> None:
         """註冊具名系統指令"""
         self._commands[command.name] = command
@@ -210,6 +217,7 @@ class SystemCommandOrchestrator:
             if step_result.status in ("failed", "check_failed"):
                 error_msg = f"Step {i} ({step.description or step.action}) failed: {step_result.error_message}"
                 logger.error(f"System command '{name}' aborted: {error_msg}")
+                self._record_result("aborted")
                 return SystemCommandResult(
                     command_name=name,
                     status="aborted",
@@ -219,11 +227,19 @@ class SystemCommandOrchestrator:
                 )
 
         logger.info(f"System command '{name}' completed successfully.")
+        self._record_result("success")
         return SystemCommandResult(
             command_name=name,
             status="success",
             step_results=step_results,
         )
+
+    def _record_result(self, status: Literal["success", "aborted"]) -> None:
+        self._total_executions += 1
+        if status == "aborted":
+            self._total_aborts += 1
+        self._last_executed_at = time.monotonic()
+        self._last_result_status = status
 
     async def execute_from_dict(self, data: dict[str, Any]) -> SystemCommandResult:
         """
@@ -242,6 +258,46 @@ class SystemCommandOrchestrator:
     def registered_commands(self) -> list[str]:
         """已註冊的系統指令名稱列表"""
         return sorted(self._commands.keys())
+
+    def health(self) -> HealthReport:
+        """
+        回傳編排器當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        Read-only sync 快照；不取 lock、不 await、不修改任何內部狀態。
+
+        Status 判定：
+
+          - ``last_result_status == "aborted"`` → DEGRADED（最近一次執行被中止）
+          - 其他（含尚未執行過）→ HEALTHY（orchestrator 為 on-demand，
+            未呼叫不視為 unhealthy）
+        """
+        registered_names = sorted(self._commands.keys())
+
+        details: dict[str, Any] = {
+            "registered_commands_count": len(registered_names),
+            "registered_command_names": registered_names,
+            "total_executions": self._total_executions,
+            "total_aborts": self._total_aborts,
+            "last_executed_at": self._last_executed_at,
+            "last_result_status": self._last_result_status,
+        }
+
+        if self._last_result_status == "aborted":
+            health_status = HealthStatus.DEGRADED
+            message = f"registered={len(registered_names)} last=aborted"
+        elif self._last_result_status is None:
+            health_status = HealthStatus.HEALTHY
+            message = f"registered={len(registered_names)} no executions yet"
+        else:
+            health_status = HealthStatus.HEALTHY
+            message = f"registered={len(registered_names)} last={self._last_result_status}"
+
+        return HealthReport(
+            status=health_status,
+            component="SystemCommandOrchestrator",
+            message=message,
+            details=details,
+        )
 
     # ---- 內部方法 ----
 

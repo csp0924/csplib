@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from csp_lib.core import get_logger
 from csp_lib.core._time_anchor import next_tick_delay
 from csp_lib.core.errors import DeviceError
+from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.equipment.device.capability import HEARTBEAT
 
 from .heartbeat_generators import (
@@ -164,6 +165,60 @@ class HeartbeatService(ReconcilerMixin):
         for generator in self._mapping_generator_cache.values():
             generator.reset()
         self._targets_generator.reset()
+
+    def health(self) -> HealthReport:
+        """
+        回傳心跳服務當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        Read-only sync 快照；不取 lock、不 await、不修改任何內部狀態。
+
+        Status 判定優先序：
+
+          1. ``status.last_error is not None`` → UNHEALTHY
+          2. ``is_paused`` → DEGRADED（旁路設計上 idle，但 observer 應看見）
+          3. ``not is_running`` 且設定了 mappings / targets / use_capability
+             → DEGRADED（已配置但尚未 start）
+          4. 其他（含正常運行 / 完全空配置）→ HEALTHY
+        """
+        status_snapshot = self.status
+        is_running = self.is_running
+        is_paused = self.is_paused
+        has_config = bool(self._mappings) or bool(self._targets) or self._use_capability
+
+        details: dict[str, Any] = {
+            "is_running": is_running,
+            "is_paused": is_paused,
+            "run_count": status_snapshot.run_count,
+            "last_run_at": status_snapshot.last_run_at,
+            "last_error": status_snapshot.last_error,
+            "mappings_count": len(self._mappings),
+            "targets_count": len(self._targets),
+            "use_capability": self._use_capability,
+            "interval_seconds": self._interval,
+        }
+
+        if status_snapshot.last_error is not None:
+            health_status = HealthStatus.UNHEALTHY
+            message = f"reconcile error: {status_snapshot.last_error}"
+        elif is_paused:
+            health_status = HealthStatus.DEGRADED
+            message = "paused"
+        elif not is_running and has_config:
+            health_status = HealthStatus.DEGRADED
+            message = "configured but not started"
+        elif not is_running:
+            health_status = HealthStatus.HEALTHY
+            message = "idle (no mappings)"
+        else:
+            health_status = HealthStatus.HEALTHY
+            message = f"running, run_count={status_snapshot.run_count}"
+
+        return HealthReport(
+            status=health_status,
+            component="HeartbeatService",
+            message=message,
+            details=details,
+        )
 
     # ---- Reconciler Protocol ----
     #

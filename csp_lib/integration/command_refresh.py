@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core._time_anchor import next_tick_delay
+from csp_lib.core.health import HealthReport, HealthStatus
 
 from .reconciler import ReconcilerMixin
 
@@ -102,6 +103,48 @@ class CommandRefreshService(ReconcilerMixin, AsyncLifecycleMixin):
     def is_running(self) -> bool:
         """reconcile task 是否正在執行"""
         return self._task is not None and not self._task.done()
+
+    def health(self) -> HealthReport:
+        """
+        回傳 reconciler 服務當前健康狀態（實作 :class:`csp_lib.core.HealthCheckable`）。
+
+        Read-only sync 快照；不取 lock、不 await、不修改任何內部狀態。
+
+        Status 判定優先序：
+
+          1. ``status.last_error is not None`` → UNHEALTHY
+          2. ``not is_running`` → DEGRADED
+          3. 其他 → HEALTHY（``run_count == 0`` 表示首個 tick 尚未到，仍視為健康）
+        """
+        status_snapshot = self.status
+        is_running = self.is_running
+        device_filter_size: int | None = None if self._device_filter is None else len(self._device_filter)
+
+        details: dict[str, Any] = {
+            "is_running": is_running,
+            "run_count": status_snapshot.run_count,
+            "last_run_at": status_snapshot.last_run_at,
+            "last_error": status_snapshot.last_error,
+            "interval_seconds": self._interval,
+            "device_filter_size": device_filter_size,
+        }
+
+        if status_snapshot.last_error is not None:
+            health_status = HealthStatus.UNHEALTHY
+            message = f"reconcile error: {status_snapshot.last_error}"
+        elif not is_running:
+            health_status = HealthStatus.DEGRADED
+            message = "not running"
+        else:
+            health_status = HealthStatus.HEALTHY
+            message = f"running, run_count={status_snapshot.run_count}"
+
+        return HealthReport(
+            status=health_status,
+            component="CommandRefreshService",
+            message=message,
+            details=details,
+        )
 
     # ---- Reconciler Protocol ----
     #
