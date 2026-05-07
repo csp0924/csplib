@@ -62,6 +62,11 @@ class WritePipeline:
         """All registered hooks."""
         return list(self._hooks)
 
+    @property
+    def validator_count(self) -> int:
+        """Number of registered validators（供 health() 等觀測用，避免外部存取私有 list）。"""
+        return len(self._validators)
+
     def process_write(self, address: int, values: list[int]) -> list[tuple[str, Any, Any]]:
         """
         Process a raw write from pymodbus (called from server thread).
