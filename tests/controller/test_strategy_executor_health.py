@@ -434,6 +434,38 @@ class TestStatusPriority:
         assert report.status is HealthStatus.UNHEALTHY
         assert "ValueError" in report.message
 
+    async def test_run_assigns_task_so_health_can_detect_dead_task(self):
+        """run() 啟動後 self._task 應指向 current task；異常終止時 health() 讀得到 task.exception()。
+
+        防 dead-code regression：在補上 `self._task = asyncio.current_task()` 前，
+        task-died 分支永遠不可達（_task 始終為 None）。本測試固定此契約。
+        """
+        executor = _make_executor()
+
+        class _BoomConfigStrategy(Strategy):
+            """execution_config 直接 raise，讓 run() 主迴圈未 catch 而傳播例外。"""
+
+            @property
+            def execution_config(self) -> ExecutionConfig:
+                raise RuntimeError("config explode")
+
+            def execute(self, context: StrategyContext) -> Command:
+                return Command()
+
+        await executor.set_strategy(_BoomConfigStrategy())
+
+        run_task = asyncio.ensure_future(executor.run())
+        with pytest.raises(RuntimeError, match="config explode"):
+            await run_task
+
+        assert executor._task is run_task, "run() 必須 assign self._task"
+        assert run_task.done() and run_task.exception() is not None
+
+        report = executor.health()
+        assert report.status is HealthStatus.UNHEALTHY
+        assert "task died" in report.message
+        assert "config explode" in report.message
+
     async def test_fallback_overrides_healthy(self):
         """last_command.is_fallback=True 應將 HEALTHY 降級為 DEGRADED。"""
         executor = _make_executor()

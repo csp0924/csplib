@@ -110,10 +110,15 @@ class StrategyExecutor:
         execution_mode_name: str | None = None
         interval_seconds: float | None = None
         if strategy is not None:
-            exec_config = strategy.execution_config
-            execution_mode_name = exec_config.mode.name
-            if exec_config.mode in (ExecutionMode.PERIODIC, ExecutionMode.HYBRID):
-                interval_seconds = float(exec_config.interval_seconds)
+            # health() 為穩定性原語，必須不可 raise；策略損壞（含 task-died 場景下殘留的
+            # broken strategy）時，仍要回得了 HealthReport，details 退化為 None
+            try:
+                exec_config = strategy.execution_config
+                execution_mode_name = exec_config.mode.name
+                if exec_config.mode in (ExecutionMode.PERIODIC, ExecutionMode.HYBRID):
+                    interval_seconds = float(exec_config.interval_seconds)
+            except Exception:  # noqa: BLE001
+                pass
 
         last_command = self._last_command
         last_command_detail: dict[str, Any] = {
@@ -221,6 +226,9 @@ class StrategyExecutor:
 
         self._stop_event.clear()
         self._is_running = True
+        # 暴露 run task 讓 health() 在異常退出後可讀到 task.done() + exception()。
+        # 不在 finally 清空：清空會讓 task-died 分支永遠不可達；下次 run() 會自動覆蓋
+        self._task = asyncio.current_task()
         logger.info("策略執行器已啟動")
 
         anchor = time.monotonic()
