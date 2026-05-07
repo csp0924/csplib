@@ -200,3 +200,83 @@ class TestNoRedis:
                 await asyncio.sleep(0.25)
                 assert monitor.is_running
                 assert monitor.last_metrics is not None
+
+
+class TestDescribe:
+    """v0.10.x feat(monitor): describe() 對齊 ManagerDescribable Protocol"""
+
+    def test_describe_when_not_started(self, config):
+        """尚未 start → running=False，所有欄位合法可讀。"""
+        from csp_lib.manager.base import ManagerDescribable
+        from csp_lib.monitor.manager import MonitorStatus
+
+        monitor = SystemMonitor(config=config)
+        status = monitor.describe()
+
+        assert isinstance(status, MonitorStatus)
+        assert status.running is False
+        assert status.registered_modules == ()
+        assert status.registered_checks == ()
+        assert status.publisher_enabled is False
+        assert status.dispatcher_enabled is False
+        assert status.last_tick_ts is None
+        assert status.last_overall_health is None
+        # 結構性滿足 ManagerDescribable Protocol
+        assert isinstance(monitor, ManagerDescribable)
+
+    def test_describe_reflects_registered_modules_and_checks(self, config):
+        """register_module / register_check 應反映在 describe() 結果中（排序）。"""
+        monitor = SystemMonitor(config=config)
+
+        mod_a = MagicMock(spec=["health"])
+        mod_a.health.return_value = HealthReport(status=HealthStatus.HEALTHY, component="a")
+        mod_b = MagicMock(spec=["health"])
+        mod_b.health.return_value = HealthReport(status=HealthStatus.HEALTHY, component="b")
+        monitor.register_module("b_module", mod_b)
+        monitor.register_module("a_module", mod_a)
+
+        def check1() -> HealthReport:
+            return HealthReport(status=HealthStatus.HEALTHY, component="c1")
+
+        monitor.register_check("z_check", check1)
+        monitor.register_check("m_check", check1)
+
+        status = monitor.describe()
+        assert status.registered_modules == ("a_module", "b_module")
+        assert status.registered_checks == ("m_check", "z_check")
+
+    def test_describe_reflects_publisher_and_dispatcher(self, config, mock_redis, mock_dispatcher):
+        """publisher_enabled / dispatcher_enabled 欄位反映 ctor 注入狀態。"""
+        monitor = SystemMonitor(redis_client=mock_redis, dispatcher=mock_dispatcher, config=config)
+        status = monitor.describe()
+        assert status.publisher_enabled is True
+        assert status.dispatcher_enabled is True
+
+    @pytest.mark.asyncio
+    async def test_describe_last_tick_ts_updates_after_tick(self, mock_redis, config):
+        """tick 跑過後 last_tick_ts 有值，且隨後續 tick 單調遞增。"""
+        with patch.dict("sys.modules", {"psutil": _mock_psutil()}):
+            async with SystemMonitor(redis_client=mock_redis, config=config) as monitor:
+                # poll-until-condition 等第一次 tick 完成（避免 sleep-then-assert race）
+                deadline = asyncio.get_event_loop().time() + 2.0
+                while asyncio.get_event_loop().time() < deadline:
+                    if monitor.describe().last_tick_ts is not None:
+                        break
+                    await asyncio.sleep(0.02)
+
+                status1 = monitor.describe()
+                assert status1.running is True
+                assert status1.last_tick_ts is not None
+                assert status1.last_tick_ts > 0
+
+                first_ts = status1.last_tick_ts
+                # 等下一次 tick（interval=0.1），last_tick_ts 應該往前跳
+                deadline = asyncio.get_event_loop().time() + 2.0
+                while asyncio.get_event_loop().time() < deadline:
+                    if monitor.describe().last_tick_ts != first_ts:
+                        break
+                    await asyncio.sleep(0.02)
+
+                status2 = monitor.describe()
+                assert status2.last_tick_ts is not None
+                assert status2.last_tick_ts >= first_ts
