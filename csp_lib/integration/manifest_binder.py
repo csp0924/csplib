@@ -40,8 +40,8 @@ logger = get_logger(__name__)
 class BoundDeviceSpec:
     """解析後的 device spec：kind 已對映到 class，但尚未 instantiate。
 
-    ``cls`` 型別為 ``type[DeviceProtocol]``，相容 AsyncModbusDevice / AsyncCANDevice /
-    DerivedDevice 等結構性滿足 DeviceProtocol 的設備類別。
+    ``cls`` 型別為 ``type[DeviceProtocol]``，相容 AsyncModbusDevice / AsyncCANDevice
+    或其他結構性滿足 DeviceProtocol 的自訂設備類別。
     """
 
     cls: type["DeviceProtocol"]

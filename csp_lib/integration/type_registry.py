@@ -3,7 +3,7 @@
 # Decorator-driven 類型註冊表。K8s Operator Pattern 的 "Kind" 查找層。
 #
 # 兩個獨立 singleton：
-#   - device_type_registry:   kind → DeviceProtocol 實作類（含 AsyncModbusDevice / AsyncCANDevice / DerivedDevice 等）
+#   - device_type_registry:   kind → DeviceProtocol 實作類（含 AsyncModbusDevice / AsyncCANDevice 或自訂類別）
 #   - strategy_type_registry: kind → Strategy 實作類
 #
 # 與 entry_points 的互補關係：
@@ -108,8 +108,8 @@ def register_device_type(
 ) -> Callable[[type["DeviceProtocol"]], type["DeviceProtocol"]]:
     """Decorator：把 DeviceProtocol 實作類註冊到 device_type_registry。
 
-    結構性相容：``AsyncModbusDevice`` / ``AsyncCANDevice`` / ``DerivedDevice`` 等
-    滿足 DeviceProtocol 的類別皆可註冊，無需為 Modbus 以外的設備另外開 registry。
+    結構性相容：``AsyncModbusDevice`` / ``AsyncCANDevice`` 或任何結構性滿足
+    ``DeviceProtocol`` 的自訂類別皆可註冊，無需為 Modbus 以外的設備另外開 registry。
 
     Usage::
 
@@ -118,7 +118,8 @@ def register_device_type(
             ...
 
         @register_device_type("VirtualAggregator")
-        class VirtualAggregator(DerivedDevice):
+        class VirtualAggregator:
+            \"\"\"自訂、結構性滿足 DeviceProtocol 的設備類別。\"\"\"
             ...
 
     Args:
