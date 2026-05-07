@@ -213,15 +213,20 @@ class TestEventBridgeDeviceProtocolAcceptance:
 
     @pytest.mark.asyncio
     async def test_attach_accepts_minimal_device_protocol_impl(self):
-        """手刻一個純 DeviceProtocol 實作（非 AsyncModbusDevice），attach 應可接受並正常觸發聚合。
+        """attach() 只透過 ``device_id`` + ``on()`` 互動；duck-typed 最小實作也應可運作。
 
-        重點：attach 只透過 ``device_id`` 與 ``on()`` 互動；鬆綁後非 AsyncModbusDevice
-        的設備抽象（如 DerivedDevice / RemoteSnapshotDevice）可直接注入。
+        重點：本測試不嘗試模擬完整 ``DeviceProtocol`` 表面（那是 isinstance/mypy 的責任），
+        而是驗證 attach 在 runtime 上對「device_id + on()」這個最小 subset 的依賴。
+        靜態型別驗證另由下方 `_typecheck_attach_signature` 透過 mypy 檢核。
         """
         from csp_lib.equipment.device.events import AsyncHandler
 
-        class MinimalProtocolDevice:
-            """只實作 attach 需要的兩個成員：device_id + on()。"""
+        class MinimalAttachSubsetDevice:
+            """duck-typed：只實作 EventBridge.attach 在 runtime 真正呼叫的兩個成員。
+
+            注意：這 *不是* 完整 DeviceProtocol — isinstance(d, DeviceProtocol) 會 False。
+            目的只在驗 attach 的 runtime 行為對 protocol 表面的依賴範圍。
+            """
 
             def __init__(self, device_id: str) -> None:
                 self.device_id = device_id
@@ -239,8 +244,8 @@ class TestEventBridgeDeviceProtocolAcceptance:
                 for h in self._handlers.get(event, []):
                     await h(payload)
 
-        d1 = MinimalProtocolDevice("pcs1")
-        d2 = MinimalProtocolDevice("pcs2")
+        d1 = MinimalAttachSubsetDevice("pcs1")
+        d2 = MinimalAttachSubsetDevice("pcs2")
 
         handler = AsyncMock()
         cond = AggregateCondition(
@@ -251,7 +256,6 @@ class TestEventBridgeDeviceProtocolAcceptance:
         )
         bridge = EventBridge([cond])
 
-        # 型別層：attach 應接受 DeviceProtocol sequence（mypy / IDE 不會報錯）
         bridge.attach([d1, d2])
         bridge.on("system_ready", handler)
 

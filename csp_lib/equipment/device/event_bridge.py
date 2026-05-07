@@ -63,8 +63,8 @@ class EventBridge:
     def attach(self, devices: Sequence[DeviceProtocol]) -> None:
         """訂閱所有設備的事件
 
-        接受任何滿足 ``DeviceProtocol`` 的設備（含 ``AsyncModbusDevice``、
-        ``AsyncCANDevice``、``DerivedDevice`` 等），實現跨協定事件聚合。
+        接受任何結構性滿足 ``DeviceProtocol`` 的設備（含 ``AsyncModbusDevice``、
+        ``AsyncCANDevice`` 或自訂實作），實現跨協定事件聚合。
         """
         for device in devices:
             for cond in self._conditions:
