@@ -75,6 +75,8 @@ from .schema import (
     DataFeedMapping,
     HeartbeatMapping,
     HeartbeatMode,
+    SubsystemSnapshot,
+    SystemControllerStatus,
 )
 from .setpoint_drift_reconciler import DriftTolerance, SetpointDriftReconciler
 from .system_controller import (
@@ -112,6 +114,8 @@ __all__ = [
     "GridControlLoopConfig",
     "SystemController",
     "SystemControllerConfig",
+    "SystemControllerStatus",
+    "SubsystemSnapshot",
     "GroupDefinition",
     "GroupControllerManager",
     "SystemCommandOrchestrator",
