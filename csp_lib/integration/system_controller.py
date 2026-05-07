@@ -43,9 +43,10 @@ from csp_lib.controller.system.event_override import AlarmStopOverride, EventDri
 from csp_lib.controller.system.mode import SwitchSource
 from csp_lib.core import AsyncLifecycleMixin, get_logger
 from csp_lib.core.errors import ConfigurationError
-from csp_lib.core.health import HealthReport, HealthStatus
+from csp_lib.core.health import HealthCheckable, HealthReport, HealthStatus
 from csp_lib.core.runtime_params import RuntimeParameters
 from csp_lib.equipment.device import EVENT_READ_COMPLETE
+from csp_lib.manager.base import ManagerDescribable
 
 from .command_refresh import CommandRefreshService
 from .command_router import CommandRouter
@@ -65,6 +66,8 @@ from .schema import (
     DataFeedMapping,
     HeartbeatMapping,
     HeartbeatMode,
+    SubsystemSnapshot,
+    SystemControllerStatus,
 )
 
 if TYPE_CHECKING:
@@ -821,6 +824,19 @@ class SystemController(AsyncLifecycleMixin):
             )
             self.register_event_override(AlarmStopOverride(name=_AUTO_STOP_MODE, alarm_key=config.system_alarm_key))
 
+        # describe() 不接管 subsystem lifecycle，僅保存 reference 供觀測。
+        self._subsystems: dict[str, object] = {}
+        for sub_name, candidate in (
+            ("executor", self._executor),
+            ("heartbeat", self._heartbeat),
+            ("command_refresh", self._command_refresh),
+            ("orchestrator", self._orchestrator),
+        ):
+            if candidate is None:
+                continue
+            if isinstance(candidate, (ManagerDescribable, HealthCheckable)):
+                self.attach_subsystem(sub_name, candidate)
+
     # ---- 模式管理（委派 ModeManager）----
 
     def register_mode(self, name: str, strategy: Strategy, priority: int, description: str = "") -> None:
@@ -1346,6 +1362,100 @@ class SystemController(AsyncLifecycleMixin):
             details={"mode": self.effective_mode_name, "alarmed": list(self._alarmed_devices)},
             children=children,
         )
+
+    # ---- Subsystem 觀測（describe 聚合）----
+
+    def attach_subsystem(self, name: str, component: object) -> None:
+        """註冊一個子系統供 :meth:`describe` 觀測。
+
+        SystemController 不接管子系統的生命週期 — 僅保存 reference 並在
+        ``describe()`` 被呼叫時透過 ``ManagerDescribable.describe()`` 或
+        ``HealthCheckable.health()`` 取狀態。caller 仍負責 ``start()/stop()``。
+
+        Args:
+            name: 唯一識別名稱（在 describe() 回傳的 ``subsystems`` mapping
+                作為 key 使用）。
+            component: 任意物件；若實作 ``ManagerDescribable`` 或
+                ``HealthCheckable`` 將被對應提取狀態，否則 describe() 中
+                ``kind`` 為 ``"unknown"``。
+
+        Raises:
+            TypeError: ``name`` 非 str 或為空字串。
+            ValueError: ``name`` 已存在（顯式拒絕，避免 silent override）。
+        """
+        if not isinstance(name, str) or not name:
+            raise TypeError("attach_subsystem: 'name' 必須為非空字串")
+        if name in self._subsystems:
+            raise ValueError(f"attach_subsystem: subsystem '{name}' 已註冊")
+        self._subsystems[name] = component
+        logger.debug(f"Subsystem attached: {name} ({type(component).__name__})")
+
+    def detach_subsystem(self, name: str) -> bool:
+        """移除已註冊的子系統。
+
+        Args:
+            name: 註冊時的名稱。
+
+        Returns:
+            True 表示真的移除；False 表示原本就沒這個 name（idempotent）。
+        """
+        if name in self._subsystems:
+            del self._subsystems[name]
+            logger.debug(f"Subsystem detached: {name}")
+            return True
+        return False
+
+    def describe(self) -> SystemControllerStatus:
+        """取得 SystemController 與所有 attached subsystem 的快照。
+
+        同步、無 I/O、無 await — 適合 GUI dashboard / Modbus Gateway register
+        同步等高頻觀測場景。複雜度 O(n_subsystems + n_devices)。
+
+        每個 subsystem 個別 isolation：任一 subsystem 取狀態時拋例外只會讓
+        該 subsystem 的 ``SubsystemSnapshot.kind == "error"``，不影響其他
+        subsystem 與整體狀態。``BaseException``（``CancelledError`` /
+        ``KeyboardInterrupt`` / ``SystemExit``）不會被攔截。
+
+        Returns:
+            ``SystemControllerStatus`` frozen dataclass，``subsystems`` 為
+            ``MappingProxyType`` 包裝的不可變視圖。
+        """
+        snapshots: dict[str, SubsystemSnapshot] = {}
+        for sub_name, component in self._subsystems.items():
+            snapshots[sub_name] = self._snapshot_subsystem(sub_name, component)
+
+        mode = self._mode_manager.effective_mode
+        effective_mode = mode.name if mode is not None else None
+
+        return SystemControllerStatus(
+            component="system_controller",
+            effective_mode=effective_mode,
+            auto_stop_active=self._auto_stop_active,
+            auto_stop_on_alarm=self._config.auto_stop_on_alarm,
+            alarmed_device_ids=tuple(sorted(self._alarmed_devices)),
+            device_health=self.health(),
+            subsystems=MappingProxyType(snapshots),
+        )
+
+    @staticmethod
+    def _snapshot_subsystem(name: str, component: object) -> SubsystemSnapshot:
+        """對單一 subsystem 取快照，個別 isolation 例外。
+
+        isinstance 順序：``ManagerDescribable`` 先試 → ``HealthCheckable`` 後試
+        → 都不是則 ``kind="unknown"``。``Exception``（不含 ``BaseException``）
+        被攔截轉為 ``kind="error"``。
+        """
+        try:
+            if isinstance(component, ManagerDescribable):
+                payload = component.describe()
+                return SubsystemSnapshot(name=name, kind="describe", payload=payload)
+            if isinstance(component, HealthCheckable):
+                payload = component.health()
+                return SubsystemSnapshot(name=name, kind="health", payload=payload)
+            return SubsystemSnapshot(name=name, kind="unknown", payload=None)
+        except Exception as exc:  # noqa: BLE001 — 個別 subsystem fail-soft
+            logger.opt(exception=True).warning(f"Subsystem '{name}' snapshot raised; reporting error")
+            return SubsystemSnapshot(name=name, kind="error", payload=None, error=str(exc))
 
     @property
     def context_builder(self) -> ContextBuilder:

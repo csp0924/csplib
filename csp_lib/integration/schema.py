@@ -14,9 +14,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Literal
+
+from csp_lib.core.health import HealthReport
 
 if TYPE_CHECKING:
     from csp_lib.equipment.device.capability import Capability
@@ -374,3 +377,61 @@ class AggregationResult:
         if self.expected_count <= 0:
             return 1.0
         return self.device_count / self.expected_count
+
+
+@dataclass(frozen=True, slots=True)
+class SubsystemSnapshot:
+    """單一 attached subsystem 的快照（unified shape）。
+
+    SystemController.describe() 對每個 attached subsystem 取狀態時，依據其
+    實作的 Protocol 決定 ``kind`` 與 ``payload`` 內容。
+
+    Attributes:
+        name: 子系統註冊時的名稱（attach_subsystem 傳入的 name）。
+        kind: 快照來源類型。
+            - ``"describe"``: 透過 ``ManagerDescribable.describe()`` 取得；
+              ``payload`` 為 describe() 回傳的原物件（通常為 frozen dataclass
+              或 immutable Mapping）。
+            - ``"health"``: 透過 ``HealthCheckable.health()`` 取得；
+              ``payload`` 為 ``HealthReport``。
+            - ``"unknown"``: 該元件既非 ``ManagerDescribable`` 亦非
+              ``HealthCheckable``；``payload`` 為 None。
+            - ``"error"``: 取狀態時拋例外；``payload`` 為 None，
+              ``error`` 為例外的字串表示。
+        payload: 依 ``kind`` 決定型別。caller 不得改動。
+        error: 僅當 ``kind == "error"`` 時為例外字串；其他情況為 None。
+    """
+
+    name: str
+    kind: Literal["describe", "health", "unknown", "error"]
+    payload: object | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SystemControllerStatus:
+    """SystemController.describe() 聚合快照。
+
+    ``describe()`` 為同步、無 I/O、無 await 的 O(n_subsystems + n_devices)
+    操作，適合高頻觀測（例如 GUI dashboard、Modbus Gateway register 同步）。
+
+    Attributes:
+        component: 固定為 ``"system_controller"``，與 health() 對應。
+        effective_mode: 當前生效模式名稱；無模式或 mode_manager 無 effective
+            mode 時為 None。
+        auto_stop_active: 自動停機 override 是否生效。
+        auto_stop_on_alarm: 配置是否啟用「告警時自動推入 stop override」。
+        alarmed_device_ids: 當前處於告警狀態的設備 ID（已排序，確定性）。
+        device_health: 全系統設備健康聚合（即 ``SystemController.health()``
+            的回傳）。
+        subsystems: attached subsystem 名稱 → ``SubsystemSnapshot`` 的不可變
+            映射（``MappingProxyType`` 包裝）。caller 不得改動。
+    """
+
+    component: str
+    effective_mode: str | None
+    auto_stop_active: bool
+    auto_stop_on_alarm: bool
+    alarmed_device_ids: tuple[str, ...]
+    device_health: HealthReport
+    subsystems: Mapping[str, SubsystemSnapshot]
