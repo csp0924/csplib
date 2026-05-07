@@ -1384,9 +1384,9 @@ class SystemController(AsyncLifecycleMixin):
             ValueError: ``name`` 已存在（顯式拒絕，避免 silent override）。
         """
         if not isinstance(name, str) or not name:
-            raise TypeError("attach_subsystem: 'name' 必須為非空字串")
+            raise TypeError(f"attach_subsystem: 'name' must be a non-empty str, got {name!r}")
         if name in self._subsystems:
-            raise ValueError(f"attach_subsystem: subsystem '{name}' 已註冊")
+            raise ValueError(f"attach_subsystem: subsystem '{name}' already registered")
         self._subsystems[name] = component
         logger.debug(f"Subsystem attached: {name} ({type(component).__name__})")
 
@@ -1420,8 +1420,14 @@ class SystemController(AsyncLifecycleMixin):
             ``SystemControllerStatus`` frozen dataclass，``subsystems`` 為
             ``MappingProxyType`` 包裝的不可變視圖。
         """
+        # 先做 shallow copy 再迭代：跨 thread 觀測時避免 dict/set 在迭代中被改
+        # （csp_lib 主要 async 單 thread，但 GUI / Modbus Gateway register
+        # sync 等場景可能跨 thread 呼叫 describe()）。
+        subsystems_snapshot = list(self._subsystems.items())
+        alarmed_snapshot = list(self._alarmed_devices)
+
         snapshots: dict[str, SubsystemSnapshot] = {}
-        for sub_name, component in self._subsystems.items():
+        for sub_name, component in subsystems_snapshot:
             snapshots[sub_name] = self._snapshot_subsystem(sub_name, component)
 
         mode = self._mode_manager.effective_mode
@@ -1432,7 +1438,7 @@ class SystemController(AsyncLifecycleMixin):
             effective_mode=effective_mode,
             auto_stop_active=self._auto_stop_active,
             auto_stop_on_alarm=self._config.auto_stop_on_alarm,
-            alarmed_device_ids=tuple(sorted(self._alarmed_devices)),
+            alarmed_device_ids=tuple(sorted(alarmed_snapshot)),
             device_health=self.health(),
             subsystems=MappingProxyType(snapshots),
         )
@@ -1455,7 +1461,9 @@ class SystemController(AsyncLifecycleMixin):
             return SubsystemSnapshot(name=name, kind="unknown", payload=None)
         except Exception as exc:  # noqa: BLE001 — 個別 subsystem fail-soft
             logger.opt(exception=True).warning(f"Subsystem '{name}' snapshot raised; reporting error")
-            return SubsystemSnapshot(name=name, kind="error", payload=None, error=str(exc))
+            # 帶上型別名，避免某些例外 str() 為空導致 caller 無法辨識失敗類型
+            error_repr = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            return SubsystemSnapshot(name=name, kind="error", payload=None, error=error_repr)
 
     @property
     def context_builder(self) -> ContextBuilder:
