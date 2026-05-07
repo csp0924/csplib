@@ -4,8 +4,8 @@ tags:
   - layer/integration
   - status/complete
 created: 2026-04-17
-updated: 2026-04-20
-version: ">=0.9.0"
+updated: 2026-05-08
+version: ">=0.9.2"
 ---
 
 # Command Refresh（命令刷新服務）
@@ -157,11 +157,12 @@ class CommandRefreshService(AsyncLifecycleMixin):
 | `device_filter` | `frozenset[str] \| None` | 只 reconcile 這些 device_id；`None` 代表全部 |
 | `name` | `str` | Reconciler 識別名（v0.9.0，預設 `"command_refresh"`）|
 
-| 屬性 | 型別 | 說明 |
-|------|------|------|
+| 屬性 / 方法 | 型別 | 說明 |
+|------------|------|------|
 | `is_running` | `bool` | reconcile task 是否正在執行 |
 | `name` | `str` | Reconciler 識別名（v0.9.0，實作 Reconciler Protocol）|
 | `status` | `ReconcilerStatus` | 最近一次執行狀態（v0.9.0，實作 Reconciler Protocol）|
+| `health()` | `HealthReport` | v0.9.2+：實作 `HealthCheckable`；`UNHEALTHY` 若 `status.last_error != None`，`DEGRADED` 若 `not is_running`，否則 `HEALTHY`。`details` 涵蓋 `is_running` / `run_count` / `last_run_at` / `last_error` / `interval_seconds` / `device_filter_size` |
 
 ### CommandRefreshConfig
 

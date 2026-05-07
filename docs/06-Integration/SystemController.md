@@ -5,8 +5,8 @@ tags:
   - status/complete
 source: csp_lib/integration/system_controller.py
 created: 2026-02-17
-updated: 2026-04-17
-version: ">=0.8.1"
+updated: 2026-05-08
+version: ">=0.9.2"
 ---
 
 # SystemController
@@ -240,6 +240,101 @@ async def deactivate_schedule_mode(self) -> None
 | `auto_stop_active` | 自動停機是否啟動（向後相容，由 EventDrivenOverride 機制維護） |
 | `event_overrides` | 已註冊的事件驅動 override 列表 |
 | `is_running` | 是否正在執行 |
+
+### 觀測介面：describe() 與 health()
+
+> [!info] 需要 v0.9.2+（feat/integration-subsystem-health）
+> `HeartbeatService`、`CommandRefreshService`、`SystemCommandOrchestrator` 三個內建服務在此版本補實 `HealthCheckable.health()`，auto-discovery 從 1/4 提升至 4/4。
+
+#### describe() → SystemControllerStatus
+
+```python
+def describe(self) -> SystemControllerStatus
+```
+
+回傳 `SystemControllerStatus` frozen dataclass，聚合當前所有子系統的觀測快照。Sync 呼叫；可安全地從任何 thread 呼叫（內部持有 `dict` 的 copy-on-read 快照，防禦跨 thread 競態）。
+
+**自動探索邏輯**：`SystemController` 在 `_on_start()` 時自動對四個內建服務做 auto-discovery：
+
+| 子系統名稱 | 對應服務 | 探索方式 |
+|-----------|---------|---------|
+| `"executor"` | `StrategyExecutor` | `ManagerDescribable.describe()` |
+| `"heartbeat"` | `HeartbeatService` | `HealthCheckable.health()` |
+| `"command_refresh"` | `CommandRefreshService` | `HealthCheckable.health()` |
+| `"orchestrator"` | `SystemCommandOrchestrator` | `HealthCheckable.health()` |
+
+各服務僅在已配置時才加入（例如未設 `command_refresh` config 則 `"command_refresh"` 不在 subsystems 中）。
+
+#### SystemControllerStatus
+
+```python
+@dataclass(frozen=True, slots=True)
+class SystemControllerStatus:
+    is_running: bool
+    effective_mode: str | None
+    protection_status: ProtectionResult | None
+    subsystems: MappingProxyType[str, SubsystemSnapshot]
+    device_health: HealthReport
+    snapshot_at: float          # monotonic timestamp
+```
+
+#### SubsystemSnapshot
+
+```python
+@dataclass(frozen=True, slots=True)
+class SubsystemSnapshot:
+    name: str
+    kind: Literal["describe", "health", "unknown", "error"]
+    payload: object             # ManagerDescribable result 或 HealthReport
+    error: str | None = None    # kind=="error" 時的例外 repr
+```
+
+`kind` 值對照：
+- `"describe"` — 服務實作 `ManagerDescribable`，`payload` 為其 `describe()` 回傳值
+- `"health"` — 服務實作 `HealthCheckable`，`payload` 為 `HealthReport`
+- `"unknown"` — 服務兩個 Protocol 均未實作
+- `"error"` — 快照時拋出例外，`payload=None`，`error` 含例外 repr（fail-soft，不影響其餘子系統）
+
+#### health() → HealthReport
+
+```python
+def health(self) -> HealthReport
+```
+
+彙整所有已註冊設備的健康狀態。`children` 為每台設備的 `HealthReport`。整體 status 採最差值（任一 `UNHEALTHY` → 整體 `UNHEALTHY`；任一 `DEGRADED` → 整體 `DEGRADED`）。
+
+#### attach_subsystem() / detach_subsystem()
+
+手動管理 `describe()` 的觀測對象（通常不需要，auto-discovery 會自動加入四個內建服務）：
+
+```python
+def attach_subsystem(self, name: str, component: object) -> None
+def detach_subsystem(self, name: str) -> bool   # 回傳 True 表示成功移除
+```
+
+- `attach_subsystem` 若 `name` 重複拋 `ValueError`
+- `detach_subsystem` 若 `name` 不存在回傳 `False`，不拋例外
+
+#### Quick Example
+
+```python
+from csp_lib.integration import SystemController
+
+# describe() 取完整快照
+status = controller.describe()
+print(f"mode: {status.effective_mode}, running: {status.is_running}")
+
+for name, snap in status.subsystems.items():
+    if snap.kind == "health":
+        hr = snap.payload     # HealthReport
+        print(f"  {name}: {hr.status.name} — {hr.message}")
+    elif snap.kind == "describe":
+        print(f"  {name}: describe payload = {snap.payload}")
+
+# health() 只取設備彙整
+report = controller.health()
+print(f"device health: {report.status.name} ({len(report.children)} devices)")
+```
 
 ## 內部流程
 
