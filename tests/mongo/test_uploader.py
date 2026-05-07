@@ -325,7 +325,13 @@ class TestHealthCheck:
     def _make_uploader(self, max_queue_size: int = 100) -> MongoBatchUploader:
         mock_db = MagicMock()
         config = UploaderConfig(max_queue_size=max_queue_size)
-        return MongoBatchUploader(mock_db, config)
+        uploader = MongoBatchUploader(mock_db, config)
+        # 替換 writer.write_batch 為 AsyncMock,避免 stop()/flush_all 在 queue
+        # 有資料時 await MagicMock 引發 TypeError → exception 路徑 + 1s sleep
+        # (拖慢測試 + 掩蓋實際行為)。
+        uploader._writer = MagicMock()
+        uploader._writer.write_batch = AsyncMock(return_value=WriteResult(success=True, inserted_count=1))
+        return uploader
 
     def test_health_unhealthy_when_not_started(self):
         """未 start 時 flush_task 為 None → UNHEALTHY"""
