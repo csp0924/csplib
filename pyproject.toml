@@ -40,7 +40,7 @@ cluster = [
 ]
 gui = [
     "fastapi>=0.115.0,<0.137",
-    "uvicorn[standard]>=0.30.0,<0.45",
+    "uvicorn[standard]>=0.30.0,<0.47",
     "pyyaml>=6.0,<7.0",
     "python-multipart>=0.0.20,<1.0",
 ]
