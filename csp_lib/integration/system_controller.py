@@ -1052,6 +1052,14 @@ class SystemController(AsyncLifecycleMixin):
             if self._run_task is not None:
                 await self._run_task
                 self._run_task = None
+            # Drain post-protection processors（async_close 對齊 async_init pattern）
+            # 譬如 PowerCompensator + MongoFFTableRepository 的 fire-and-forget save。
+            for proc in self._config.post_protection_processors:
+                if hasattr(proc, "async_close"):
+                    try:
+                        await proc.async_close()
+                    except Exception:
+                        logger.opt(exception=True).warning(f"CommandProcessor {type(proc).__name__}.async_close failed")
         finally:
             try:
                 if self._heartbeat is not None:

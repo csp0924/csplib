@@ -132,15 +132,51 @@ class MongoFFTableRepository:
     def __init__(self, collection: Any, document_id: str = "ff_table") -> None:
         self._collection = collection
         self._doc_id = document_id
+        # 追蹤 fire-and-forget save 的 task，drain() 用來等所有 pending 完成
+        # 避免 process shutdown 時尚未寫入 mongo 的 save 被 event loop close 取消。
+        self._pending: set[asyncio.Task[None]] = set()
 
     def save(self, table: dict[int, float]) -> None:
-        """同步包裝 — 在 asyncio event loop 中排程 async save"""
+        """同步包裝 — 在 asyncio event loop 中排程 async save。
 
+        Task 加入 ``self._pending`` 並透過 done callback 自動清除，shutdown 前
+        應呼叫 :meth:`drain` 確保所有 pending 完成。
+        """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._async_save(table))
+            task = loop.create_task(self._async_save(table))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
         except RuntimeError:
             logger.warning("MongoFFTableRepository: no running event loop, skip save")
+
+    async def drain(self, timeout: float = 5.0) -> None:
+        """等所有 pending save 完成（或超時取消）。
+
+        典型用法：SystemController._on_stop 在 shutdown 前呼叫，避免高頻學習
+        產生的 fire-and-forget save 在 event loop close 時被取消而遺失。
+
+        Args:
+            timeout: 最長等待秒數，超時則 cancel 剩餘 task 並 log warning。
+                預設 5 秒涵蓋一般 motor IO；極端慢的網路場景可調大。
+        """
+        if not self._pending:
+            return
+        pending_snapshot = list(self._pending)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*pending_snapshot, return_exceptions=True),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            cancelled = 0
+            for task in pending_snapshot:
+                if not task.done():
+                    task.cancel()
+                    cancelled += 1
+            logger.warning(
+                f"MongoFFTableRepository.drain timeout after {timeout}s, cancelled {cancelled} pending saves"
+            )
 
     def load(self) -> dict[int, float] | None:
         """同步包裝 — 用於 PowerCompensator.__init__，無法 await"""
@@ -632,6 +668,25 @@ class PowerCompensator:
             table = await self._repository.async_load()
             if table:
                 self.load_ff_table(table)
+
+    async def async_close(self) -> None:
+        """
+        Async shutdown — 對齊 :meth:`async_init` pattern。
+
+        若 repository 支援 ``drain()``（譬如 MongoDB 的 fire-and-forget save），
+        等所有 pending 寫入完成。SystemController._on_stop() 會自動呼叫所有
+        CommandProcessor 的 async_close()。
+
+        Usage::
+
+            comp = PowerCompensator(config, repository=MongoFFTableRepository(collection))
+            # ... runtime ...
+            await comp.async_close()  # drain pending mongo writes 後安全 shutdown
+        """
+        if self._repository is None:
+            return
+        if hasattr(self._repository, "drain"):
+            await self._repository.drain()
 
     @property
     def enabled(self) -> bool:

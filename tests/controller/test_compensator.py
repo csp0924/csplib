@@ -1533,3 +1533,87 @@ class TestCompensatorIntegralHoldLockup:
         assert final_error < 5.0, (
             f"穩態 error={final_error:.2f} kW，FF 沒吸收擾動。integral_hold 鎖死導致學習無法觸發。"
         )
+
+
+# ===========================================================================
+# MongoFFTableRepository drain (fire-and-forget save 遺失問題)
+# ===========================================================================
+
+
+class _FakeMongoCollection:
+    """Mock motor.AsyncIOMotorCollection，模擬網路 IO 延遲。"""
+
+    def __init__(self, delay_seconds: float = 0.05) -> None:
+        self._delay = delay_seconds
+        self.update_count = 0
+
+    async def update_one(self, filter_: dict, update: dict, upsert: bool = False) -> None:
+        import asyncio as _asyncio
+
+        await _asyncio.sleep(self._delay)
+        self.update_count += 1
+
+    async def find_one(self, query: dict) -> None:
+        return None
+
+
+class TestMongoFFTableRepositoryDrain:
+    """MongoFFTableRepository.save 是 fire-and-forget，shutdown 時尚未完成的
+    寫入會被 cancel 而遺失。需要 drain() async API 等所有 pending save 完成。
+    """
+
+    async def test_burst_saves_without_drain_lost_immediately(self):
+        """Sanity: burst 觸發後立即查 → 0 寫入（fire-and-forget 還沒跑）。"""
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        for i in range(5):
+            repo.save({i: 1.0 + i * 0.01})
+
+        # 立即查（不 await）→ 還沒有任何寫入
+        assert coll.update_count == 0
+
+    async def test_drain_waits_for_all_pending_saves(self):
+        """Bug repro: 沒有 drain 機制 → 無法保證 burst 的所有 save 都被持久化。
+
+        修復前：MongoFFTableRepository 無 drain method
+        修復後：drain() 等所有 pending task 完成
+        """
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        for i in range(10):
+            repo.save({i: 1.0 + i * 0.01})
+
+        # drain 應等所有 pending 完成
+        await repo.drain()
+
+        assert coll.update_count == 10, f"drain 後仍有 {10 - coll.update_count} 筆未寫入"
+
+    async def test_drain_no_pending_is_noop(self):
+        """無 pending 時 drain() 不應 raise 也不該卡住。"""
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        # 沒呼叫 save 直接 drain
+        await repo.drain()
+        assert coll.update_count == 0
+
+    async def test_compensator_async_close_drains_repository(self):
+        """PowerCompensator.async_close() 應對齊 async_init pattern，
+        並 drain 底下的 repository（若支援）。
+        """
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+        comp = PowerCompensator(PowerCompensatorConfig(rated_power=2000.0), repository=repo)
+
+        # 觸發幾次 save（via 公開 update_ff_bin with persist=True）
+        for i in range(5):
+            comp.update_ff_bin(i, 1.0 + i * 0.01, persist=True)
+
+        # 立即不會寫到（fire-and-forget）
+        assert coll.update_count == 0
+
+        # async_close 應 drain
+        await comp.async_close()
+        assert coll.update_count == 5
