@@ -39,6 +39,19 @@ from csp_lib.core._numeric import clamp, is_non_finite_float
 
 logger = get_logger(__name__)
 
+# 3σ 涵蓋約 99.7% 的高斯 noise；用於從 measurement_noise_kw 推算 effective deadband
+_NOISE_SIGMA_MULTIPLIER = 3.0
+
+
+def _cycles_from_seconds(seconds: float, dt: float, *, floor: int) -> int:
+    """把「秒」表達的時間預算換成 runtime cycles。
+
+    ``dt <= 0`` 時退回 ``floor``（避免除零，並讓 hold_seconds=0 在 dt=0 時得到 0）。
+    """
+    if dt <= 0:
+        return floor
+    return max(floor, round(seconds / dt))
+
 
 # =============== FF Table Repository ===============
 
@@ -176,22 +189,35 @@ class PowerCompensatorConfig:
     """
     功率補償器配置
 
+    v0.8 起所有時間相關參數改用「秒」表達，與 dt 解耦；deadband 改用 ratio
+    自動跟著 rated_power scale。詳見 v0.8 BREAKING 段落。
+
     Attributes:
         rated_power: 系統額定功率 (kW)
         output_min: 輸出下限 (kW)
         output_max: 輸出上限 (kW)
-        ki: 積分增益 (1/s)
+        integral_time_seconds: I 項時間常數 (秒)。物理意義：誤差持續為 rated_power
+            (100% 額定) 時，I 在這段時間內打滿 ``integral_max_ratio × rated``。
+            ``None`` 或 ``0`` = 停用 I 項。等效 Ki = integral_max_ratio / integral_time_seconds。
         integral_max_ratio: I 項最大貢獻 = ratio × rated_power
-        deadband: 死區 (kW)，誤差低於此值不累積 I
+        deadband_ratio: 死區佔 rated 的比例 (0.0005 = 0.05%)。誤差低於
+            ``deadband_ratio × rated_power`` 不累積 I。
+        measurement_noise_kw: （選用）量測 noise 標準差估計 (kW)。若提供，實際
+            死區 = ``max(deadband_ratio × rated, 3σ)``；不提供則純用 ratio。
         power_bin_step_pct: FF 表功率區間寬度 (% of rated)
-        steady_state_threshold: 穩態門檻 |error/setpoint|
-        steady_state_cycles: 連續穩態週期數，達標後觸發 FF 學習
+        steady_state_threshold: 穩態門檻 |error/setpoint| (相對)；內部會強制以
+            effective deadband 作為下限，避免誤差小於 deadband 反而被認為穩態。
+        steady_state_seconds: 連續穩態時間 (秒)，達標後觸發 FF 學習。runtime
+            cycles = ``max(1, round(steady_state_seconds / dt))``。
         settle_ratio: 暫態閘門比例，setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數
-        hold_cycles: setpoint 變更後暫停積分的週期數
+        hold_seconds: setpoint 變更後暫停積分的時間 (秒)；runtime cycles = round(hold_seconds / dt)。
         ff_min: FF 補償係數下限
         ff_max: FF 補償係數上限
         error_ema_alpha: 誤差 EMA 濾波係數 (0=停用)
-        rate_limit: 輸出變化率限制 (kW/s, 0=停用)
+        rate_limit: 輸出變化率限制 (kW/s)。``None`` = 不限（假設上游已 ramp）。
+            注意：rate_limit 只約束 compensate() 輸出，FF 自我修正造成的輸出跳變
+            （`_learn_from_saturation` 每次最多動 FF saturation_learn_max_step）
+            乘以 setpoint 仍會穿透；若需嚴格 ramp 限制，請在此層或上層明確設值。
         measurement_key: context.extra 中量測值的 key
         persist_path: FF 表持久化路徑 (空=不持久化)
         saturation_learn_min_cycles: 連續飽和 N 個週期後才觸發飽和學習
@@ -205,18 +231,19 @@ class PowerCompensatorConfig:
     rated_power: float = 2000.0
     output_min: float = -2000.0
     output_max: float = 2000.0
-    ki: float = 0.3
+    integral_time_seconds: float | None = 1.0
     integral_max_ratio: float = 0.05
-    deadband: float = 0.5
+    deadband_ratio: float = 0.0005
+    measurement_noise_kw: float | None = None
     power_bin_step_pct: int = 5
     steady_state_threshold: float = 0.02
-    steady_state_cycles: int = 5
+    steady_state_seconds: float = 1.5
     settle_ratio: float = 0.15
-    hold_cycles: int = 2
+    hold_seconds: float = 0.6
     ff_min: float = 0.8
     ff_max: float = 1.5
     error_ema_alpha: float = 0.0
-    rate_limit: float = 0.0
+    rate_limit: float | None = None
     measurement_key: str = "meter_power"
     persist_path: str = ""
     saturation_learn_min_cycles: int = 2
@@ -259,6 +286,10 @@ class PowerCompensator:
     ) -> None:
         self._config = config or PowerCompensatorConfig()
         self._enabled = True
+
+        # 預先計算 effective values（不依賴 dt 的部分；其餘在 compensate() 內按 dt 換算）
+        self._effective_ki = self._compute_effective_ki()
+        self._effective_deadband_kw = self._compute_effective_deadband()
 
         # Repository：優先使用注入的，否則從 config.persist_path 建立 JSON repo
         if repository is not None:
@@ -356,8 +387,13 @@ class PowerCompensator:
             self._steady_count = 0
             return 0.0
 
+        # Per-call effective values（依 dt 換算）
+        deadband_kw = self._effective_deadband_kw
+        hold_cycles_needed = _cycles_from_seconds(cfg.hold_seconds, dt, floor=0)
+        steady_cycles_needed = _cycles_from_seconds(cfg.steady_state_seconds, dt, floor=1)
+
         # 1. Setpoint 變動策略
-        self._apply_setpoint_change_policy(setpoint)
+        self._apply_setpoint_change_policy(setpoint, hold_cycles_needed)
         self._last_setpoint = setpoint
 
         # 2. 計算誤差
@@ -370,7 +406,7 @@ class PowerCompensator:
         else:
             filtered_error = error
 
-        # 4. 前饋查表
+        # 4. 前饋查表（line interpolation across nearest bins，避免邊界 chatter）
         ff = self._get_ff(setpoint)
         if setpoint >= 0:
             ff_output = ff * setpoint
@@ -387,9 +423,9 @@ class PowerCompensator:
         # - 飽和在下限 + error 為正（量測 < 目標）→ 朝脫離方向，允許累積正 integral 拉回
         # - 非飽和 + 誤差超出死區 → 正常積分累積
         # - 飽和同向（誤差與飽和一致）→ 凍結積分以避免 windup
-        can_integrate_high = sat_high and filtered_error < -cfg.deadband
-        can_integrate_low = sat_low and filtered_error > cfg.deadband
-        can_integrate_free = (not saturated) and abs(filtered_error) >= cfg.deadband
+        can_integrate_high = sat_high and filtered_error < -deadband_kw
+        can_integrate_low = sat_low and filtered_error > deadband_kw
+        can_integrate_free = (not saturated) and abs(filtered_error) >= deadband_kw
 
         # 6. 積分更新
         if self._integral_hold > 0:
@@ -400,13 +436,13 @@ class PowerCompensator:
             self._clamp_integral()
 
         # 7. 計算輸出
-        output = ff_output + cfg.ki * self._integral
+        output = ff_output + self._effective_ki * self._integral
 
         # 8. 輸出限幅
-        output = max(cfg.output_min, min(output, cfg.output_max))
+        output = clamp(output, cfg.output_min, cfg.output_max)
 
-        # 9. 變化率限制
-        if cfg.rate_limit > 0:
+        # 9. 變化率限制（None = 不限，假設上游已 ramp）
+        if cfg.rate_limit is not None and cfg.rate_limit > 0:
             max_delta = cfg.rate_limit * dt
             delta = output - self._last_output
             if abs(delta) > max_delta:
@@ -418,13 +454,13 @@ class PowerCompensator:
             # 註：不論同向或異向飽和都學 FF — 同向飽和代表 PCS 已 clamp 仍不足，正是 FF 學歪的信號
             # 方向性保護仍由上面的 asymmetric anti-windup 確保（integral 不 windup）
             self._saturation_escape_count += 1
-            if self._integral_hold == 0 and abs(setpoint) >= cfg.deadband:
+            if self._integral_hold == 0 and abs(setpoint) >= deadband_kw:
                 self._learn_from_saturation(setpoint, measurement, sat_high, output)
             self._steady_count = 0
         else:
             # 非飽和 → 重置 escape 計數，走穩態學習
             self._saturation_escape_count = 0
-            self._learn_if_steady(setpoint, filtered_error)
+            self._learn_if_steady(setpoint, filtered_error, deadband_kw, steady_cycles_needed)
 
         self._last_output = output
         return output
@@ -561,11 +597,12 @@ class PowerCompensator:
     @property
     def diagnostics(self) -> dict:
         """診斷資訊（供 logging / API 使用）"""
-        cfg = self._config
         return {
             "enabled": self._enabled,
             "integral": round(self._integral, 4),
-            "i_contribution": round(cfg.ki * self._integral, 2),
+            "i_contribution": round(self._effective_ki * self._integral, 2),
+            "effective_ki": round(self._effective_ki, 6),
+            "effective_deadband_kw": round(self._effective_deadband_kw, 4),
             "last_setpoint": round(self._last_setpoint, 1),
             "last_output": round(self._last_output, 1),
             "last_ff": round(self._get_ff(self._last_setpoint), 4),
@@ -580,6 +617,35 @@ class PowerCompensator:
 
     # ─────────────────────── 內部方法 ───────────────────────
 
+    def _compute_effective_ki(self) -> float:
+        """由 integral_time_seconds 推算等效 Ki。
+
+        物理推導：對 error = rated_power 持續，I 累積率 = rated × ki / s。
+        要求在 ``integral_time_seconds`` 秒內 I 貢獻打滿 ``integral_max_ratio × rated``：
+
+            ki × rated × T = integral_max_ratio × rated
+            → ki = integral_max_ratio / T
+
+        ``integral_time_seconds`` 為 ``None`` 或 ``<= 0`` → 回傳 0（停用 I）。
+        """
+        t = self._config.integral_time_seconds
+        if t is None or t <= 0:
+            return 0.0
+        return self._config.integral_max_ratio / t
+
+    def _compute_effective_deadband(self) -> float:
+        """由 deadband_ratio 與 measurement_noise_kw 推算 effective 死區 (kW)。
+
+        - 純 ratio: ``deadband = deadband_ratio × rated_power``
+        - 有 noise 估計時取較大者: ``max(deadband_ratio × rated, 3σ)``，
+          確保死區至少能蓋過 3σ noise，避免 I 在量測雜訊上空積分。
+        """
+        cfg = self._config
+        ratio_kw = cfg.deadband_ratio * cfg.rated_power
+        if cfg.measurement_noise_kw is None or cfg.measurement_noise_kw <= 0:
+            return ratio_kw
+        return max(ratio_kw, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
+
     def _build_initial_ff_table(self) -> dict[int, float]:
         step = self._config.power_bin_step_pct
         if step <= 0:
@@ -592,19 +658,39 @@ class PowerCompensator:
         pct = power_kw / cfg.rated_power * 100.0
         idx = round(pct / cfg.power_bin_step_pct)
         n_bins = 100 // cfg.power_bin_step_pct
-        return max(-n_bins, min(idx, n_bins))
+        return int(clamp(idx, -n_bins, n_bins))
 
     def _get_ff(self, setpoint: float) -> float:
-        idx = self._get_bin_index(setpoint)
-        return self._ff_table.get(idx, 1.0)
+        """查表取 FF 係數，跨 bin 邊界做線性插值。
 
-    def _apply_setpoint_change_policy(self, new_setpoint: float) -> None:
+        Bin 學習仍走 `_get_bin_index` 的 round 取單一 bin（學習資料 attribute
+        到最近的 bin），但讀取時插值能避免量測雜訊把 setpoint 推過 bin 邊界
+        造成 ff_output step 跳變導致的 chatter；同時跟 `_load_ff_table`
+        遷移時的線性插值行為一致。
+        """
+        cfg = self._config
+        pct = setpoint / cfg.rated_power * 100.0
+        pos = pct / cfg.power_bin_step_pct
+        n_bins = 100 // cfg.power_bin_step_pct
+
+        lo = math.floor(pos)
+        hi = math.ceil(pos)
+        lo = int(clamp(lo, -n_bins, n_bins))
+        hi = int(clamp(hi, -n_bins, n_bins))
+        if lo == hi:
+            return self._ff_table.get(lo, 1.0)
+        frac = pos - lo
+        ff_lo = self._ff_table.get(lo, 1.0)
+        ff_hi = self._ff_table.get(hi, 1.0)
+        return ff_lo * (1.0 - frac) + ff_hi * frac
+
+    def _apply_setpoint_change_policy(self, new_setpoint: float, hold_cycles_needed: int) -> None:
         old = self._last_setpoint
         if abs(new_setpoint - old) < 0.1:
             return
         self._integral = 0.0
         self._steady_count = 0
-        self._integral_hold = self._config.hold_cycles
+        self._integral_hold = hold_cycles_needed
         self._settle_threshold = abs(new_setpoint - old) * self._config.settle_ratio
         self._inherit_ff(old, new_setpoint)
 
@@ -621,33 +707,41 @@ class PowerCompensator:
 
     def _clamp_integral(self) -> None:
         cfg = self._config
-        if cfg.ki == 0:
+        if self._effective_ki == 0:
             return
         max_contribution = cfg.integral_max_ratio * cfg.rated_power
-        integral_max = max_contribution / cfg.ki
-        self._integral = max(-integral_max, min(self._integral, integral_max))
+        integral_max = max_contribution / self._effective_ki
+        self._integral = clamp(self._integral, -integral_max, integral_max)
 
-    def _learn_if_steady(self, setpoint: float, filtered_error: float) -> None:
+    def _learn_if_steady(
+        self,
+        setpoint: float,
+        filtered_error: float,
+        deadband_kw: float,
+        cycles_needed: int,
+    ) -> None:
         cfg = self._config
         # BUG-002 guard：deadband=0 時 `abs(setpoint) < 0` 永遠 False，
         # 若 setpoint=0 會在後面的 `filtered_error / setpoint` 除以零。
-        # 用 max(deadband, 1e-6) 作為底線，確保零 setpoint 一定被攔截。
-        if abs(setpoint) < max(cfg.deadband, 1e-6):
+        # 用 max(deadband_kw, 1e-6) 作為底線，確保零 setpoint 一定被攔截。
+        if abs(setpoint) < max(deadband_kw, 1e-6):
             self._steady_count = 0
             return
 
-        relative_error = abs(filtered_error / setpoint)
-        if relative_error < cfg.steady_state_threshold:
+        # 穩態相對門檻 + absolute floor 對齊 deadband：誤差小於 deadband 不應
+        # 同時被「視為穩態可學」與「太小不積分」兩種規則矛盾處理。
+        threshold_kw = max(cfg.steady_state_threshold * abs(setpoint), deadband_kw)
+        if abs(filtered_error) < threshold_kw:
             self._steady_count += 1
         else:
             self._steady_count = 0
             return
 
-        if self._steady_count < cfg.steady_state_cycles:
+        if self._steady_count < cycles_needed:
             return
 
-        i_term = cfg.ki * self._integral
-        if abs(i_term) < cfg.deadband:
+        i_term = self._effective_ki * self._integral
+        if abs(i_term) < deadband_kw:
             self._steady_count = 0
             return
 
@@ -699,7 +793,7 @@ class PowerCompensator:
         if not math.isfinite(measurement):
             return
         # 避免 measurement 過小（接近零）導致物理推算失真或除零
-        if abs(measurement) < max(cfg.deadband, 1.0):
+        if abs(measurement) < max(self._effective_deadband_kw, 1.0):
             return
 
         # 3. 符號一致性：PCS 指令方向與電錶讀數異號 → 線路接反或量測異常，不學
@@ -712,7 +806,7 @@ class PowerCompensator:
         idx = self._get_bin_index(setpoint)
         old_ff = self._ff_table.get(idx, 1.0)
         # 避免 output 過小導致除零或失真
-        if abs(output) < max(cfg.deadband, 1.0):
+        if abs(output) < max(self._effective_deadband_kw, 1.0):
             return
         if sat_high:
             new_ff_physical = output / measurement
