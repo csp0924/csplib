@@ -256,17 +256,14 @@ class ModbusRequestQueue:
                 await self._event.wait()
                 continue
 
+            # submit() 用 wait_for(shield, timeout) + 顯式 future.cancel() 包住每個 request，
+            # 故 aged-out 的 request 必先被 caller cancel，由此 guard 吸收。
+            # 若未來新增不走 submit() 的提交路徑，需重新引入 elapsed-check + cb.record_failure。
             if request.future.cancelled() or request.future.done():
                 continue
 
             effective_timeout = request.timeout if request.timeout is not None else self._config.default_timeout
-
-            # 跳過在 queue 中已過期的請求
             elapsed = time.monotonic() - request.enqueue_time
-            if elapsed >= effective_timeout:
-                if not request.future.done():
-                    request.future.cancel()
-                continue
 
             cb = self._get_circuit_breaker(request.unit_id)
 

@@ -271,6 +271,20 @@ async with SharedPymodbusTcpClient(config) as client:
 > [!note] 向後相容
 > `CircuitBreakerState` 為 `CircuitState` 的別名，保留向後相容。
 
+> [!warning] 啟動延遲（transient window）
+> CB 是 **per-unit_id 累積失敗**，且 worker 在多個 unit 間 round-robin 公平處理。
+> server 突然劣化時，CB 進 `OPEN` 並開始 fast-fail caller 的延遲為：
+>
+> $$
+> t_{\text{open}} \approx \text{threshold} \times \text{worker\_timeout} \times N_{\text{units}}
+> $$
+>
+> 預設值（`threshold=5`、`worker_timeout≈0.5s`、4 個 unit）→ **~10s transient window**，
+> 期間所有 caller 持續收到 `asyncio.TimeoutError` 而非 `ModbusCircuitBreakerError`。
+>
+> EMS 上層的「全 modbus call fail」分支應該與 CB `OPEN` 分支**獨立**設計：
+> 不要假設 CB 會立即把劣化 server 隔離掉，transient window 內必須能容忍 timeout 風暴。
+
 ### 排程策略
 
 `ModbusRequestQueue` 採用**優先權 + Round-Robin** 公平排程：
