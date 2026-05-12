@@ -500,7 +500,8 @@ class MyScheduleRepository:
         matched = [
             rule for rule in all_enabled
             if matcher.matches_time(rule, now_time)
-            and matcher.matches_schedule(rule, now_weekday, now_date)
+            # 將 now_time 一併傳入，讓 matcher 能正確處理跨午夜尾段歸屬
+            and matcher.matches_schedule(rule, now_weekday, now_date, now_time)
         ]
 
         matched.sort(key=lambda r: r.priority, reverse=True)

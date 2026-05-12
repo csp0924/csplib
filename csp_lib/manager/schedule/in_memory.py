@@ -65,7 +65,8 @@ class InMemoryScheduleRepository:
         for rule in all_enabled:
             if not matcher.matches_time(rule, now_time):
                 continue
-            if not matcher.matches_schedule(rule, now_weekday, now_date):
+            # 將 now_time 一併傳入，讓 matcher 能正確處理跨午夜尾段的 weekday/date 歸屬
+            if not matcher.matches_schedule(rule, now_weekday, now_date, now_time):
                 continue
             matched.append(rule)
 
