@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import math
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -62,10 +64,19 @@ class SetpointDriftReconciler(ReconcilerMixin):
         registry:  DeviceRegistry（用於讀取 device.latest_values）
         tolerance: 預設容忍度；單一設備可由 per_device_tolerance override
         per_device_tolerance: ``{device_id: DriftTolerance}`` 映射
+        min_rewrite_interval_seconds: per-(device, point) audit cooldown 視窗（秒）；
+            > 0 時，對同 (device, point) 在前一次**成功寫入** N 秒內偵測到的 drift
+            會被跳過（不重寫、不 log）。預設 ``0.0`` = 關閉 cooldown。
+            production 建議設為 ReadScheduler 週期的 1.5-2 倍以避免 audit log spam：
+            ReadScheduler 把新 actual 讀回前，同 drift 會被每個 reconcile cycle 重複偵測，
+            破壞 reconciler 「偵測 + 記錄 drift event」的 audit-trail 設計意圖。
+            **write 失敗不啟動 cooldown**（cooldown 是「成功記錄」的去抖，不是「最近嘗試」的去抖）
+            → transient modbus error 不會卡死，下一 reconcile 立即 retry。
         name:      Reconciler name（預設 ``"setpoint_drift"``）
 
     Raises:
-        ConfigurationError: tolerance 參數無效（absolute < 0 或 relative < 0）
+        ConfigurationError: tolerance 參數無效（absolute < 0 或 relative < 0），
+            或 min_rewrite_interval_seconds < 0。
     """
 
     def __init__(
@@ -75,6 +86,7 @@ class SetpointDriftReconciler(ReconcilerMixin):
         *,
         tolerance: DriftTolerance = _DEFAULT_TOLERANCE,
         per_device_tolerance: Mapping[str, DriftTolerance] | None = None,
+        min_rewrite_interval_seconds: float = 0.0,
         name: str = "setpoint_drift",
     ) -> None:
         if tolerance.absolute < 0 or tolerance.relative < 0:
@@ -83,11 +95,18 @@ class SetpointDriftReconciler(ReconcilerMixin):
             for dev_id, tol in per_device_tolerance.items():
                 if tol.absolute < 0 or tol.relative < 0:
                     raise ConfigurationError(f"per_device_tolerance[{dev_id!r}] must be non-negative, got {tol!r}")
+        if min_rewrite_interval_seconds < 0:
+            raise ConfigurationError(f"min_rewrite_interval_seconds must be >= 0, got {min_rewrite_interval_seconds}")
 
         self._router = router
         self._registry = registry
         self._tolerance = tolerance
         self._per_device: Mapping[str, DriftTolerance] = MappingProxyType(dict(per_device_tolerance or {}))
+        self._min_rewrite_interval = min_rewrite_interval_seconds
+        # 每對 (device_id, point_name) 最近一次成功寫入的 monotonic timestamp。
+        # Stable-topology 假設：caller 動態 untrack device 時，對應 entry 不會自動 evict；
+        # production EMS 通常 boot 時 fix 設備集合，typical scale (~500 entry / ~40KB) 無虞。
+        self._last_write_at: dict[tuple[str, str], float] = {}
         self._init_reconciler(name)
 
     # ---- Reconciler Protocol ----
@@ -97,10 +116,16 @@ class SetpointDriftReconciler(ReconcilerMixin):
     async def _reconcile_work(self, detail: dict[str, Any]) -> None:
         """掃描所有被追蹤 device，偵測 drift 並重寫；隨時更新 detail 以保留部分進度。"""
         drift_count = 0
+        skipped_by_cooldown = 0
         devices_fixed: list[str] = []
+        cooldown_enabled = self._min_rewrite_interval > 0
+        now = time.monotonic()
+
         # 先寫初值，確保即使迴圈中途 raise 也能從 detail 看到 0/空
         detail["drift_count"] = 0
         detail["devices_fixed"] = ()
+        if cooldown_enabled:
+            detail["skipped_by_cooldown"] = 0
 
         for device_id in self._router.get_tracked_device_ids():
             snapshot = self._router.get_last_written(device_id)
@@ -119,8 +144,22 @@ class SetpointDriftReconciler(ReconcilerMixin):
                 if not self._is_drift(desired, actual, tol):
                     continue
                 drift_count += 1
+
+                # Invariant: write 失敗時 _last_write_at 不更新，下一 reconcile 仍允許 retry
+                # （cooldown 是「成功 audit event」的去抖，不是「最近嘗試」的去抖）
+                key = (device_id, point_name)
+                if cooldown_enabled:
+                    last_at = self._last_write_at.get(key, -math.inf)
+                    if now - last_at < self._min_rewrite_interval:
+                        skipped_by_cooldown += 1
+                        detail["drift_count"] = drift_count
+                        detail["skipped_by_cooldown"] = skipped_by_cooldown
+                        continue
+
                 ok = await self._router.try_write_single(device_id, point_name, desired)
                 if ok:
+                    if cooldown_enabled:
+                        self._last_write_at[key] = now
                     devices_fixed.append(f"{device_id}.{point_name}")
                     logger.info(
                         f"Setpoint drift fixed: {device_id}.{point_name} actual={actual!r} -> desired={desired!r}"

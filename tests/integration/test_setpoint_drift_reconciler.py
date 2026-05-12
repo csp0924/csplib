@@ -533,3 +533,94 @@ class TestNameAndInitialStatus:
         assert status.run_count == 0
         assert status.last_run_at is None
         assert status.healthy is True
+
+
+# ─────────────── min_rewrite_interval_seconds（per-(device,point) cooldown）───────────────
+
+
+class TestMinRewriteInterval:
+    """v0.10.x+：min_rewrite_interval_seconds 加 per-(device, point) time-based cooldown
+    防 audit log spam（同一個持續 drift 在 ReadScheduler 把新 actual 讀回前不重複 log/write）。
+
+    背景：sandbox/drift_reconciler_read_lag_storm_demo.py 量化 — read interval >> reconcile
+    interval 場景下，原版會對同一個 drift event 重複 try_write + log ~ T_read/T_reconcile 次，
+    破壞 reconciler 的 audit-trail 設計意圖。
+    """
+
+    def test_negative_interval_raises(self):
+        reg = FakeRegistry()
+        router = FakeRouter()
+        with pytest.raises(ConfigurationError):
+            SetpointDriftReconciler(
+                router=router,  # type: ignore[arg-type]
+                registry=reg,  # type: ignore[arg-type]
+                min_rewrite_interval_seconds=-1.0,
+            )
+
+    async def test_zero_keeps_legacy_behaviour(self):
+        """min_rewrite_interval_seconds=0（預設）→ 每次 drift 都寫 + log（向後相容）。"""
+        reg = FakeRegistry()
+        reg.add(FakeDevice("D1", latest_values={"sp": 80.0}))
+        router = FakeRouter(last_written={"D1": {"sp": 100.0}})
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5),
+        )
+        for _ in range(5):
+            await svc.reconcile_once()
+        assert len(router.write_calls) == 5
+
+    async def test_positive_interval_blocks_rewrite_within_window(self):
+        """設了 min_rewrite_interval_seconds 後，持續 drift 在 cooldown 視窗內只寫一次。"""
+        reg = FakeRegistry()
+        reg.add(FakeDevice("D1", latest_values={"sp": 80.0}))
+        router = FakeRouter(last_written={"D1": {"sp": 100.0}})
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5),
+            min_rewrite_interval_seconds=10.0,  # 遠大於 test duration
+        )
+        for _ in range(5):
+            await svc.reconcile_once()
+        assert len(router.write_calls) == 1, "持續 drift 在 cooldown 內應該只寫一次"
+
+    async def test_write_failure_does_not_start_cooldown(self):
+        """write 失敗（router 回 False）不該啟動 cooldown，下次 reconcile 該重試。
+
+        關鍵 invariant：cooldown 是「成功 log audit event」的去抖，不是「最近一次嘗試」的去抖。
+        若 write 失敗也起 cooldown → transient modbus error 期間 reconciler 卡死，actual 永不修。
+        """
+        reg = FakeRegistry()
+        reg.add(FakeDevice("D1", latest_values={"sp": 80.0}))
+        # 預設 write_returns=False → router 永遠回 False（模擬持續 fail）
+        router = FakeRouter(last_written={"D1": {"sp": 100.0}}, write_returns=False)
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5),
+            min_rewrite_interval_seconds=10.0,
+        )
+        for _ in range(5):
+            await svc.reconcile_once()
+        # write 都失敗 → cooldown 從未啟動 → 5 次 reconcile 都該嘗試
+        assert len(router.write_calls) == 5, "write fail 不該啟動 cooldown，每次都該 retry"
+
+    async def test_per_point_cooldown_independent(self):
+        """同 device 不同 point 各自獨立 cooldown，不互相影響。"""
+        reg = FakeRegistry()
+        reg.add(FakeDevice("D1", latest_values={"sp": 80.0, "limit": 50.0}))
+        router = FakeRouter(last_written={"D1": {"sp": 100.0, "limit": 90.0}})
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5),
+            min_rewrite_interval_seconds=10.0,
+        )
+        await svc.reconcile_once()
+        # 第一次：兩個 point 都 drift → 各寫一次
+        assert len(router.write_calls) == 2
+        await svc.reconcile_once()
+        # 第二次：兩個 point 都在自己的 cooldown 內 → 不再寫
+        assert len(router.write_calls) == 2
