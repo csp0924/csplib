@@ -1292,8 +1292,10 @@ class SystemController(AsyncLifecycleMixin):
         await self._executor.set_strategy(resolved)
 
         # 依據策略的 suppress_heartbeat 控制心跳服務
-        if self._heartbeat is not None and resolved is not None:
-            if resolved.suppress_heartbeat:
+        # resolved=None（無策略 assert suppress）時必須 resume，否則 suppress_heartbeat=True
+        # 策略移除後 heartbeat 會卡在 paused，導致設備超時進入安全模式
+        if self._heartbeat is not None:
+            if resolved is not None and resolved.suppress_heartbeat:
                 self._heartbeat.pause()
             else:
                 self._heartbeat.resume()

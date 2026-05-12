@@ -545,6 +545,65 @@ class TestSystemControllerCascading:
         assert sc.executor.current_strategy is s1
 
 
+class TestHeartbeatPauseResumeOnStrategyChange:
+    """Regression: `_on_strategy_change` 在 resolved=None 時必須 resume heartbeat。
+
+    Bug: 當前一個策略 suppress_heartbeat=True（如 BypassStrategy）切換到 resolved=None
+    （所有 base mode 被移除、無 override 活著），heartbeat 會永遠卡在 paused，
+    導致現場設備超時進入安全模式 — 即使根本沒有策略在 assert suppress。
+    """
+
+    def _build_controller_with_heartbeat(self) -> SystemController:
+        from csp_lib.integration.heartbeat import HeartbeatService
+        from csp_lib.integration.schema import HeartbeatMapping
+
+        reg = DeviceRegistry()
+        # 直接注入 HeartbeatService（不啟動，僅測試 pause/resume 路徑）
+        sc = SystemController(reg, SystemControllerConfig())
+        sc._heartbeat = HeartbeatService(
+            reg,
+            mappings=[HeartbeatMapping(point_name="heartbeat", trait="pcs")],
+            interval=1.0,
+        )
+        return sc
+
+    @pytest.mark.asyncio
+    async def test_resolved_none_after_suppress_strategy_resumes_heartbeat(self):
+        """suppress_heartbeat=True 策略 → resolved=None 後 heartbeat 必須 resume，不可永久卡 paused。"""
+        from csp_lib.controller.strategies import BypassStrategy
+
+        sc = self._build_controller_with_heartbeat()
+        bypass = BypassStrategy()
+        sc.register_mode("bypass", bypass, ModePriority.SCHEDULE)
+
+        # 啟用 bypass → heartbeat 應 pause
+        await sc.set_base_mode("bypass")
+        assert sc._heartbeat is not None
+        assert sc._heartbeat.is_paused is True, "BypassStrategy 啟用後 heartbeat 應為 paused"
+
+        # 移除 base mode → resolved 變 None
+        await sc.remove_base_mode("bypass")
+
+        # Bug: heartbeat 仍然卡在 paused（修復後應為 False）
+        assert sc._heartbeat.is_paused is False, (
+            "resolved=None 後 heartbeat 不應仍為 paused — 否則設備永遠收不到心跳會進入安全模式"
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolved_none_without_prior_suppress_keeps_heartbeat_unpaused(self):
+        """非 suppress 策略 → resolved=None：heartbeat 不應被誤觸 pause。"""
+        sc = self._build_controller_with_heartbeat()
+        s = MockStrategy()
+        sc.register_mode("pq", s, ModePriority.SCHEDULE)
+
+        await sc.set_base_mode("pq")
+        assert sc._heartbeat is not None
+        assert sc._heartbeat.is_paused is False
+
+        await sc.remove_base_mode("pq")
+        assert sc._heartbeat.is_paused is False
+
+
 class TestSystemControllerLifecycle:
     @pytest.mark.asyncio
     async def test_start_stop(self):
