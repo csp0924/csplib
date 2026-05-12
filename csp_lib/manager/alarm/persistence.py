@@ -42,11 +42,16 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class _NotifyEvent(str, Enum):
-    """內部通知事件類型（避免頂層 import 循環）"""
+class _AlarmEvent(str, Enum):
+    """內部告警 event 字典；同時用於 notification dispatch 與 history doc ``event`` 欄位。
+
+    ``DUPLICATE_TRIGGER`` 為 audit-only（不發 notification，僅寫 history）；
+    當 ``upsert(is_new=False)`` 表示 DB 殘留 ACTIVE 記錄（多半因前次 resolve 失敗）。
+    """
 
     TRIGGERED = "triggered"
     RESOLVED = "resolved"
+    DUPLICATE_TRIGGER = "duplicate_trigger"
 
 
 class AlarmPersistenceManager(DeviceEventSubscriber):
@@ -203,22 +208,35 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         """
         建立告警記錄
 
-        透過 repository 寫入告警記錄。若為新告警則記錄 log 並發送通知。
-        當 ``buffered_uploader`` 注入時，額外寫入 history collection
-        作為不可變歷史存檔。
+        透過 repository 寫入告警記錄。當 ``buffered_uploader`` 注入時，每個 trigger event
+        都寫入 history collection（不可變稽核軌跡），不因 upsert dedupe 而漏記。
+
+        - is_new=True  → 記 INFO log、發 notification、history event="triggered"
+        - is_new=False → 記 WARNING log（可能 stuck active 訊號）、不發 notification
+          （維持 dedupe spam 設計）、history event="duplicate_trigger"
+
+        後者修復 silent monitoring blackout：先前 resolve() 失敗 → DB 殘留 ACTIVE →
+        後續同 alarm_key disconnect 全部 silent（無 history、無 notify、無 log）。
 
         Args:
             record: 告警記錄
         """
         _, is_new = await self._repository.upsert(record)
+        doc = record.to_document()
+        if record.timestamp is not None:
+            doc["event_time"] = record.timestamp
         if is_new:
             logger.info(f"告警持久化管理器已新增告警: {record.alarm_key}")
-            await self._notify(record, _NotifyEvent.TRIGGERED)
-            doc = record.to_document()
-            doc["event"] = _NotifyEvent.TRIGGERED.value
-            if record.timestamp is not None:
-                doc["event_time"] = record.timestamp
-            await self._emit_history(record.alarm_key, doc)
+            await self._notify(record, _AlarmEvent.TRIGGERED)
+            doc["event"] = _AlarmEvent.TRIGGERED.value
+        else:
+            # 修 silent monitoring blackout：先前 resolve fail 留下的 stuck-ACTIVE
+            # 會把後續 trigger 從 audit 中吞掉。notification 不重發以維持 dedupe。
+            logger.warning(
+                f"告警持久化管理器收到 duplicate trigger（DB 殘留 ACTIVE，可能 resolve 曾失敗）: {record.alarm_key}"
+            )
+            doc["event"] = _AlarmEvent.DUPLICATE_TRIGGER.value
+        await self._emit_history(record.alarm_key, doc)
 
     async def _resolve_alarm(self, alarm_key: str, resolved_at: datetime) -> None:
         """
@@ -242,7 +260,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             doc: dict[str, object] = {
                 "alarm_key": alarm_key,
                 "device_id": device_id,
-                "event": _NotifyEvent.RESOLVED.value,
+                "event": _AlarmEvent.RESOLVED.value,
                 "event_time": resolved_at,
                 "resolved_timestamp": resolved_at,
             }
@@ -265,7 +283,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         except Exception as e:
             logger.warning(f"告警 history buffer 寫入失敗（{alarm_key}）: {e}")
 
-    async def _notify(self, record: AlarmRecord, event: _NotifyEvent) -> None:
+    async def _notify(self, record: AlarmRecord, event: _AlarmEvent) -> None:
         """發送告警通知（非阻塞，失敗僅記 log）"""
         if self._dispatcher is None:
             return
