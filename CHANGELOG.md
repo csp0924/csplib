@@ -4,6 +4,44 @@
 
 格式基於 [Keep a Changelog](https://keepachangelog.com/)，版本號遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.0](https://github.com/csp0924/csplib/compare/v0.9.1...v0.10.0) (2026-05-12)
+
+
+### Added
+
+* **controller:** HistoryBuffer 通用時序緩衝（取代 PVDataService 綁定語義） ([#108](https://github.com/csp0924/csplib/issues/108)) ([e3ce234](https://github.com/csp0924/csplib/commit/e3ce234a5409e6a1c22f3cc91e1a208b273df28e))
+* **controller:** PowerCompensator config 通用化（時間/比例參數 + FF 插值） ([#131](https://github.com/csp0924/csplib/issues/131)) ([5df4adf](https://github.com/csp0924/csplib/commit/5df4adf3b11afab7d60de69fc9ca932f7115631d))
+* **controller:** PowerCompensator v0.8 通用化 + 邊角 bug 修復 ([#132](https://github.com/csp0924/csplib/issues/132)) ([87c9b06](https://github.com/csp0924/csplib/commit/87c9b06604028b87eb165927c72767806a2d0d64))
+* **controller:** StrategyExecutor 實作 HealthCheckable (K-P2) ([#127](https://github.com/csp0924/csplib/issues/127)) ([9bc233b](https://github.com/csp0924/csplib/commit/9bc233b7f09cb8f426bd0adc13f59e3c15fcd70f))
+* **integration:** Heartbeat/CommandRefresh/Orchestrator 實作 HealthCheckable + DeviceProtocol MockDevice 驗證測試 ([#129](https://github.com/csp0924/csplib/issues/129)) ([e5d00dc](https://github.com/csp0924/csplib/commit/e5d00dc853137c9504377efc4ca121578af87a27))
+* **integration:** SetpointDriftReconciler 加 min_rewrite_interval_seconds 防 audit spam ([#134](https://github.com/csp0924/csplib/issues/134)) ([ed181ba](https://github.com/csp0924/csplib/commit/ed181ba8f95832a608f342997f4460592a0e656a))
+* **integration:** SystemController.describe() 聚合 subsystem 觀測 (J-P2) ([#128](https://github.com/csp0924/csplib/issues/128)) ([d69ae35](https://github.com/csp0924/csplib/commit/d69ae356c81988d96e822c37f02117a6902fc275))
+* **manager:** Reconciler Protocol 下移 core + ScheduleService 實作 ([#113](https://github.com/csp0924/csplib/issues/113)) ([5ed1b23](https://github.com/csp0924/csplib/commit/5ed1b23379ca2dd09c62c8a5b6ddddb9b188b6ed))
+* **manager:** StateSyncConfig key/channel prefix + Redis pipeline 批次 ([#112](https://github.com/csp0924/csplib/issues/112)) ([ace4757](https://github.com/csp0924/csplib/commit/ace4757db1f21aa800bc27a1741074a161697cd9))
+* **manager:** UnifiedDeviceManager 動態 refresh capability traits ([#111](https://github.com/csp0924/csplib/issues/111)) ([c3c27f0](https://github.com/csp0924/csplib/commit/c3c27f05fa062555cce6fdcb30b41398f6003c0b))
+* **manager:** Wave 1 — DeviceProtocol 鬆綁 + LeaderGate + unregister + outputs fan-out ([#104](https://github.com/csp0924/csplib/issues/104)) ([234df66](https://github.com/csp0924/csplib/commit/234df66922a73030764049a466bc1e4229ffa8e4))
+* **manager:** Wave 2a — LeaderGate 整合 + ManagerDescribable + UnifiedDeviceManager.unregister ([#106](https://github.com/csp0924/csplib/issues/106)) ([9c54d6e](https://github.com/csp0924/csplib/commit/9c54d6e13cfff31806467080922958bdb3ade520))
+* **manager:** Wave 2b — DeviceManager 部分失敗策略 + CAPABILITY_DEGRADED 告警 ([#107](https://github.com/csp0924/csplib/issues/107)) ([39263d8](https://github.com/csp0924/csplib/commit/39263d81f1d98848d4f33375974a61333b46f0b9))
+* **manager:** WriteValidationRule Protocol + WriteCommandManager 驗證鏈 (Wave 2b C-P2) ([#114](https://github.com/csp0924/csplib/issues/114)) ([bdaffc6](https://github.com/csp0924/csplib/commit/bdaffc674d6d28010fcccb1e9b5b0b9652d9355b))
+* **modbus_gateway:** ModbusGatewayServer 實作 HealthCheckable ([#121](https://github.com/csp0924/csplib/issues/121)) ([583042c](https://github.com/csp0924/csplib/commit/583042c6fafcdab1041349b7d30076f133135aa2))
+* **mongo:** MongoBatchUploader 實作 HealthCheckable ([#120](https://github.com/csp0924/csplib/issues/120)) ([fb2de6c](https://github.com/csp0924/csplib/commit/fb2de6ca71b9eab368abec7054cb0c96a7c42cd7))
+* **monitor:** SystemMonitor 加 describe() 對齊 ManagerDescribable ([#122](https://github.com/csp0924/csplib/issues/122)) ([aeabe74](https://github.com/csp0924/csplib/commit/aeabe74dceb2e8187de666f90acb16c53b8a2c6e))
+
+
+### Changed
+
+* **equipment:** EventBridge.attach 型別鬆綁為 DeviceProtocol ([#118](https://github.com/csp0924/csplib/issues/118)) ([5f75f3c](https://github.com/csp0924/csplib/commit/5f75f3c106b215f8cbd5f34f84eb790634272294))
+* **integration:** orchestrator 型別鬆綁 + ActionDeviceProtocol ([#109](https://github.com/csp0924/csplib/issues/109)) ([28a34b5](https://github.com/csp0924/csplib/commit/28a34b5ae2d266d76615d84edb06be8e4e44d853))
+* **integration:** TypeRegistry / manifest_binder 型別鬆綁為 DeviceProtocol ([#119](https://github.com/csp0924/csplib/issues/119)) ([b5c350d](https://github.com/csp0924/csplib/commit/b5c350dea98e05f8d2c8700ac0126ddf6337cf89))
+* **manager:** MongoRepositoryBase 收斂 Mongo Repo 樣板 ([#110](https://github.com/csp0924/csplib/issues/110)) ([5e629b8](https://github.com/csp0924/csplib/commit/5e629b8b6ea748588c8ae3e9a1f284c5fb557bd2))
+* **modbus:** drop unreachable aged-out branch in request queue ([#133](https://github.com/csp0924/csplib/issues/133)) ([af89864](https://github.com/csp0924/csplib/commit/af898646bca09bc02d476414f689eaa7f8929202))
+
+
+### Dependencies
+
+* **deps-dev:** update mypy requirement ([#130](https://github.com/csp0924/csplib/issues/130)) ([90d9929](https://github.com/csp0924/csplib/commit/90d99292a8541db47a2bc71d4e02d138d644d1be))
+* **deps-dev:** update uvicorn requirement ([#126](https://github.com/csp0924/csplib/issues/126)) ([e6198b3](https://github.com/csp0924/csplib/commit/e6198b31c9a6628705bb187d7b3fcf6d92088407))
+
 ## [0.9.1](https://github.com/csp0924/csplib/compare/v0.9.0...v0.9.1) (2026-04-21)
 
 
