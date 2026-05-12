@@ -46,23 +46,41 @@ command = ff(power_bin) × setpoint + Ki × ∫error·dt
 | `rated_power` | `float` | `2000.0` | 系統額定功率 (kW) |
 | `output_min` | `float` | `-2000.0` | 輸出下限 (kW) |
 | `output_max` | `float` | `2000.0` | 輸出上限 (kW) |
-| `ki` | `float` | `0.3` | 積分增益 (1/s) |
-| `integral_max_ratio` | `float` | `0.05` | I 項最大貢獻 = ratio x rated_power |
-| `deadband` | `float` | `0.5` | 死區 (kW)，誤差低於此值不累積 I |
+| `integral_time_seconds` | `float \| None` | `1.0` | I 項時間常數 (秒)。誤差 = rated_power 時 I 在 T 秒內打滿 max。`None`/`0` = 停用 I |
+| `integral_max_ratio` | `float` | `0.05` | I 項最大貢獻 = ratio × rated_power |
+| `deadband_ratio` | `float` | `0.0005` | 死區佔 rated 比例 (0.05%)。誤差 < `deadband_ratio × rated_power` 不積分 |
+| `measurement_noise_kw` | `float \| None` | `None` | 選用，量測 noise σ 估計；提供時 effective deadband = max(ratio×rated, 3σ) |
 | `power_bin_step_pct` | `int` | `5` | FF 表功率區間寬度 (% of rated) |
-| `steady_state_threshold` | `float` | `0.02` | 穩態門檻 \|error/setpoint\| |
-| `steady_state_cycles` | `int` | `5` | 連續穩態週期數，達標後觸發 FF 學習 |
+| `steady_state_threshold` | `float` | `0.02` | 穩態門檻 \|error/setpoint\|（內部會以 effective deadband 作為下限） |
+| `steady_state_seconds` | `float` | `1.5` | 連續穩態時間 (秒)。runtime cycles = round(seconds/dt) |
 | `settle_ratio` | `float` | `0.15` | 暫態閘門比例 |
-| `hold_cycles` | `int` | `2` | setpoint 變更後暫停積分的週期數 |
+| `hold_seconds` | `float` | `0.6` | setpoint 變更後暫停積分的時間 (秒) |
 | `ff_min` | `float` | `0.8` | FF 補償係數下限 |
 | `ff_max` | `float` | `1.5` | FF 補償係數上限 |
 | `error_ema_alpha` | `float` | `0.0` | 誤差 EMA 濾波係數（0=停用） |
-| `rate_limit` | `float` | `0.0` | 輸出變化率限制 (kW/s, 0=停用) |
+| `rate_limit` | `float \| None` | `None` | 輸出變化率限制 (kW/s)。`None` = 不限（假設上游 ramp） |
 | `measurement_key` | `str` | `"meter_power"` | context.extra 中量測值的 key |
 | `persist_path` | `str` | `""` | FF 表持久化路徑（空=不持久化） |
 | `saturation_learn_min_cycles` | `int` | `2` | 連續飽和達 N 週期後才觸發飽和學習（避免瞬態飽和誤更新） |
 | `saturation_learn_alpha` | `float` | `0.5` | 飽和學習 EMA 係數（0=保留舊值，1=完全採用物理推算） |
 | `saturation_learn_max_step` | `float` | `0.03` | 單次飽和學習 FF 最大變動量（限制單步衝擊，防過激修正） |
+
+> [!warning] v0.8 BREAKING
+> v0.7.x 的 `ki` / `deadband` / `hold_cycles` / `steady_state_cycles` 已移除。新 API 把時間相關參數一律用「秒」表達（與 dt 解耦），deadband 改用比例自動跟著 rated_power scale。**預設值刻意保留 v0.7 行為**（`integral_time_seconds = 0.05/0.3 ≈ 0.167s`、`deadband_ratio = 0.5/2000 = 0.00025`、`hold_seconds = 0.6`、`steady_state_seconds = 1.5`），用 default 升級的 user 行為不變。
+>
+> 對應換算（自訂 v0.7 值的 user）：
+>
+> - `ki` → `integral_time_seconds = integral_max_ratio / ki`；`ki=0` → `integral_time_seconds=None`
+> - `deadband` → `deadband_ratio = deadband / rated_power`（可改提供 `measurement_noise_kw` 讓 lib 自動取 `max(ratio×rated, 3σ)`）
+> - `hold_cycles` → `hold_seconds = hold_cycles × dt`
+> - `steady_state_cycles` → `steady_state_seconds = cycles × dt`
+> - `rate_limit=0.0` → `rate_limit=None`
+>
+> 另外：
+>
+> - `_get_ff` runtime 改線性插值（跨相鄰 bin），避免 setpoint 在 bin 邊界 chatter；學習仍 attribute 到最近的 bin（單 bin 學習資料 sharpness 不變）。
+> - `setpoint_change_threshold_ratio` 新增，取代舊版 hardcoded 0.1 kW（預設 0.00005 對應 rated=2000 kW 時 0.1 kW，行為不變）。
+> - `diagnostics` dict 新增 `effective_ki` / `effective_deadband_kw` 兩個 key（共 10 keys）。下游 dashboard / monitoring 若用 strict key-set 比對需更新；用 `.get()` 取值的 caller 不受影響。
 
 ## 演算法流程
 
