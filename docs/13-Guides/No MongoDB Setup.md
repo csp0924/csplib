@@ -147,15 +147,16 @@ class PostgresBatchUploader:
         # 實際應用中可於此處建立 table（或預先建立）
         pass
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         if self._pool is None:
-            return
+            return False  # 尚未 connect()，視同失敗
         import json
         async with self._pool.acquire() as conn:
             await conn.execute(
                 f"INSERT INTO {collection_name} (data) VALUES ($1)",
                 json.dumps(document),
             )
+        return True
 
     async def health_check(self) -> bool:
         if self._pool is None:

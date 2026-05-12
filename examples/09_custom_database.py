@@ -110,7 +110,7 @@ class CSVBatchUploader:
                 self._row_counts[collection_name] = 0
                 print(f"  [CSV] 已註冊 collection: {collection_name}")
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """
         將文件寫入 CSV 檔案
 
@@ -119,6 +119,13 @@ class CSVBatchUploader:
         Args:
             collection_name: 目標 collection 名稱
             document: 要寫入的資料
+
+        Returns:
+            True 表示資料成功寫入 CSV；False 表示底層因新欄位錯位而丟棄該筆
+            （回傳值對齊 ``BatchUploader.enqueue`` 契約，讓上層 dedup / 節流
+            狀態能感知 silent drop）。CSV 後端沒有 queue 容量上限，回傳 False
+            的唯一情境是 ``csv.DictWriter.writerow`` 因 fieldnames 不匹配而拋
+            ``ValueError``。
         """
         with self._lock:
             if collection_name not in self._writers:
@@ -138,9 +145,10 @@ class CSVBatchUploader:
                 writer.writerow(flat_doc)
                 self._files[collection_name].flush()
                 self._row_counts[collection_name] += 1
+                return True
             except ValueError:
-                # 新欄位出現時忽略（簡化處理）
-                pass
+                # 新欄位出現時忽略（簡化處理）；告知上層此筆未落地
+                return False
 
     def close(self) -> None:
         """關閉所有檔案"""
@@ -273,8 +281,10 @@ async def main():
   1. register_collection(collection_name: str) -> None
      註冊 collection 名稱（如 MongoDB collection 或 CSV 檔案名稱）
 
-  2. async enqueue(collection_name: str, document: dict) -> None
-     將文件加入上傳佇列（非同步，適用於 I/O 密集操作）
+  2. async enqueue(collection_name: str, document: dict) -> bool
+     將文件加入上傳佇列（非同步）。回傳 True=成功入隊；
+     False=底層因容量已滿丟棄最舊資料（silent drop），上層 dedup / 節流
+     狀態必須據此判斷是否 commit。
 
   任何實作這兩個方法的類別都可以作為 BatchUploader 使用，
   無需修改 DataUploadManager 或 UnifiedDeviceManager 的程式碼。

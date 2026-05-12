@@ -70,7 +70,7 @@ def _make_buffered_uploader(success: bool = True) -> MagicMock:
     buffered = MagicMock()
     buffered.write_immediate = AsyncMock(return_value=WriteResult(success=success, inserted_count=1 if success else 0))
     buffered.register_collection = MagicMock()
-    buffered.enqueue = AsyncMock()
+    buffered.enqueue = AsyncMock(return_value=True)
     return buffered
 
 

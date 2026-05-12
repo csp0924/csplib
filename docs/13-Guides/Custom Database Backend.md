@@ -49,8 +49,9 @@ class InMemoryUploader:
         # 可選：預先初始化 collection
         _ = self._documents[collection_name]
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         self._documents[collection_name].append(document)
+        return True  # in-memory list 不限容量，永遠成功
 
     def get_documents(self, collection_name: str) -> list[dict[str, Any]]:
         return list(self._documents.get(collection_name, []))
@@ -97,13 +98,24 @@ class BatchUploader(Protocol):
         """
         ...
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """
         將一份文件加入上傳佇列。
         DataUploadManager 在 read_complete 事件時呼叫此方法。
+
         Args:
             collection_name: 目標 collection 名稱
             document: 要上傳的資料字典
+
+        Returns:
+            True  — document 已安全進入佇列／後端
+            False — 後端因容量已滿丟棄了最舊資料（silent drop）。
+                    呼叫端（``DataUploadManager``）會把 False 視同失敗，
+                    不 commit dedup / 節流狀態，避免下次相同 payload 被
+                    去重吞掉造成資料遺失。
+
+        > v1.0.0 BREAKING：回傳型別自 ``None`` 改為 ``bool``。所有自訂實作
+        > 必須回傳 bool（沒有容量上限的後端永遠回 True）。
         """
         ...
 ```
@@ -178,10 +190,10 @@ class InfluxDBUploader:
         """將 collection_name 記錄為 InfluxDB measurement 名稱"""
         self._measurements.add(collection_name)
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """將文件轉換為 InfluxDB Point 並寫入"""
         if self._write_api is None:
-            return
+            return False  # 尚未 start()，視同失敗
 
         # 取出時間戳（若有）
         ts = document.get("timestamp")
@@ -207,6 +219,7 @@ class InfluxDBUploader:
             org=self._org,
             record=point,
         )
+        return True
 ```
 
 ### 範例：PostgreSQL / TimescaleDB 後端
@@ -247,9 +260,9 @@ class PostgreSQLUploader:
         """記錄 table 名稱（實際建表在首次寫入時懶執行）"""
         self._tables.add(collection_name)
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         if self._pool is None:
-            return
+            return False  # 尚未 start()，視同失敗
 
         async with self._pool.acquire() as conn:
             # 懶建表
@@ -273,6 +286,7 @@ class PostgreSQLUploader:
                 device_id,
                 data_json,
             )
+        return True
 ```
 
 ---

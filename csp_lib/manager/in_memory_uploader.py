@@ -32,13 +32,18 @@ class NullBatchUploader:
             collection_name: Collection 名稱
         """
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """將文件加入佇列（no-op）
 
         Args:
             collection_name: 目標 collection 名稱
             document: 要上傳的文件
+
+        Returns:
+            永遠回傳 True：no-op 不會發生 silent drop，回傳型別與
+            ``BatchUploader`` Protocol 對齊。
         """
+        return True
 
     async def health_check(self) -> bool:
         """檢查健康狀態
@@ -76,7 +81,7 @@ class InMemoryBatchUploader:
         with self._lock:
             self._collections.add(collection_name)
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """將文件加入佇列
 
         未註冊的 collection 會自動建立。
@@ -84,9 +89,14 @@ class InMemoryBatchUploader:
         Args:
             collection_name: 目標 collection 名稱
             document: 要上傳的文件
+
+        Returns:
+            永遠回傳 True：in-memory list 不限容量，不會發生 silent drop，
+            回傳型別與 ``BatchUploader`` Protocol 對齊。
         """
         with self._lock:
             self._documents[collection_name].append(document)
+        return True
 
     async def health_check(self) -> bool:
         """檢查健康狀態

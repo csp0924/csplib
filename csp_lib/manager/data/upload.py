@@ -339,9 +339,10 @@ class DataUploadManager(DeviceEventSubscriber):
     async def _safe_enqueue(self, collection: str, document: dict[str, Any], device_id: str) -> bool:
         # 任何 enqueue 錯誤都不應影響其他 target；以 logger.exception 記錄 traceback 並吞掉。
         # 回傳是否成功，供呼叫端決定要不要 commit 去重 / 節流狀態（避免失敗後資料被去重吞掉）。
+        # ``BatchUploader.enqueue`` 契約：True=安全入隊；False=底層 queue 溢位、最舊資料
+        # 被丟棄（silent drop）。兩種情況都不可 commit 上層的 dedup / 節流狀態。
         try:
-            await self._uploader.enqueue(collection, document)
-            return True
+            accepted = await self._uploader.enqueue(collection, document)
         except Exception:
             logger.exception(
                 "資料上傳管理器: enqueue 失敗 device={} collection={}",
@@ -349,6 +350,13 @@ class DataUploadManager(DeviceEventSubscriber):
                 collection,
             )
             return False
+        if not accepted:
+            logger.warning(
+                "資料上傳管理器: enqueue 被底層 uploader 丟棄（queue 溢位）device={} collection={}",
+                device_id,
+                collection,
+            )
+        return accepted
 
     # ================ 事件處理器 ================
 

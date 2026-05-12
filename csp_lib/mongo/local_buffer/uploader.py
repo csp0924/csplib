@@ -176,7 +176,7 @@ class LocalBufferedUploader(AsyncLifecycleMixin):
         self._collections.add(collection_name)
         self._downstream.register_collection(collection_name)
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """
         將文件寫入本地 buffer（等待背景 replay）
 
@@ -186,12 +186,19 @@ class LocalBufferedUploader(AsyncLifecycleMixin):
         Args:
             collection_name: 目標 collection 名稱
             document: 要上傳的文件
+
+        Returns:
+            永遠回傳 True：本地 buffer store 不會做容量驅逐（max_retry 用
+            ``bump_retry`` 而非丟棄），任何 store 寫入失敗會以 exception 形式
+            拋出由上層 ``_safe_enqueue`` 包住。回傳型別與 ``BatchUploader``
+            Protocol 對齊。
         """
         self._collections.add(collection_name)
         key = self._compute_idempotency_key(collection_name, document)
         doc_json = self._serialize_document(document)
 
         await self._store.append(collection_name, doc_json, key, synced=False)
+        return True
 
     async def write_immediate(
         self,

@@ -56,7 +56,8 @@ class FakeUploader:
     """BatchUploader 替身。用 AsyncMock 追蹤 enqueue 呼叫。"""
 
     def __init__(self) -> None:
-        self.enqueue = AsyncMock()
+        # ``BatchUploader.enqueue`` 自 v1.0 起回傳 bool；測試 mock 預設回 True
+        self.enqueue = AsyncMock(return_value=True)
         self.register_collection = MagicMock()
 
     def calls_for(self, collection: str) -> list[dict]:
@@ -306,9 +307,10 @@ class TestTransformExceptionIsolation:
 class TestEnqueueExceptionIsolation:
     async def test_enqueue_exception_other_target_still_runs(self, uploader: FakeUploader):
         # 自訂 enqueue：對 bad_coll 拋錯，其他正常
-        async def selective_enqueue(collection: str, doc: dict) -> None:
+        async def selective_enqueue(collection: str, doc: dict) -> bool:
             if collection == "bad_coll":
                 raise RuntimeError("enqueue boom")
+            return True
 
         uploader.enqueue.side_effect = selective_enqueue
 
@@ -545,7 +547,7 @@ class TestEnqueueFailureDoesNotPollute:
         manager.subscribe(device)
 
         # 第 1 次 enqueue 失敗，第 2 次成功；兩次的 transform 輸出相同
-        uploader.enqueue.side_effect = [RuntimeError("boom"), None]
+        uploader.enqueue.side_effect = [RuntimeError("boom"), True]
         payload = _read_payload("dev", {"v": 42})
 
         await device.emit(EVENT_READ_COMPLETE, payload)
@@ -562,7 +564,7 @@ class TestEnqueueFailureDoesNotPollute:
         manager.configure(device.device_id, "c", save_interval=60)
         manager.subscribe(device)
 
-        uploader.enqueue.side_effect = [RuntimeError("boom"), None]
+        uploader.enqueue.side_effect = [RuntimeError("boom"), True]
         payload = _read_payload("dev", {"v": 1})
 
         fake_time = [1000.0]
