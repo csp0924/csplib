@@ -994,8 +994,9 @@ class SystemController(AsyncLifecycleMixin):
 
             # 初始化 post-protection processors（async_init for MongoDB etc.）
             for proc in self._config.post_protection_processors:
-                if hasattr(proc, "async_init"):
-                    await proc.async_init()
+                init = getattr(proc, "async_init", None)
+                if callable(init):
+                    await init()
             if self._data_feed is not None:
                 self._data_feed.attach()
             # command_refresh 先於 heartbeat 啟動：避免 heartbeat pause/resume 干擾首輪 reconcile
@@ -1055,9 +1056,10 @@ class SystemController(AsyncLifecycleMixin):
             # Drain post-protection processors（async_close 對齊 async_init pattern）
             # 譬如 PowerCompensator + MongoFFTableRepository 的 fire-and-forget save。
             for proc in self._config.post_protection_processors:
-                if hasattr(proc, "async_close"):
+                close = getattr(proc, "async_close", None)
+                if callable(close):
                     try:
-                        await proc.async_close()
+                        await close()
                     except Exception:
                         logger.opt(exception=True).warning(f"CommandProcessor {type(proc).__name__}.async_close failed")
         finally:
