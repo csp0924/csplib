@@ -23,8 +23,13 @@ import pytest
 
 from csp_lib.core.health import HealthReport, HealthStatus
 from csp_lib.integration.registry import DeviceRegistry
-from csp_lib.integration.schema import SubsystemSnapshot, SystemControllerStatus
-from csp_lib.integration.system_controller import SystemController, SystemControllerConfig
+from csp_lib.integration.schema import HeartbeatMapping, SubsystemSnapshot, SystemControllerStatus
+from csp_lib.integration.system_controller import (
+    CommandRefreshConfig,
+    HeartbeatConfig,
+    SystemController,
+    SystemControllerConfig,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,13 +158,91 @@ class TestAutoDiscovery:
         assert snapshot.error is None
         assert snapshot.name == "executor"
 
-    def test_orchestrator_not_auto_attached_when_not_describable(self) -> None:
-        """orchestrator / heartbeat / command_refresh 沒實作任一 Protocol 或為 None
-        時，不應出現在 subsystems。"""
+    def test_optional_subsystems_absent_when_None(self) -> None:
+        """heartbeat / command_refresh 在 default config 下為 None，不應出現在 subsystems。
+
+        注意：v0.10.x 後 orchestrator 一律建立（且實作 HealthCheckable），
+        因此一定會被 auto-attach；此處只驗證 None 的兩個 optional subsystem 缺席。
+        """
         sc = _make_controller()
         status = sc.describe()
-        # heartbeat / command_refresh 預設為 None，必不在 subsystems
         assert "heartbeat" not in status.subsystems
+        assert "command_refresh" not in status.subsystems
+
+    def test_orchestrator_auto_attached_via_health_protocol(self) -> None:
+        """SystemCommandOrchestrator 實作 HealthCheckable，__init__ 應 auto-attach
+        為 'orchestrator'，kind='health'，payload 是 HealthReport instance，
+        component='SystemCommandOrchestrator'。"""
+        sc = _make_controller()
+        status = sc.describe()
+
+        assert "orchestrator" in status.subsystems
+        snapshot = status.subsystems["orchestrator"]
+        assert snapshot.kind == "health"
+        assert isinstance(snapshot.payload, HealthReport)
+        assert snapshot.payload.component == "SystemCommandOrchestrator"
+        assert snapshot.error is None
+
+    def test_all_four_subsystems_auto_attached_when_configured(self) -> None:
+        """4/4 hit case：executor + heartbeat (mappings configured) +
+        command_refresh (enabled) + orchestrator 都 auto-attach 為 kind='health'。"""
+        reg = DeviceRegistry()
+        config = SystemControllerConfig(
+            heartbeat=HeartbeatConfig(
+                mappings=[HeartbeatMapping(point_name="hb", trait="pcs")],
+                interval_seconds=1.0,
+            ),
+            command_refresh=CommandRefreshConfig(refresh_interval=1.0, enabled=True),
+        )
+        sc = SystemController(reg, config)
+        status = sc.describe()
+
+        # 4/4 都應該 auto-attach
+        assert "executor" in status.subsystems
+        assert "heartbeat" in status.subsystems
+        assert "command_refresh" in status.subsystems
+        assert "orchestrator" in status.subsystems
+
+        # 全部應該是 kind='health'，無 error
+        expected_components = {
+            "executor": None,  # StrategyExecutor.health() component name 由實作決定
+            "heartbeat": "HeartbeatService",
+            "command_refresh": "CommandRefreshService",
+            "orchestrator": "SystemCommandOrchestrator",
+        }
+        for sub_name, expected_component in expected_components.items():
+            snapshot = status.subsystems[sub_name]
+            assert snapshot.kind == "health", f"{sub_name}: kind={snapshot.kind}"
+            assert snapshot.error is None, f"{sub_name}: error={snapshot.error}"
+            assert isinstance(snapshot.payload, HealthReport)
+            if expected_component is not None:
+                assert snapshot.payload.component == expected_component
+
+    def test_only_executor_and_orchestrator_when_optional_absent(self) -> None:
+        """default config（無 heartbeat / 無 command_refresh）→ subsystems 應有
+        executor + orchestrator，但 NOT heartbeat / command_refresh。"""
+        sc = _make_controller()
+        status = sc.describe()
+
+        assert "executor" in status.subsystems
+        assert "orchestrator" in status.subsystems
+        assert "heartbeat" not in status.subsystems
+        assert "command_refresh" not in status.subsystems
+
+    def test_three_of_four_with_heartbeat_only(self) -> None:
+        """heartbeat 配置但 command_refresh 為 None → 3/4 (executor + heartbeat + orchestrator)。"""
+        reg = DeviceRegistry()
+        config = SystemControllerConfig(
+            heartbeat=HeartbeatConfig(
+                mappings=[HeartbeatMapping(point_name="hb", trait="pcs")],
+            ),
+        )
+        sc = SystemController(reg, config)
+        status = sc.describe()
+
+        assert "executor" in status.subsystems
+        assert "heartbeat" in status.subsystems
+        assert "orchestrator" in status.subsystems
         assert "command_refresh" not in status.subsystems
 
 

@@ -1,8 +1,8 @@
 ---
 tags: [type/class, layer/core, status/complete]
 source: csp_lib/core/health.py
-updated: 2026-04-04
-version: v0.6.1
+updated: 2026-05-08
+version: ">=0.9.2"
 ---
 # Health Check
 
@@ -93,6 +93,20 @@ from csp_lib.core import HealthCheckable
 component = MyComponent()
 assert isinstance(component, HealthCheckable)  # runtime_checkable 支援
 ```
+
+## 已實作 HealthCheckable 的元件
+
+| 元件 | 模組 | `health()` 狀態說明 |
+|------|------|-------------------|
+| `StrategyExecutor` | `csp_lib.controller` | `UNHEALTHY` 若策略執行連續失敗達門檻；詳見 [[StrategyExecutor]] |
+| `HeartbeatService` | `csp_lib.integration` | `UNHEALTHY` 若 last_error；`DEGRADED` 若 paused 或已配置但未 start |
+| `CommandRefreshService` | `csp_lib.integration` | `UNHEALTHY` 若 last_error；`DEGRADED` 若 not is_running |
+| `SystemCommandOrchestrator` | `csp_lib.integration` | `DEGRADED` 若最近一次執行為 aborted；否則 `HEALTHY` |
+| `SystemController` | `csp_lib.integration` | 彙整所有已註冊設備的健康狀態；`describe()` 另聚合四個內建服務快照 |
+| `MongoBatchUploader` | `csp_lib.mongo` | 詳見 MongoDB 模組文件 |
+
+> [!note] SystemController.describe() 自動探索
+> v0.9.2+：`SystemController` 啟動時自動對 `HeartbeatService`、`CommandRefreshService`、`SystemCommandOrchestrator`、`StrategyExecutor` 四個內建服務做 auto-discovery，`describe()` 可取得 4/4 子系統快照。詳見 [[SystemController#觀測介面：describe() 與 health()]]。
 
 ## 設計備註
 
