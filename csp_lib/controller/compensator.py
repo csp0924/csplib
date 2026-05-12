@@ -307,6 +307,14 @@ class PowerCompensatorConfig:
     saturation_learn_alpha: float = 0.5
     saturation_learn_max_step: float = 0.03
 
+    def __post_init__(self) -> None:
+        # 負 ratio 會讓 threshold_kw < 0，使 abs(diff) < negative 永遠 False，
+        # 反向把「未變動」判成「變動」，每 cycle reset integral + 進 hold。
+        if self.setpoint_change_threshold_ratio < 0:
+            raise ValueError(
+                f"setpoint_change_threshold_ratio must be >= 0, got {self.setpoint_change_threshold_ratio}"
+            )
+
 
 class PowerCompensator:
     """

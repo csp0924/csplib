@@ -1298,6 +1298,23 @@ class TestPersistFFTable:
 
 
 # ===========================================================================
+# Config validation
+# ===========================================================================
+
+
+class TestPowerCompensatorConfigValidation:
+    """Config 欄位輸入驗證（防止負值 ratio 等 silent corruption）。"""
+
+    def test_negative_setpoint_change_threshold_ratio_rejected(self):
+        """負 ratio 會讓 threshold_kw < 0，使 abs(diff) < negative 永遠 False、
+        反向把『未變動』判成『變動』，每 cycle 都 reset integral + 進 hold。
+        應在建構期 raise，避免 silent 行為失真。
+        """
+        with pytest.raises(ValueError, match="setpoint_change_threshold_ratio"):
+            PowerCompensatorConfig(rated_power=2000.0, setpoint_change_threshold_ratio=-0.001)
+
+
+# ===========================================================================
 # Small setpoint learning (BUG: deadband 對小 setpoint 鎖死 FF 學習)
 # ===========================================================================
 
