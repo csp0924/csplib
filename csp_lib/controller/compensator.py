@@ -132,15 +132,51 @@ class MongoFFTableRepository:
     def __init__(self, collection: Any, document_id: str = "ff_table") -> None:
         self._collection = collection
         self._doc_id = document_id
+        # 追蹤 fire-and-forget save 的 task，drain() 用來等所有 pending 完成
+        # 避免 process shutdown 時尚未寫入 mongo 的 save 被 event loop close 取消。
+        self._pending: set[asyncio.Task[None]] = set()
 
     def save(self, table: dict[int, float]) -> None:
-        """同步包裝 — 在 asyncio event loop 中排程 async save"""
+        """同步包裝 — 在 asyncio event loop 中排程 async save。
 
+        Task 加入 ``self._pending`` 並透過 done callback 自動清除，shutdown 前
+        應呼叫 :meth:`drain` 確保所有 pending 完成。
+        """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self._async_save(table))
+            task = loop.create_task(self._async_save(table))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
         except RuntimeError:
             logger.warning("MongoFFTableRepository: no running event loop, skip save")
+
+    async def drain(self, timeout: float = 5.0) -> None:
+        """等所有 pending save 完成（或超時取消）。
+
+        典型用法：SystemController._on_stop 在 shutdown 前呼叫，避免高頻學習
+        產生的 fire-and-forget save 在 event loop close 時被取消而遺失。
+
+        Args:
+            timeout: 最長等待秒數，超時則 cancel 剩餘 task 並 log warning。
+                預設 5 秒涵蓋一般 motor IO；極端慢的網路場景可調大。
+        """
+        if not self._pending:
+            return
+        pending_snapshot = list(self._pending)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*pending_snapshot, return_exceptions=True),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            cancelled = 0
+            for task in pending_snapshot:
+                if not task.done():
+                    task.cancel()
+                    cancelled += 1
+            logger.warning(
+                f"MongoFFTableRepository.drain timeout after {timeout}s, cancelled {cancelled} pending saves"
+            )
 
     def load(self) -> dict[int, float] | None:
         """同步包裝 — 用於 PowerCompensator.__init__，無法 await"""
@@ -203,6 +239,9 @@ class PowerCompensatorConfig:
         integral_max_ratio: I 項最大貢獻 = ratio × rated_power
         deadband_ratio: 死區佔 rated 的比例（預設 0.00025 = 0.025%）。誤差低於
             ``deadband_ratio × rated_power`` 不累積 I。
+        deadband_setpoint_ratio: 死區佔 |setpoint| 的比例（預設 0.02 = 2%）。
+            實際 deadband = ``max(noise_floor, min(deadband_ratio × rated, |setpoint| × ratio))``。
+            小 setpoint 時用此值縮小 deadband 允許學習；``0`` 或負值停用相對縮放。
         measurement_noise_kw: （選用）量測 noise 標準差估計 (kW)。若提供，實際
             死區 = ``max(deadband_ratio × rated, 3σ)``；不提供或非正值則純用 ratio。
         power_bin_step_pct: FF 表功率區間寬度 (% of rated)
@@ -210,7 +249,9 @@ class PowerCompensatorConfig:
             effective deadband 作為下限，避免誤差小於 deadband 反而被認為穩態。
         steady_state_seconds: 連續穩態時間 (秒)，達標後觸發 FF 學習。runtime
             cycles = ``max(1, round(steady_state_seconds / dt))``。
-        settle_ratio: 暫態閘門比例，setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數
+        settle_ratio: **Deprecated**，不再 gate hold（下個 major bump 移除）。
+            Hold 改用 |error| 變化率判定：縮小 → 維持、穩定 / 變大 → decrement，
+            hard cap = hold_initial × 3 cycle 強制釋放。
         hold_seconds: setpoint 變更後暫停積分的時間 (秒)；runtime cycles = round(hold_seconds / dt)。
         setpoint_change_threshold_ratio: setpoint 變動「視為改變」的相對閾值（佔 rated）。
             預設 0.00005 = 0.005%（對 rated=2000kW 為 0.1kW，對應舊 v0.7 hardcoded 行為）。
@@ -242,6 +283,9 @@ class PowerCompensatorConfig:
     # 預設 0.00025 對應舊 deadband=0.5 kW @ rated=2000 kW 的行為；
     # 量測 noise 估計值較大時請用 measurement_noise_kw（取 max(ratio×rated, 3σ)）。
     deadband_ratio: float = 0.5 / 2000.0
+    # 預設 0.02 = 2% — 小 setpoint 時用此值縮小 deadband 允許學習；
+    # 0 = 停用（純 absolute deadband，回到 v0.8.0 行為）。
+    deadband_setpoint_ratio: float = 0.02
     measurement_noise_kw: float | None = None
     power_bin_step_pct: int = 5
     steady_state_threshold: float = 0.02
@@ -262,6 +306,14 @@ class PowerCompensatorConfig:
     saturation_learn_min_cycles: int = 2
     saturation_learn_alpha: float = 0.5
     saturation_learn_max_step: float = 0.03
+
+    def __post_init__(self) -> None:
+        # 負 ratio 會讓 threshold_kw < 0，使 abs(diff) < negative 永遠 False，
+        # 反向把「未變動」判成「變動」，每 cycle reset integral + 進 hold。
+        if self.setpoint_change_threshold_ratio < 0:
+            raise ValueError(
+                f"setpoint_change_threshold_ratio must be >= 0, got {self.setpoint_change_threshold_ratio}"
+            )
 
 
 class PowerCompensator:
@@ -325,8 +377,9 @@ class PowerCompensator:
         self._last_output: float = 0.0
         self._steady_count: int = 0
         self._integral_hold: int = 0
-        self._settle_threshold: float = 0.0
-        # 飽和脫離週期計數（v0.7.2 BUG-012）— 累積連續飽和週期，達到 min_cycles 後啟動飽和學習
+        self._hold_initial: int = 0
+        self._cycles_in_hold: int = 0
+        self._last_error_magnitude: float = 0.0
         self._saturation_escape_count: int = 0
 
     # ─────────────────────── CommandProcessor Protocol ───────────────────────
@@ -400,8 +453,8 @@ class PowerCompensator:
             self._steady_count = 0
             return 0.0
 
-        # Per-call effective values（依 dt 換算）
-        deadband_kw = self._effective_deadband_kw
+        # Per-call effective values（依 dt 換算 + per-setpoint 縮放）
+        deadband_kw = self._effective_deadband_for_setpoint(setpoint)
         hold_cycles_needed = _cycles_from_seconds(cfg.hold_seconds, dt, floor=0)
         steady_cycles_needed = _cycles_from_seconds(cfg.steady_state_seconds, dt, floor=1)
 
@@ -431,19 +484,25 @@ class PowerCompensator:
         sat_low = ff_output <= cfg.output_min
         saturated = sat_high or sat_low
 
-        # Asymmetric anti-windup（v0.7.2 BUG-012）：
-        # - 飽和在上限 + error 為負（量測 > 目標）→ 朝脫離方向，允許累積負 integral 拉回
-        # - 飽和在下限 + error 為正（量測 < 目標）→ 朝脫離方向，允許累積正 integral 拉回
-        # - 非飽和 + 誤差超出死區 → 正常積分累積
-        # - 飽和同向（誤差與飽和一致）→ 凍結積分以避免 windup
+        # Asymmetric anti-windup：飽和異向（error 朝脫離）可累積 I 拉回；
+        # 飽和同向（error 與飽和方向一致）凍結 I 避免 windup。
         can_integrate_high = sat_high and filtered_error < -deadband_kw
         can_integrate_low = sat_low and filtered_error > deadband_kw
         can_integrate_free = (not saturated) and abs(filtered_error) >= deadband_kw
 
         # 6. 積分更新
         if self._integral_hold > 0:
-            if abs(filtered_error) <= self._settle_threshold:
+            # |error| 縮小代表 PCS 仍在追 → 維持 hold；穩定 / 變大代表 PCS 到位
+            # 或持續擾動 → decrement。Hard cap 防止「永遠看起來縮小」造成鎖死。
+            error_magnitude = abs(filtered_error)
+            self._cycles_in_hold += 1
+            if self._cycles_in_hold >= self._hold_initial * 3:
+                self._integral_hold = 0
+            elif error_magnitude < self._last_error_magnitude - deadband_kw:
+                pass
+            else:
                 self._integral_hold -= 1
+            self._last_error_magnitude = error_magnitude
         elif can_integrate_high or can_integrate_low or can_integrate_free:
             self._integral += filtered_error * dt
             self._clamp_integral()
@@ -488,6 +547,9 @@ class PowerCompensator:
         self._last_output = 0.0
         self._steady_count = 0
         self._integral_hold = 0
+        self._hold_initial = 0
+        self._cycles_in_hold = 0
+        self._last_error_magnitude = 0.0
         self._saturation_escape_count = 0
 
     def reset_ff_table(self) -> None:
@@ -597,6 +659,25 @@ class PowerCompensator:
             if table:
                 self.load_ff_table(table)
 
+    async def async_close(self) -> None:
+        """
+        Async shutdown — 對齊 :meth:`async_init` pattern。
+
+        若 repository 支援 ``drain()``（譬如 MongoDB 的 fire-and-forget save），
+        等所有 pending 寫入完成。SystemController._on_stop() 會自動呼叫所有
+        CommandProcessor 的 async_close()。
+
+        Usage::
+
+            comp = PowerCompensator(config, repository=MongoFFTableRepository(collection))
+            # ... runtime ...
+            await comp.async_close()  # drain pending mongo writes 後安全 shutdown
+        """
+        if self._repository is None:
+            return
+        if hasattr(self._repository, "drain"):
+            await self._repository.drain()
+
     @property
     def enabled(self) -> bool:
         return self._enabled
@@ -616,6 +697,7 @@ class PowerCompensator:
             "i_contribution": round(self._effective_ki * self._integral, 2),
             "effective_ki": round(self._effective_ki, 6),
             "effective_deadband_kw": round(self._effective_deadband_kw, 4),
+            "effective_deadband_at_last_setpoint": round(self._effective_deadband_for_setpoint(self._last_setpoint), 4),
             "last_setpoint": round(self._last_setpoint, 1),
             "last_output": round(self._last_output, 1),
             "last_ff": round(self._get_ff(self._last_setpoint), 4),
@@ -648,20 +730,28 @@ class PowerCompensator:
         return self._config.integral_max_ratio / t
 
     def _compute_effective_deadband(self) -> float:
-        """由 deadband_ratio 與 measurement_noise_kw 推算 effective 死區 (kW)。
+        """Absolute deadband floor (kW)：``max(deadband_ratio × rated, 3σ noise)``。
 
-        - 純 ratio: ``deadband = deadband_ratio × rated_power``
-        - 有 noise 估計時取較大者: ``max(deadband_ratio × rated, 3σ)``，
-          確保死區至少能蓋過 3σ noise，避免 I 在量測雜訊上空積分。
-
-        ``measurement_noise_kw`` 為 ``None`` / ``0`` / 負值 → 純走 ratio。
-        負值不 raise，silently fallback 跟 integral_time_seconds 一致。
+        Per-setpoint 縮放走 :meth:`_effective_deadband_for_setpoint`。
         """
-        cfg = self._config
-        ratio_kw = cfg.deadband_ratio * cfg.rated_power
-        if cfg.measurement_noise_kw is None or cfg.measurement_noise_kw <= 0:
-            return ratio_kw
-        return max(ratio_kw, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
+        return max(self._config.deadband_ratio * self._config.rated_power, self._noise_floor())
+
+    def _noise_floor(self) -> float:
+        """3σ noise floor in kW；measurement_noise_kw 缺值或非正時回 0。"""
+        n = self._config.measurement_noise_kw
+        return _NOISE_SIGMA_MULTIPLIER * n if n is not None and n > 0 else 0.0
+
+    def _effective_deadband_for_setpoint(self, setpoint: float) -> float:
+        """Per-setpoint effective deadband (kW)。
+
+        ``max(noise_floor, min(absolute_deadband, |setpoint| × ratio))``。
+        小 setpoint 縮小 deadband 允許學習；大 setpoint 維持 absolute；
+        ``deadband_setpoint_ratio <= 0`` 跳過相對縮放。
+        """
+        ratio = self._config.deadband_setpoint_ratio
+        if ratio <= 0:
+            return self._effective_deadband_kw
+        return max(self._noise_floor(), min(self._effective_deadband_kw, abs(setpoint) * ratio))
 
     def _build_initial_ff_table(self) -> dict[int, float]:
         step = self._config.power_bin_step_pct
@@ -710,17 +800,22 @@ class PowerCompensator:
         self._integral = 0.0
         self._steady_count = 0
         self._integral_hold = hold_cycles_needed
-        self._settle_threshold = abs(new_setpoint - old) * cfg.settle_ratio
+        self._hold_initial = hold_cycles_needed
+        self._cycles_in_hold = 0
+        # 第一次 hold cycle 視為「正在縮小」，避免初始 hold 立刻被誤判
+        self._last_error_magnitude = float("inf")
         self._inherit_ff(old, new_setpoint)
 
     def _inherit_ff(self, old_setpoint: float, new_setpoint: float) -> None:
-        # 設計對齊：FF 表的「寫入」路徑（learning + inherit）一律走 _get_bin_index
-        # 的 round 取單一 bin；只有 runtime 讀取（_get_ff）才做相鄰 bin 線性插值。
-        # 這讓學習資料的 sharpness 不被插值稀釋，但讀取時跨邊界平滑不會 chatter。
-        # 若未來改一邊請保持這個非對稱性。
+        # FF 表寫入（learning + inherit）一律 round 到單一 bin；
+        # 只有 runtime 讀取（_get_ff）才跨 bin 線性插值。
+        # 這個非對稱性讓學習 sharpness 不被插值稀釋、但讀取跨邊界不 chatter。
         old_idx = self._get_bin_index(old_setpoint)
         new_idx = self._get_bin_index(new_setpoint)
         if old_idx == new_idx:
+            return
+        # 跨符號不繼承：放電（ff × setpoint）與充電（setpoint / ff）物理意義不對稱。
+        if old_idx * new_idx < 0:
             return
         old_ff = self._ff_table.get(old_idx, 1.0)
         new_ff = self._ff_table.get(new_idx, 1.0)

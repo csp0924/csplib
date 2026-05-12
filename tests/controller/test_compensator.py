@@ -128,9 +128,16 @@ class TestCompensatorIntegral:
         assert diag["integral"] > 0
 
     def test_error_within_deadband_no_integral(self):
-        """Error below deadband should not accumulate integral."""
+        """Error below deadband should not accumulate integral.
+
+        Note: 明示停用 deadband_setpoint_ratio 以驗證 absolute deadband 行為；
+        否則 setpoint=100 × 0.02 = 2 kW 會壓過 absolute=5 kW，error=2 反而觸發積分。
+        """
         comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=_DB_RATIO_50_AT_2K, hold_seconds=0.0
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_50_AT_2K,
+            deadband_setpoint_ratio=0.0,
+            hold_seconds=0.0,
         )
         # error = 100 - 98 = 2 < deadband 5
         comp.compensate(setpoint=100.0, measurement=98.0, dt=1.0)
@@ -172,8 +179,8 @@ class TestCompensatorSetpointChange:
         comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
         # Integral should have been reset (then possibly re-accumulated for 1 step)
         # The key assertion: it should not be the accumulated value from before
-        # After reset, integral_hold prevents accumulation for hold_seconds=0.0, so
-        # one step of error 10 over dt=1 gives integral=10 (not the old value)
+        # hold_seconds=0.0 → hold_cycles_needed=0，setpoint 變動 reset 後不進 hold；
+        # 同一 cycle 立刻累積：error=10 × dt=1 → integral=10。
         assert comp.diagnostics["integral"] <= 10.1
 
     def test_small_setpoint_change_no_reset(self):
@@ -331,6 +338,7 @@ class TestCompensatorDiagnostics:
             "i_contribution",
             "effective_ki",
             "effective_deadband_kw",
+            "effective_deadband_at_last_setpoint",
             "last_setpoint",
             "last_output",
             "last_ff",
@@ -526,51 +534,83 @@ class TestMongoFFTableRepository:
 
 
 class TestCompensatorTransientGate:
-    def test_hold_cycles_delays_integral_accumulation(self):
-        """After a setpoint change, integral should NOT accumulate during hold period."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.15
-        )
-        # Initial setpoint
+    """Hold 用「error 變化率」判定：|error| 還在縮小 = PCS 在追、維持；
+    穩定 / 變大 = PCS 到位或擾動、decrement。Hard cap = hold_initial × 3。
+
+    取代原 settle_threshold 機制（在持續擾動下永久鎖死，且無法區分慢 PCS）。
+    """
+
+    def test_hold_blocks_integral_accumulation(self):
+        """During hold period, integral should NOT accumulate (even with large error)."""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
-        # Change setpoint -> triggers hold_seconds=3.0
+        # 觸發 hold；measurement 跟著縮小（模擬 PCS 在追）
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        # integral 在 hold 期間一定為 0
+        assert comp.diagnostics["integral"] == pytest.approx(0.0)
+        # hold 還在（第一次 cycle 視為 shrinking，不 decrement）
+        assert comp.diagnostics["hold_remaining"] == 3
 
-        # During hold: error=20, settle_threshold = |200-100| * 0.15 = 15
-        # error 20 > 15, so hold does NOT count down
-        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        assert comp.diagnostics["hold_remaining"] == 3  # unchanged because error > settle_threshold
-
-    def test_hold_counts_down_when_error_within_settle(self):
-        """Hold should count down when |error| <= settle_threshold."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.5
+    def test_hold_persists_while_pcs_ramping(self):
+        """模擬慢 PCS：error 每 cycle 顯著縮小，hold 不應 decrement。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=5.0)
+        comp.compensate(setpoint=0.0, measurement=0.0, dt=1.0)
+        # PCS 從 0 慢慢爬到 100：模擬 5 個 cycle 完成 (每 cycle 走 20)
+        meter_trajectory = [0, 20, 40, 60, 80, 100]
+        comp.compensate(setpoint=100.0, measurement=meter_trajectory[0], dt=1.0)
+        for meas in meter_trajectory[1:]:
+            comp.compensate(setpoint=100.0, measurement=meas, dt=1.0)
+        # error: 100→80→60→40→20→0 — 一直在縮小
+        # hold 不該 decrement（PCS 還在追）
+        assert comp.diagnostics["hold_remaining"] == 5, (
+            f"PCS 還在 ramp 期間 hold 不該 decrement: {comp.diagnostics['hold_remaining']}"
         )
+
+    def test_hold_counts_down_when_error_stable(self):
+        """持續擾動或 PCS 到位後，error 穩定 → hold 該 decrement。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0)
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
-        # Change setpoint: settle_threshold = |200-100| * 0.5 = 50
-        # The setpoint-change call itself also runs integral update, so hold counts down once there
+        # setpoint change → hold=3，第一個 cycle 視為 shrinking (last_err=inf)
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        # error=20 < settle=50 -> hold counted down on that same call: 3 -> 2
+        assert comp.diagnostics["hold_remaining"] == 3
+        # 之後 error 穩定在 20 → hold 該 -1
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
         assert comp.diagnostics["hold_remaining"] == 2
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
         assert comp.diagnostics["hold_remaining"] == 1
-        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        assert comp.diagnostics["hold_remaining"] == 0
+
+    def test_hold_hard_cap_releases_after_3x_initial(self):
+        """Hard cap 保護：cycles_in_hold ≥ hold_initial × 3 強制釋放，
+        防 PCS 慢漸近或量測 drift 造成 hold 永遠不收斂。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=2.0)
+        comp.compensate(setpoint=0.0, measurement=0.0, dt=1.0)
+        comp.compensate(setpoint=100.0, measurement=99.0, dt=1.0)  # cycle 1, hold_initial=2
+        # 構造「永遠 shrinking 一點點」的病態軌跡：每 cycle 縮小 epsilon (低於 deadband 但仍縮)
+        # 用 deadband=0 → 任何 shrinking 都被偵測；error 從 1.0 → 0.9 → 0.8 ...
+        for i in range(1, 8):
+            comp.compensate(setpoint=100.0, measurement=99.0 + i * 0.1, dt=1.0)
+        # cycles_in_hold 在某個點達 2×3=6，強制釋放 hold=0
+        assert comp.diagnostics["hold_remaining"] == 0, f"Hard cap 未觸發，hold={comp.diagnostics['hold_remaining']}"
 
     def test_integral_resumes_after_hold_expires(self):
-        """After hold_cycles expire, integral accumulation should resume."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=1.0, settle_ratio=1.0
-        )
+        """After hold expires, integral accumulation should resume."""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=1.0)
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
-        # Change setpoint: settle_threshold = |200-100| * 1.0 = 100
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
-        # hold=1, error=10 < 100 -> countdown: hold becomes 0
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # hold=1 (第一次視為 shrinking)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # error 穩定 → hold→0
         assert comp.diagnostics["hold_remaining"] == 0
-        # Next call: hold=0, error=10 > deadband=0 -> integral should accumulate
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # integral 應累積
         assert comp.diagnostics["integral"] > 0
+
+    def test_settle_ratio_is_deprecated_noop(self):
+        """settle_ratio 已 deprecated（變化率判定取代），設值不應影響 hold 行為。"""
+        comp_a = _make_compensator(deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.0)
+        comp_b = _make_compensator(deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=10.0)
+        for c in (comp_a, comp_b):
+            c.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
+            c.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+            c.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp_a.diagnostics["hold_remaining"] == comp_b.diagnostics["hold_remaining"]
 
 
 # ===========================================================================
@@ -1255,3 +1295,342 @@ class TestPersistFFTable:
         comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=FailingRepo())
         # 不應 raise
         comp.persist_ff_table()
+
+
+# ===========================================================================
+# Config validation
+# ===========================================================================
+
+
+class TestPowerCompensatorConfigValidation:
+    """Config 欄位輸入驗證（防止負值 ratio 等 silent corruption）。"""
+
+    def test_negative_setpoint_change_threshold_ratio_rejected(self):
+        """負 ratio 會讓 threshold_kw < 0，使 abs(diff) < negative 永遠 False、
+        反向把『未變動』判成『變動』，每 cycle 都 reset integral + 進 hold。
+        應在建構期 raise，避免 silent 行為失真。
+        """
+        with pytest.raises(ValueError, match="setpoint_change_threshold_ratio"):
+            PowerCompensatorConfig(rated_power=2000.0, setpoint_change_threshold_ratio=-0.001)
+
+
+# ===========================================================================
+# Small setpoint learning (BUG: deadband 對小 setpoint 鎖死 FF 學習)
+# ===========================================================================
+
+
+class TestCompensatorSmallSetpointLearning:
+    """小 setpoint 在持續 plant 損失下也應能學到 FF。
+
+    Bug 描述：
+      預設 deadband_ratio=0.00025 → effective deadband=0.5 kW @ rated=2000。
+      當 setpoint 小到「setpoint × plant_loss < deadband」時：
+        - 積分閘門 (compensate line 441) → I 永遠不累積
+        - 學習閘門 (_learn_if_steady line 767) → 即使 steady_count 達標也擋
+      結果：FF 永久卡在 1.0、穩態誤差無法被吸收。
+
+    場景：rated=2000、deadband=0.5 kW、plant 5% loss、setpoint=5 kW
+      → 初始 error = 0.25 kW < 0.5 kW → 雙重門檻鎖死。
+
+    修法 (B)：deadband 跟著 setpoint 相對縮放 — 加 deadband_setpoint_ratio
+    使小 setpoint 的有效 deadband 變小（但不低於 noise floor）。
+    """
+
+    def _plant_with_loss(self, pcs_cmd: float, loss_pct: float = 0.05) -> float:
+        """簡化 plant：固定百分比損失，放電/充電對稱。"""
+        if pcs_cmd >= 0:
+            return pcs_cmd * (1 - loss_pct)
+        return pcs_cmd * (1 + loss_pct)
+
+    def test_large_setpoint_learns_ff_baseline(self):
+        """Baseline: 大 setpoint 應正常收斂（確認 fixture 與 plant 模型本身可學）。"""
+        # 用 dt=0.3 配合 hold_seconds=0.6 → hold_cycles=2、steady_cycles=5
+        # 保留與 v0.7 等效的設定，只關注「小 setpoint vs 大 setpoint」差異
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 200.0
+        for _ in range(500):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=200.0, measurement=meter, dt=0.3)
+
+        bin_idx = comp._get_bin_index(200.0)
+        ff = comp.ff_table[bin_idx]
+        # 理論最佳 FF = 1/(1-0.05) ≈ 1.0526；容許 0.02 誤差（steady 邊界停止學習導致）
+        assert abs(ff - 1.0526) < 0.02, f"大 setpoint FF 未收斂：bin[{bin_idx}]={ff}"
+
+    def test_small_setpoint_learns_ff(self):
+        """Bug repro: 小 setpoint 應能學到 FF（修復後通過、修復前 FAIL）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 5.0
+        for _ in range(2000):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=5.0, measurement=meter, dt=0.3)
+
+        bin_idx = comp._get_bin_index(5.0)
+        ff = comp.ff_table[bin_idx]
+        # 小 setpoint 應該也能學到接近 1.0526；放寬到 0.05 容忍邊界停止
+        assert abs(ff - 1.0526) < 0.05, (
+            f"小 setpoint FF 未收斂：bin[{bin_idx}]={ff}（理論 1.0526）。deadband 雙重門檻鎖死小 setpoint 學習。"
+        )
+
+    def test_small_setpoint_steady_error_should_shrink(self):
+        """小 setpoint 在學習後穩態誤差應顯著小於 plant 損失。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 5.0
+        for _ in range(2000):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=5.0, measurement=meter, dt=0.3)
+
+        final_meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+        # 未修復：穩態誤差 ≈ 0.25 kW (5% loss × 5 kW setpoint)
+        # 修復後：應收斂到 < 0.1 kW（鬆綁的 deadband 約 0.1 kW）
+        steady_error = abs(5.0 - final_meter)
+        assert steady_error < 0.1, f"小 setpoint 穩態誤差過大：{steady_error:.3f} kW（修復前約 0.25 kW）"
+
+
+# ===========================================================================
+# Cross-sign FF inherit (BUG: 放電 bin 的 FF 被繼承到充電 bin)
+# ===========================================================================
+
+
+class TestCompensatorCrossSignInherit:
+    """跨符號 setpoint 切換時，FF 不應從異號 bin 繼承。
+
+    Bug 描述：
+      `_inherit_ff` 只檢查 new_idx != old_idx + new_ff == 1.0 + old_ff != 1.0，
+      沒擋 `old_idx * new_idx < 0`。
+      結果：放電 bin 學到的 FF（補放電損耗）被原樣套到充電 bin（應該補充電輔電），
+      物理意義錯誤，造成切換瞬間誤差放大。
+
+    場景：rated=2000、bin_step=5%、setpoint 從 +100 (bin +1) 切到 -100 (bin -1)
+    放電學完後 FF[+1] ≈ 1.05，切換後 _inherit_ff 應該:
+      - 不該把 FF[+1] 套給 FF[-1]
+      - FF[-1] 應保持 1.0（待充電方向自己學）
+
+    對 AFC / 頻率響應這種每秒切換的場景，每次跨號切換都會多一個暫態衝擊。
+    """
+
+    def _asymmetric_plant(self, pcs_cmd: float) -> float:
+        """放電 5% loss、充電 2% loss（兩方向物理不對稱）。"""
+        if pcs_cmd >= 0:
+            return pcs_cmd * (1 - 0.05)
+        return pcs_cmd * (1 + 0.02)
+
+    def _learn_discharge_phase(self, comp: PowerCompensator, cycles: int = 800) -> float:
+        """跑放電 setpoint=+100 直到 FF[+1] 收斂；回傳最後一輪 PCS 命令。"""
+        pcs_cmd = 100.0
+        for _ in range(cycles):
+            meter = self._asymmetric_plant(pcs_cmd)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+        return pcs_cmd
+
+    def test_phase_a_learns_positive_bin(self):
+        """Sanity: 放電階段應該真的把 FF[+1] 學到 ≠ 1.0（驗證後續測試前提）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        self._learn_discharge_phase(comp)
+        ff_pos = comp.ff_table[comp._get_bin_index(100.0)]
+        assert ff_pos > 1.01, f"放電 bin 沒學到（FF[+1]={ff_pos}），測試前提不成立"
+
+    def test_cross_sign_switch_does_not_inherit_ff(self):
+        """Bug repro: 切換到充電 setpoint 後，FF[-1] 不應被繼承為 FF[+1] 的值。
+
+        修復前：FF[-1] = FF[+1] (錯誤繼承)
+        修復後：FF[-1] = 1.0（保持初始值，由 _learn_if_steady 自己學）
+        """
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        # Phase A: 放電學習
+        self._learn_discharge_phase(comp)
+        ff_pos_before_switch = comp.ff_table[comp._get_bin_index(100.0)]
+        assert ff_pos_before_switch > 1.01  # sanity
+
+        # Phase B: 切換到充電 setpoint，只跑 1 cycle 觀察 inherit 結果
+        # 用一個合理的 measurement（與 PCS 命令一致的方向）
+        comp.compensate(setpoint=-100.0, measurement=-100.0, dt=0.3)
+
+        ff_neg_after_switch = comp.ff_table[comp._get_bin_index(-100.0)]
+        # 充電 bin 不該繼承放電 bin 的學習結果
+        assert ff_neg_after_switch == pytest.approx(1.0, abs=1e-6), (
+            f"FF[-1]={ff_neg_after_switch} 被錯誤繼承自 FF[+1]={ff_pos_before_switch}。"
+            f"跨符號 bin 物理意義不對稱（放電補損耗 vs 充電補輔電），不應繼承。"
+        )
+
+    def test_cross_sign_first_cycle_error_consistent_with_unlearned(self):
+        """切換瞬間誤差應該對應「FF=1.0」的物理（PCS 出 -100 → meter ≈ -102，欠 2 kW），
+        而非繼承後的物理（PCS 出 -95 → meter ≈ -97，過 2.6 kW）。
+        """
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        self._learn_discharge_phase(comp)
+
+        # 從 phase A 結束的 PCS 命令切到 -100
+        # 用 phase A 最後輸出當第一個 measurement 的來源
+        pcs_at_phase_a_end = comp.compensate(setpoint=100.0, measurement=100.0 * 0.95, dt=0.3)
+        meter_first = self._asymmetric_plant(pcs_at_phase_a_end)
+
+        # 第一個 phase B cycle：setpoint=-100, measurement 從 phase A 帶來
+        pcs_phase_b_0 = comp.compensate(setpoint=-100.0, measurement=meter_first, dt=0.3)
+        # 第二個 cycle 才是真實的 phase B 物理回饋
+        meter_phase_b_1 = self._asymmetric_plant(pcs_phase_b_0)
+
+        # 修復後：FF[-1]=1.0 → PCS 出 -100 → meter = -100 × 1.02 = -102 → error = +2
+        # 修復前：FF[-1]≈1.05 → PCS 出 -95.2 → meter = -97.1 → error = -2.9
+        error = -100.0 - meter_phase_b_1
+        assert error > 0, (
+            f"切換瞬間 error={error:.2f} 為負（過充），表示 FF[-1] 被錯誤繼承。"
+            f"正確物理：FF[-1]=1.0 時 error 應為正（不足充約 +2 kW）。"
+        )
+
+
+# ===========================================================================
+# Integral hold lockup under sustained disturbance
+# ===========================================================================
+
+
+class TestCompensatorIntegralHoldLockup:
+    """持續性外部擾動下 integral_hold 永遠不開的問題。
+
+    Bug 描述：
+      `_apply_setpoint_change_policy` 設 settle_threshold = |new - old| × 0.15。
+      `compensate` line 444 的 integral_hold 只在 |filtered_error| ≤ settle_threshold 才
+      decrement。
+
+      設計者原意：等 setpoint change 造成的 transient 過去（error 降到小於門檻）才開 I。
+      但 settle 條件用「error 絕對值」判定，無法區分：
+        - 真實 transient：error 隨時間衰減
+        - 持續擾動：error 永遠卡住
+
+      當 |擾動| > settle_threshold（即 > 15% × setpoint），integral_hold 永遠不
+      decrement → I 永不累積 → FF 永不學 → error 永久卡住 = -擾動。
+
+    場景：setpoint=100、plant 加性擾動 +20 kW
+      settle_threshold = 100 × 0.15 = 15 < |擾動|=20 → 鎖死。
+      實務上小 setpoint + 任何明顯擾動就會踩到（屋頂 PV、其他設備、線路雜耦合等）。
+    """
+
+    def _additive_disturbance_plant(self, pcs_cmd: float, disturbance_kw: float = 20.0) -> float:
+        return pcs_cmd + disturbance_kw
+
+    def test_setpoint_change_without_disturbance_hold_releases(self):
+        """Sanity: 無擾動時 hold 應該正常釋放（驗證 hold 機制本身沒壞）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        # 無擾動，plant 完美（meter = pcs）
+        pcs_cmd = 100.0
+        for _ in range(20):
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=pcs_cmd, dt=0.3)
+        assert comp.diagnostics["hold_remaining"] == 0, f"無擾動下 hold 都沒釋放：{comp.diagnostics['hold_remaining']}"
+
+    def test_sustained_disturbance_should_not_lock_hold_forever(self):
+        """Bug repro: 持續擾動 > 15% × setpoint 時 integral_hold 永不釋放。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        pcs_cmd = 100.0
+        # 跑 500 cycles，遠超過 hold_cycles_needed=round(0.6/0.3)=2
+        for _ in range(500):
+            meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+
+        diag = comp.diagnostics
+        assert diag["hold_remaining"] == 0, (
+            f"hold_remaining={diag['hold_remaining']} 卡住未釋放（跑了 500 cycle）。"
+            f"settle_threshold={100.0 * 0.15} < |擾動|=20 → 永久鎖死。"
+        )
+
+    def test_sustained_disturbance_should_eventually_compensate(self):
+        """Bug 後果驗證：持續擾動下 FF 應該學到吸收擾動，error 應收斂。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        pcs_cmd = 100.0
+        for _ in range(500):
+            meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+
+        final_meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+        final_error = abs(100.0 - final_meter)
+        # 修復前：error 卡在 20 kW；修復後：應收斂到 deadband 邊界以內
+        assert final_error < 5.0, (
+            f"穩態 error={final_error:.2f} kW，FF 沒吸收擾動。integral_hold 鎖死導致學習無法觸發。"
+        )
+
+
+# ===========================================================================
+# MongoFFTableRepository drain (fire-and-forget save 遺失問題)
+# ===========================================================================
+
+
+class _FakeMongoCollection:
+    """Mock motor.AsyncIOMotorCollection，模擬網路 IO 延遲。"""
+
+    def __init__(self, delay_seconds: float = 0.05) -> None:
+        self._delay = delay_seconds
+        self.update_count = 0
+
+    async def update_one(self, filter_: dict, update: dict, upsert: bool = False) -> None:
+        import asyncio as _asyncio
+
+        await _asyncio.sleep(self._delay)
+        self.update_count += 1
+
+    async def find_one(self, query: dict) -> None:
+        return None
+
+
+class TestMongoFFTableRepositoryDrain:
+    """MongoFFTableRepository.save 是 fire-and-forget，shutdown 時尚未完成的
+    寫入會被 cancel 而遺失。需要 drain() async API 等所有 pending save 完成。
+    """
+
+    async def test_burst_saves_without_drain_lost_immediately(self):
+        """Sanity: burst 觸發後立即查 → 0 寫入（fire-and-forget 還沒跑）。"""
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        for i in range(5):
+            repo.save({i: 1.0 + i * 0.01})
+
+        # 立即查（不 await）→ 還沒有任何寫入
+        assert coll.update_count == 0
+
+    async def test_drain_waits_for_all_pending_saves(self):
+        """Bug repro: 沒有 drain 機制 → 無法保證 burst 的所有 save 都被持久化。
+
+        修復前：MongoFFTableRepository 無 drain method
+        修復後：drain() 等所有 pending task 完成
+        """
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        for i in range(10):
+            repo.save({i: 1.0 + i * 0.01})
+
+        # drain 應等所有 pending 完成
+        await repo.drain()
+
+        assert coll.update_count == 10, f"drain 後仍有 {10 - coll.update_count} 筆未寫入"
+
+    async def test_drain_no_pending_is_noop(self):
+        """無 pending 時 drain() 不應 raise 也不該卡住。"""
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+
+        # 沒呼叫 save 直接 drain
+        await repo.drain()
+        assert coll.update_count == 0
+
+    async def test_compensator_async_close_drains_repository(self):
+        """PowerCompensator.async_close() 應對齊 async_init pattern，
+        並 drain 底下的 repository（若支援）。
+        """
+        coll = _FakeMongoCollection(delay_seconds=0.05)
+        repo = MongoFFTableRepository(coll)
+        comp = PowerCompensator(PowerCompensatorConfig(rated_power=2000.0), repository=repo)
+
+        # 觸發幾次 save（via 公開 update_ff_bin with persist=True）
+        for i in range(5):
+            comp.update_ff_bin(i, 1.0 + i * 0.01, persist=True)
+
+        # 立即不會寫到（fire-and-forget）
+        assert coll.update_count == 0
+
+        # async_close 應 drain
+        await comp.async_close()
+        assert coll.update_count == 5
