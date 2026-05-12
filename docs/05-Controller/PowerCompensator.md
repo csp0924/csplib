@@ -46,15 +46,17 @@ command = ff(power_bin) × setpoint + Ki × ∫error·dt
 | `rated_power` | `float` | `2000.0` | 系統額定功率 (kW) |
 | `output_min` | `float` | `-2000.0` | 輸出下限 (kW) |
 | `output_max` | `float` | `2000.0` | 輸出上限 (kW) |
-| `integral_time_seconds` | `float \| None` | `1.0` | I 項時間常數 (秒)。誤差 = rated_power 時 I 在 T 秒內打滿 max。`None`/`0` = 停用 I |
+| `integral_time_seconds` | `float \| None` | `0.05 / 0.3 ≈ 0.167` | I 項時間常數 (秒)。誤差 = rated_power 時 I 在 T 秒內打滿 max。`None`/`0` = 停用 I |
 | `integral_max_ratio` | `float` | `0.05` | I 項最大貢獻 = ratio × rated_power |
-| `deadband_ratio` | `float` | `0.0005` | 死區佔 rated 比例 (0.05%)。誤差 < `deadband_ratio × rated_power` 不積分 |
+| `deadband_ratio` | `float` | `0.00025` | 死區佔 rated 比例 (0.025%)，對應 0.5 kW @ rated=2000。誤差 < `deadband_ratio × rated_power` 不積分 |
+| `deadband_setpoint_ratio` | `float` | `0.02` | 小 setpoint 用「\|setpoint\| × ratio」縮小 effective deadband（不低於 noise floor）。`0` = 停用，純 absolute deadband |
 | `measurement_noise_kw` | `float \| None` | `None` | 選用，量測 noise σ 估計；提供時 effective deadband = max(ratio×rated, 3σ) |
 | `power_bin_step_pct` | `int` | `5` | FF 表功率區間寬度 (% of rated) |
 | `steady_state_threshold` | `float` | `0.02` | 穩態門檻 \|error/setpoint\|（內部會以 effective deadband 作為下限） |
 | `steady_state_seconds` | `float` | `1.5` | 連續穩態時間 (秒)。runtime cycles = round(seconds/dt) |
-| `settle_ratio` | `float` | `0.15` | 暫態閘門比例 |
+| `settle_ratio` | `float` | `0.15` | **deprecated (v0.8)**：v0.7 暫態閘門比例；v0.8 起 hold 改用 error 變化率判定，此欄保留不影響行為，計畫於 v1.0 移除 |
 | `hold_seconds` | `float` | `0.6` | setpoint 變更後暫停積分的時間 (秒) |
+| `setpoint_change_threshold_ratio` | `float` | `0.1 / 2000 = 0.00005` | setpoint 視為「不變」的相對閾值（佔 rated）。對應 v0.7 hardcoded 的 0.1 kW @ rated=2000 |
 | `ff_min` | `float` | `0.8` | FF 補償係數下限 |
 | `ff_max` | `float` | `1.5` | FF 補償係數上限 |
 | `error_ema_alpha` | `float` | `0.0` | 誤差 EMA 濾波係數（0=停用） |

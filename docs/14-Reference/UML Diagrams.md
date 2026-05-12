@@ -1423,10 +1423,16 @@ classDiagram
     }
 
     class PowerCompensatorConfig {
-        <<frozen dataclass>>
+        <<frozen dataclass — 節錄主要欄位>>
         +integral_time_seconds float?
         +integral_max_ratio float
         +deadband_ratio float
+        +deadband_setpoint_ratio float
+        +measurement_noise_kw float?
+        +hold_seconds float
+        +steady_state_seconds float
+        +setpoint_change_threshold_ratio float
+        +rate_limit float?
         +persist_path str
     }
 
