@@ -215,7 +215,11 @@ class PowerCompensatorConfig:
             effective deadband 作為下限，避免誤差小於 deadband 反而被認為穩態。
         steady_state_seconds: 連續穩態時間 (秒)，達標後觸發 FF 學習。runtime
             cycles = ``max(1, round(steady_state_seconds / dt))``。
-        settle_ratio: 暫態閘門比例，setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數
+        settle_ratio: **Deprecated**（自此版本起不再 gate hold，下個 major bump 將移除）。
+            原意「setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數 integral_hold」，
+            但持續性擾動下永久鎖死 hold（擾動 > 15% × setpoint 即觸發）。改為「error
+            變化率」判定 — |error| 還在縮小 = PCS 在追、維持 hold；|error| 穩定 / 變大 =
+            PCS 到位或持續擾動、decrement hold。Hard cap = hold_initial × 3 cycle 強制釋放。
         hold_seconds: setpoint 變更後暫停積分的時間 (秒)；runtime cycles = round(hold_seconds / dt)。
         setpoint_change_threshold_ratio: setpoint 變動「視為改變」的相對閾值（佔 rated）。
             預設 0.00005 = 0.005%（對 rated=2000kW 為 0.1kW，對應舊 v0.7 hardcoded 行為）。
@@ -333,7 +337,10 @@ class PowerCompensator:
         self._last_output: float = 0.0
         self._steady_count: int = 0
         self._integral_hold: int = 0
-        self._settle_threshold: float = 0.0
+        self._hold_initial: int = 0  # 紀錄該次 hold 起始 cycle 數，用於 hard cap
+        self._cycles_in_hold: int = 0  # 已在 hold 內的 cycle 數
+        self._last_error_magnitude: float = 0.0  # 上一輪 |error|，判定 PCS 是否還在追
+        self._settle_threshold: float = 0.0  # Deprecated，留作 backward compat
         # 飽和脫離週期計數（v0.7.2 BUG-012）— 累積連續飽和週期，達到 min_cycles 後啟動飽和學習
         self._saturation_escape_count: int = 0
 
@@ -450,8 +457,26 @@ class PowerCompensator:
 
         # 6. 積分更新
         if self._integral_hold > 0:
-            if abs(filtered_error) <= self._settle_threshold:
+            # 變化率判定：|error| 還在縮小 → PCS 在追 → 維持 hold；
+            #             |error| 穩定 / 變大 → PCS 到位或持續擾動 → decrement。
+            # 取代原本「|error| < settle_threshold」判定（無法區分 PCS 還在追
+            # vs 持續擾動，在擾動 > 15% × setpoint 時永久鎖死）。
+            #
+            # Epsilon 用 deadband_kw（已 fold 量測 noise），確保 noise 不誤判。
+            # Hard cap：cycles_in_hold ≥ hold_initial × 3 強制釋放，防 PCS 慢
+            # 漸近 / 量測 drift 造成「永遠看起來在縮小」。
+            error_magnitude = abs(filtered_error)
+            self._cycles_in_hold += 1
+            if self._cycles_in_hold >= self._hold_initial * 3:
+                # Hard cap 觸發：覆蓋 PCS 反應時間 3 倍仍未穩，強制開 I
+                self._integral_hold = 0
+            elif error_magnitude < self._last_error_magnitude - deadband_kw:
+                # PCS 還在追（|error| 顯著縮小）→ 維持 hold
+                pass
+            else:
+                # |error| 穩定或變大 → decrement
                 self._integral_hold -= 1
+            self._last_error_magnitude = error_magnitude
         elif can_integrate_high or can_integrate_low or can_integrate_free:
             self._integral += filtered_error * dt
             self._clamp_integral()
@@ -496,6 +521,9 @@ class PowerCompensator:
         self._last_output = 0.0
         self._steady_count = 0
         self._integral_hold = 0
+        self._hold_initial = 0
+        self._cycles_in_hold = 0
+        self._last_error_magnitude = 0.0
         self._saturation_escape_count = 0
 
     def reset_ff_table(self) -> None:
@@ -755,6 +783,11 @@ class PowerCompensator:
         self._integral = 0.0
         self._steady_count = 0
         self._integral_hold = hold_cycles_needed
+        self._hold_initial = hold_cycles_needed
+        self._cycles_in_hold = 0
+        # 初始化 |error| 比較基準為無窮大，確保第一次 hold cycle 被視為「在縮小」
+        self._last_error_magnitude = float("inf")
+        # Deprecated：留 settle_threshold 計算給診斷與 backward compat，但已不再 gate hold
         self._settle_threshold = abs(new_setpoint - old) * cfg.settle_ratio
         self._inherit_ff(old, new_setpoint)
 

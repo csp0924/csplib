@@ -534,51 +534,83 @@ class TestMongoFFTableRepository:
 
 
 class TestCompensatorTransientGate:
-    def test_hold_cycles_delays_integral_accumulation(self):
-        """After a setpoint change, integral should NOT accumulate during hold period."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.15
-        )
-        # Initial setpoint
+    """Hold 用「error 變化率」判定：|error| 還在縮小 = PCS 在追、維持；
+    穩定 / 變大 = PCS 到位或擾動、decrement。Hard cap = hold_initial × 3。
+
+    取代原 settle_threshold 機制（在持續擾動下永久鎖死，且無法區分慢 PCS）。
+    """
+
+    def test_hold_blocks_integral_accumulation(self):
+        """During hold period, integral should NOT accumulate (even with large error)."""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
-        # Change setpoint -> triggers hold_seconds=3.0
+        # 觸發 hold；measurement 跟著縮小（模擬 PCS 在追）
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        # integral 在 hold 期間一定為 0
+        assert comp.diagnostics["integral"] == pytest.approx(0.0)
+        # hold 還在（第一次 cycle 視為 shrinking，不 decrement）
+        assert comp.diagnostics["hold_remaining"] == 3
 
-        # During hold: error=20, settle_threshold = |200-100| * 0.15 = 15
-        # error 20 > 15, so hold does NOT count down
-        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        assert comp.diagnostics["hold_remaining"] == 3  # unchanged because error > settle_threshold
-
-    def test_hold_counts_down_when_error_within_settle(self):
-        """Hold should count down when |error| <= settle_threshold."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.5
+    def test_hold_persists_while_pcs_ramping(self):
+        """模擬慢 PCS：error 每 cycle 顯著縮小，hold 不應 decrement。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=5.0)
+        comp.compensate(setpoint=0.0, measurement=0.0, dt=1.0)
+        # PCS 從 0 慢慢爬到 100：模擬 5 個 cycle 完成 (每 cycle 走 20)
+        meter_trajectory = [0, 20, 40, 60, 80, 100]
+        comp.compensate(setpoint=100.0, measurement=meter_trajectory[0], dt=1.0)
+        for meas in meter_trajectory[1:]:
+            comp.compensate(setpoint=100.0, measurement=meas, dt=1.0)
+        # error: 100→80→60→40→20→0 — 一直在縮小
+        # hold 不該 decrement（PCS 還在追）
+        assert comp.diagnostics["hold_remaining"] == 5, (
+            f"PCS 還在 ramp 期間 hold 不該 decrement: {comp.diagnostics['hold_remaining']}"
         )
+
+    def test_hold_counts_down_when_error_stable(self):
+        """持續擾動或 PCS 到位後，error 穩定 → hold 該 decrement。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0)
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
-        # Change setpoint: settle_threshold = |200-100| * 0.5 = 50
-        # The setpoint-change call itself also runs integral update, so hold counts down once there
+        # setpoint change → hold=3，第一個 cycle 視為 shrinking (last_err=inf)
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        # error=20 < settle=50 -> hold counted down on that same call: 3 -> 2
+        assert comp.diagnostics["hold_remaining"] == 3
+        # 之後 error 穩定在 20 → hold 該 -1
+        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
         assert comp.diagnostics["hold_remaining"] == 2
         comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
         assert comp.diagnostics["hold_remaining"] == 1
-        comp.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
-        assert comp.diagnostics["hold_remaining"] == 0
+
+    def test_hold_hard_cap_releases_after_3x_initial(self):
+        """Hard cap 保護：cycles_in_hold ≥ hold_initial × 3 強制釋放，
+        防 PCS 慢漸近或量測 drift 造成 hold 永遠不收斂。"""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=2.0)
+        comp.compensate(setpoint=0.0, measurement=0.0, dt=1.0)
+        comp.compensate(setpoint=100.0, measurement=99.0, dt=1.0)  # cycle 1, hold_initial=2
+        # 構造「永遠 shrinking 一點點」的病態軌跡：每 cycle 縮小 epsilon (低於 deadband 但仍縮)
+        # 用 deadband=0 → 任何 shrinking 都被偵測；error 從 1.0 → 0.9 → 0.8 ...
+        for i in range(1, 8):
+            comp.compensate(setpoint=100.0, measurement=99.0 + i * 0.1, dt=1.0)
+        # cycles_in_hold 在某個點達 2×3=6，強制釋放 hold=0
+        assert comp.diagnostics["hold_remaining"] == 0, f"Hard cap 未觸發，hold={comp.diagnostics['hold_remaining']}"
 
     def test_integral_resumes_after_hold_expires(self):
-        """After hold_cycles expire, integral accumulation should resume."""
-        comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=1.0, settle_ratio=1.0
-        )
+        """After hold expires, integral accumulation should resume."""
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=1.0)
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
-        # Change setpoint: settle_threshold = |200-100| * 1.0 = 100
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
-        # hold=1, error=10 < 100 -> countdown: hold becomes 0
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # hold=1 (第一次視為 shrinking)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # error 穩定 → hold→0
         assert comp.diagnostics["hold_remaining"] == 0
-        # Next call: hold=0, error=10 > deadband=0 -> integral should accumulate
-        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
+        comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)  # integral 應累積
         assert comp.diagnostics["integral"] > 0
+
+    def test_settle_ratio_is_deprecated_noop(self):
+        """settle_ratio 已 deprecated（變化率判定取代），設值不應影響 hold 行為。"""
+        comp_a = _make_compensator(deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.0)
+        comp_b = _make_compensator(deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=10.0)
+        for c in (comp_a, comp_b):
+            c.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
+            c.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+            c.compensate(setpoint=200.0, measurement=180.0, dt=1.0)
+        assert comp_a.diagnostics["hold_remaining"] == comp_b.diagnostics["hold_remaining"]
 
 
 # ===========================================================================
@@ -1431,4 +1463,73 @@ class TestCompensatorCrossSignInherit:
         assert error > 0, (
             f"切換瞬間 error={error:.2f} 為負（過充），表示 FF[-1] 被錯誤繼承。"
             f"正確物理：FF[-1]=1.0 時 error 應為正（不足充約 +2 kW）。"
+        )
+
+
+# ===========================================================================
+# Integral hold lockup under sustained disturbance
+# ===========================================================================
+
+
+class TestCompensatorIntegralHoldLockup:
+    """持續性外部擾動下 integral_hold 永遠不開的問題。
+
+    Bug 描述：
+      `_apply_setpoint_change_policy` 設 settle_threshold = |new - old| × 0.15。
+      `compensate` line 444 的 integral_hold 只在 |filtered_error| ≤ settle_threshold 才
+      decrement。
+
+      設計者原意：等 setpoint change 造成的 transient 過去（error 降到小於門檻）才開 I。
+      但 settle 條件用「error 絕對值」判定，無法區分：
+        - 真實 transient：error 隨時間衰減
+        - 持續擾動：error 永遠卡住
+
+      當 |擾動| > settle_threshold（即 > 15% × setpoint），integral_hold 永遠不
+      decrement → I 永不累積 → FF 永不學 → error 永久卡住 = -擾動。
+
+    場景：setpoint=100、plant 加性擾動 +20 kW
+      settle_threshold = 100 × 0.15 = 15 < |擾動|=20 → 鎖死。
+      實務上小 setpoint + 任何明顯擾動就會踩到（屋頂 PV、其他設備、線路雜耦合等）。
+    """
+
+    def _additive_disturbance_plant(self, pcs_cmd: float, disturbance_kw: float = 20.0) -> float:
+        return pcs_cmd + disturbance_kw
+
+    def test_setpoint_change_without_disturbance_hold_releases(self):
+        """Sanity: 無擾動時 hold 應該正常釋放（驗證 hold 機制本身沒壞）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        # 無擾動，plant 完美（meter = pcs）
+        pcs_cmd = 100.0
+        for _ in range(20):
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=pcs_cmd, dt=0.3)
+        assert comp.diagnostics["hold_remaining"] == 0, f"無擾動下 hold 都沒釋放：{comp.diagnostics['hold_remaining']}"
+
+    def test_sustained_disturbance_should_not_lock_hold_forever(self):
+        """Bug repro: 持續擾動 > 15% × setpoint 時 integral_hold 永不釋放。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        pcs_cmd = 100.0
+        # 跑 500 cycles，遠超過 hold_cycles_needed=round(0.6/0.3)=2
+        for _ in range(500):
+            meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+
+        diag = comp.diagnostics
+        assert diag["hold_remaining"] == 0, (
+            f"hold_remaining={diag['hold_remaining']} 卡住未釋放（跑了 500 cycle）。"
+            f"settle_threshold={100.0 * 0.15} < |擾動|=20 → 永久鎖死。"
+        )
+
+    def test_sustained_disturbance_should_eventually_compensate(self):
+        """Bug 後果驗證：持續擾動下 FF 應該學到吸收擾動，error 應收斂。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        pcs_cmd = 100.0
+        for _ in range(500):
+            meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+
+        final_meter = self._additive_disturbance_plant(pcs_cmd, disturbance_kw=20.0)
+        final_error = abs(100.0 - final_meter)
+        # 修復前：error 卡在 20 kW；修復後：應收斂到 deadband 邊界以內
+        assert final_error < 5.0, (
+            f"穩態 error={final_error:.2f} kW，FF 沒吸收擾動。integral_hold 鎖死導致學習無法觸發。"
         )
