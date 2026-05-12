@@ -1424,9 +1424,10 @@ classDiagram
 
     class PowerCompensatorConfig {
         <<frozen dataclass>>
-        +ki float
-        +integral_limit float
-        +ff_table_path str?
+        +integral_time_seconds float?
+        +integral_max_ratio float
+        +deadband_ratio float
+        +persist_path str
     }
 
     class FFCalibrationConfig {
