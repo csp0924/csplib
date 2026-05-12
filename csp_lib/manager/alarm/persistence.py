@@ -227,7 +227,7 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
             doc["event_time"] = record.timestamp
         if is_new:
             logger.info(f"告警持久化管理器已新增告警: {record.alarm_key}")
-            await self._notify(record, _AlarmEvent.TRIGGERED)
+            await self._notify(record)
             doc["event"] = _AlarmEvent.TRIGGERED.value
         else:
             # 修 silent monitoring blackout：先前 resolve fail 留下的 stuck-ACTIVE
@@ -283,14 +283,18 @@ class AlarmPersistenceManager(DeviceEventSubscriber):
         except Exception as e:
             logger.warning(f"告警 history buffer 寫入失敗（{alarm_key}）: {e}")
 
-    async def _notify(self, record: AlarmRecord, event: _AlarmEvent) -> None:
-        """發送告警通知（非阻塞，失敗僅記 log）"""
+    async def _notify(self, record: AlarmRecord) -> None:
+        """發送 trigger notification（非阻塞，失敗僅記 log）。
+
+        resolved 流由 ``_notify_resolved`` 處理；DUPLICATE_TRIGGER 是 audit-only
+        不發 notification（維持 dedupe），所以本方法只負責 TRIGGERED 一種事件。
+        """
         if self._dispatcher is None:
             return
         try:
             from csp_lib.notification import NotificationDispatcher, NotificationEvent
 
-            notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent(event.value))
+            notification = NotificationDispatcher.from_alarm_record(record, NotificationEvent.TRIGGERED)
             await self._dispatcher.dispatch(notification)
         except Exception:
             logger.opt(exception=True).warning(f"告警通知發送失敗: {record.alarm_key}")
