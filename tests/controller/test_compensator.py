@@ -128,9 +128,16 @@ class TestCompensatorIntegral:
         assert diag["integral"] > 0
 
     def test_error_within_deadband_no_integral(self):
-        """Error below deadband should not accumulate integral."""
+        """Error below deadband should not accumulate integral.
+
+        Note: 明示停用 deadband_setpoint_ratio 以驗證 absolute deadband 行為；
+        否則 setpoint=100 × 0.02 = 2 kW 會壓過 absolute=5 kW，error=2 反而觸發積分。
+        """
         comp = _make_compensator(
-            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=_DB_RATIO_50_AT_2K, hold_seconds=0.0
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_50_AT_2K,
+            deadband_setpoint_ratio=0.0,
+            hold_seconds=0.0,
         )
         # error = 100 - 98 = 2 < deadband 5
         comp.compensate(setpoint=100.0, measurement=98.0, dt=1.0)
@@ -331,6 +338,7 @@ class TestCompensatorDiagnostics:
             "i_contribution",
             "effective_ki",
             "effective_deadband_kw",
+            "effective_deadband_at_last_setpoint",
             "last_setpoint",
             "last_output",
             "last_ff",
@@ -1255,3 +1263,79 @@ class TestPersistFFTable:
         comp = PowerCompensator(PowerCompensatorConfig(persist_path=""), repository=FailingRepo())
         # 不應 raise
         comp.persist_ff_table()
+
+
+# ===========================================================================
+# Small setpoint learning (BUG: deadband 對小 setpoint 鎖死 FF 學習)
+# ===========================================================================
+
+
+class TestCompensatorSmallSetpointLearning:
+    """小 setpoint 在持續 plant 損失下也應能學到 FF。
+
+    Bug 描述：
+      預設 deadband_ratio=0.00025 → effective deadband=0.5 kW @ rated=2000。
+      當 setpoint 小到「setpoint × plant_loss < deadband」時：
+        - 積分閘門 (compensate line 441) → I 永遠不累積
+        - 學習閘門 (_learn_if_steady line 767) → 即使 steady_count 達標也擋
+      結果：FF 永久卡在 1.0、穩態誤差無法被吸收。
+
+    場景：rated=2000、deadband=0.5 kW、plant 5% loss、setpoint=5 kW
+      → 初始 error = 0.25 kW < 0.5 kW → 雙重門檻鎖死。
+
+    修法 (B)：deadband 跟著 setpoint 相對縮放 — 加 deadband_setpoint_ratio
+    使小 setpoint 的有效 deadband 變小（但不低於 noise floor）。
+    """
+
+    def _plant_with_loss(self, pcs_cmd: float, loss_pct: float = 0.05) -> float:
+        """簡化 plant：固定百分比損失，放電/充電對稱。"""
+        if pcs_cmd >= 0:
+            return pcs_cmd * (1 - loss_pct)
+        return pcs_cmd * (1 + loss_pct)
+
+    def test_large_setpoint_learns_ff_baseline(self):
+        """Baseline: 大 setpoint 應正常收斂（確認 fixture 與 plant 模型本身可學）。"""
+        # 用 dt=0.3 配合 hold_seconds=0.6 → hold_cycles=2、steady_cycles=5
+        # 保留與 v0.7 等效的設定，只關注「小 setpoint vs 大 setpoint」差異
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 200.0
+        for _ in range(500):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=200.0, measurement=meter, dt=0.3)
+
+        bin_idx = comp._get_bin_index(200.0)
+        ff = comp.ff_table[bin_idx]
+        # 理論最佳 FF = 1/(1-0.05) ≈ 1.0526；容許 0.02 誤差（steady 邊界停止學習導致）
+        assert abs(ff - 1.0526) < 0.02, f"大 setpoint FF 未收斂：bin[{bin_idx}]={ff}"
+
+    def test_small_setpoint_learns_ff(self):
+        """Bug repro: 小 setpoint 應能學到 FF（修復後通過、修復前 FAIL）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 5.0
+        for _ in range(2000):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=5.0, measurement=meter, dt=0.3)
+
+        bin_idx = comp._get_bin_index(5.0)
+        ff = comp.ff_table[bin_idx]
+        # 小 setpoint 應該也能學到接近 1.0526；放寬到 0.05 容忍邊界停止
+        assert abs(ff - 1.0526) < 0.05, (
+            f"小 setpoint FF 未收斂：bin[{bin_idx}]={ff}（理論 1.0526）。deadband 雙重門檻鎖死小 setpoint 學習。"
+        )
+
+    def test_small_setpoint_steady_error_should_shrink(self):
+        """小 setpoint 在學習後穩態誤差應顯著小於 plant 損失。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        pcs_cmd = 5.0
+        for _ in range(2000):
+            meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+            pcs_cmd = comp.compensate(setpoint=5.0, measurement=meter, dt=0.3)
+
+        final_meter = self._plant_with_loss(pcs_cmd, loss_pct=0.05)
+        # 未修復：穩態誤差 ≈ 0.25 kW (5% loss × 5 kW setpoint)
+        # 修復後：應收斂到 < 0.1 kW（鬆綁的 deadband 約 0.1 kW）
+        steady_error = abs(5.0 - final_meter)
+        assert steady_error < 0.1, f"小 setpoint 穩態誤差過大：{steady_error:.3f} kW（修復前約 0.25 kW）"

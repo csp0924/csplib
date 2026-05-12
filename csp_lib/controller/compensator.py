@@ -203,6 +203,11 @@ class PowerCompensatorConfig:
         integral_max_ratio: I 項最大貢獻 = ratio × rated_power
         deadband_ratio: 死區佔 rated 的比例（預設 0.00025 = 0.025%）。誤差低於
             ``deadband_ratio × rated_power`` 不累積 I。
+        deadband_setpoint_ratio: 死區佔 |setpoint| 的比例（預設 0.02 = 2%）。
+            小 setpoint 時用此值取代固定 deadband，避免「setpoint × plant_loss < 固定
+            deadband」造成積分閘門 + 學習閘門雙重鎖死、FF 永遠卡在 1.0。
+            實際 deadband = ``max(noise_floor, min(deadband_ratio × rated, |setpoint| × ratio))``。
+            ``0`` 或負值 = 停用相對縮放（純走 absolute deadband，等同 v0.8.0 行為）。
         measurement_noise_kw: （選用）量測 noise 標準差估計 (kW)。若提供，實際
             死區 = ``max(deadband_ratio × rated, 3σ)``；不提供或非正值則純用 ratio。
         power_bin_step_pct: FF 表功率區間寬度 (% of rated)
@@ -242,6 +247,9 @@ class PowerCompensatorConfig:
     # 預設 0.00025 對應舊 deadband=0.5 kW @ rated=2000 kW 的行為；
     # 量測 noise 估計值較大時請用 measurement_noise_kw（取 max(ratio×rated, 3σ)）。
     deadband_ratio: float = 0.5 / 2000.0
+    # 預設 0.02 = 2% — 小 setpoint 時用此值縮小 deadband 允許學習；
+    # 0 = 停用（純 absolute deadband，回到 v0.8.0 行為）。
+    deadband_setpoint_ratio: float = 0.02
     measurement_noise_kw: float | None = None
     power_bin_step_pct: int = 5
     steady_state_threshold: float = 0.02
@@ -400,8 +408,8 @@ class PowerCompensator:
             self._steady_count = 0
             return 0.0
 
-        # Per-call effective values（依 dt 換算）
-        deadband_kw = self._effective_deadband_kw
+        # Per-call effective values（依 dt 換算 + per-setpoint 縮放）
+        deadband_kw = self._effective_deadband_for_setpoint(setpoint)
         hold_cycles_needed = _cycles_from_seconds(cfg.hold_seconds, dt, floor=0)
         steady_cycles_needed = _cycles_from_seconds(cfg.steady_state_seconds, dt, floor=1)
 
@@ -616,6 +624,7 @@ class PowerCompensator:
             "i_contribution": round(self._effective_ki * self._integral, 2),
             "effective_ki": round(self._effective_ki, 6),
             "effective_deadband_kw": round(self._effective_deadband_kw, 4),
+            "effective_deadband_at_last_setpoint": round(self._effective_deadband_for_setpoint(self._last_setpoint), 4),
             "last_setpoint": round(self._last_setpoint, 1),
             "last_output": round(self._last_output, 1),
             "last_ff": round(self._get_ff(self._last_setpoint), 4),
@@ -656,12 +665,48 @@ class PowerCompensator:
 
         ``measurement_noise_kw`` 為 ``None`` / ``0`` / 負值 → 純走 ratio。
         負值不 raise，silently fallback 跟 integral_time_seconds 一致。
+
+        Note: 此為「絕對下限」，不隨 setpoint 變動。Per-call 的 effective
+        deadband 走 :meth:`_effective_deadband_for_setpoint`，會再依 setpoint
+        相對縮放但不低於本函式回傳的 noise floor。
         """
         cfg = self._config
         ratio_kw = cfg.deadband_ratio * cfg.rated_power
         if cfg.measurement_noise_kw is None or cfg.measurement_noise_kw <= 0:
             return ratio_kw
         return max(ratio_kw, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
+
+    def _effective_deadband_for_setpoint(self, setpoint: float) -> float:
+        """Per-setpoint effective deadband (kW)。
+
+        修復「小 setpoint × plant_loss < 固定 deadband」造成積分閘門 + 學習閘門
+        雙重鎖死 FF 學習」的問題。
+
+        公式：
+            effective = max(noise_floor, min(absolute_deadband, |setpoint| × ratio))
+
+        其中：
+            - absolute_deadband = ``self._effective_deadband_kw``（noise-aware）
+            - noise_floor = ``3σ`` 若有 measurement_noise_kw，否則 0
+            - ratio = ``cfg.deadband_setpoint_ratio``；``<= 0`` 時純回 absolute
+
+        Rationale:
+            - 大 setpoint (|setpoint| × ratio > absolute) → 回 absolute，等同原行為
+            - 小 setpoint → 縮小 deadband 允許 I 累積與學習
+            - noise_floor 永遠是下限，避免在量測雜訊上空積分
+        """
+        cfg = self._config
+        absolute = self._effective_deadband_kw
+        ratio = cfg.deadband_setpoint_ratio
+        if ratio <= 0:
+            return absolute
+        relative = abs(setpoint) * ratio
+        candidate = min(absolute, relative)
+        # 重新計算 noise floor（_effective_deadband_kw 已 fold 進 noise，但取 min
+        # 時可能跌破）— 顯式取 max 確保 floor。
+        if cfg.measurement_noise_kw is not None and cfg.measurement_noise_kw > 0:
+            return max(candidate, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
+        return candidate
 
     def _build_initial_ff_table(self) -> dict[int, float]:
         step = self._config.power_bin_step_pct
