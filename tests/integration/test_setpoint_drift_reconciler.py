@@ -570,6 +570,8 @@ class TestMinRewriteInterval:
         for _ in range(5):
             await svc.reconcile_once()
         assert len(router.write_calls) == 5
+        # cooldown disabled → detail 不該出現 skipped_by_cooldown key（避免外部誤讀「有 cooldown 在運作」）
+        assert "skipped_by_cooldown" not in svc.status.detail
 
     async def test_positive_interval_blocks_rewrite_within_window(self):
         """設了 min_rewrite_interval_seconds 後，持續 drift 在 cooldown 視窗內只寫一次。"""
@@ -585,6 +587,10 @@ class TestMinRewriteInterval:
         for _ in range(5):
             await svc.reconcile_once()
         assert len(router.write_calls) == 1, "持續 drift 在 cooldown 內應該只寫一次"
+        # detail 是「本次 reconcile」的 per-run 計數（非累積）：最後一次 reconcile
+        # 仍偵測到 drift 但被 cooldown 擋下 → drift_count=1, skipped_by_cooldown=1
+        assert svc.status.detail["drift_count"] == 1
+        assert svc.status.detail["skipped_by_cooldown"] == 1
 
     async def test_write_failure_does_not_start_cooldown(self):
         """write 失敗（router 回 False）不該啟動 cooldown，下次 reconcile 該重試。

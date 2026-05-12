@@ -159,7 +159,9 @@ class SetpointDriftReconciler(ReconcilerMixin):
                 ok = await self._router.try_write_single(device_id, point_name, desired)
                 if ok:
                     if cooldown_enabled:
-                        self._last_write_at[key] = now
+                        # 用「寫完成」時刻而非 cycle 開始的 `now`：write latency 不該被算進 cooldown 內，
+                        # 否則 cooldown 比設定值提早到期，audit spam 可能重現
+                        self._last_write_at[key] = time.monotonic()
                     devices_fixed.append(f"{device_id}.{point_name}")
                     logger.info(
                         f"Setpoint drift fixed: {device_id}.{point_name} actual={actual!r} -> desired={desired!r}"
