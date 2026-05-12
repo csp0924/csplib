@@ -497,6 +497,114 @@ class TestPerDeviceToleranceOverride:
         assert router.write_calls == [("pcs1", "p_set", 100.0)]
 
 
+# ─────────────── LeaderGate 守門 ───────────────
+
+
+class _FakeLeaderGate:
+    """最小 LeaderGate 測試替身。"""
+
+    def __init__(self, is_leader: bool) -> None:
+        self._is_leader = is_leader
+
+    @property
+    def is_leader(self) -> bool:
+        return self._is_leader
+
+    def set_leader(self, value: bool) -> None:
+        self._is_leader = value
+
+    async def wait_until_leader(self) -> None:
+        return None
+
+
+class TestLeaderGate:
+    """注入 leader_gate 時，follower 節點不得對設備發出寫入。
+
+    背景：sandbox/manager_reconciler_race_leader_bypass_demo.py 量化 — HA dual-node
+    場景下 CommandRouter.try_write_single 無 leader_gate 守門，follower 節點的
+    reconciler 仍會發出寫入，破壞 single-writer invariant。修法：在 reconciler 入口
+    早退（不動 CommandRouter，保留 strategy path 的 follower-callable 性質）。
+    """
+
+    async def test_follower_does_not_write(self):
+        """leader_gate.is_leader=False → reconcile_once 早退，router.try_write_single 零呼叫。"""
+        dev = FakeDevice("pcs1", latest_values={"p_set": 95.0})
+        reg = FakeRegistry()
+        reg.add(dev)
+        router = FakeRouter(last_written={"pcs1": {"p_set": 100.0}})
+        gate = _FakeLeaderGate(is_leader=False)
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5, relative=0.0),
+            leader_gate=gate,  # type: ignore[arg-type]
+        )
+        status = await svc.reconcile_once()
+        # 關鍵斷言：follower 不寫
+        assert router.write_calls == []
+        assert status.detail.get("paused") == "not_leader"
+        # 不視為 unhealthy（被 gate 擋是正常運作）
+        assert status.last_error is None
+        assert status.healthy is True
+
+    async def test_leader_writes_normally(self):
+        """leader_gate.is_leader=True → 正常 drift 修正流程不受影響。"""
+        dev = FakeDevice("pcs1", latest_values={"p_set": 95.0})
+        reg = FakeRegistry()
+        reg.add(dev)
+        router = FakeRouter(last_written={"pcs1": {"p_set": 100.0}})
+        gate = _FakeLeaderGate(is_leader=True)
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5, relative=0.0),
+            leader_gate=gate,  # type: ignore[arg-type]
+        )
+        status = await svc.reconcile_once()
+        assert router.write_calls == [("pcs1", "p_set", 100.0)]
+        assert status.detail["drift_count"] == 1
+        assert "paused" not in status.detail
+
+    async def test_no_leader_gate_backward_compatible(self):
+        """未注入 leader_gate（None）→ 維持單節點原有行為（向後相容）。"""
+        dev = FakeDevice("pcs1", latest_values={"p_set": 95.0})
+        reg = FakeRegistry()
+        reg.add(dev)
+        router = FakeRouter(last_written={"pcs1": {"p_set": 100.0}})
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5, relative=0.0),
+        )
+        status = await svc.reconcile_once()
+        # 沒注入 gate → 走原行為（會寫）
+        assert router.write_calls == [("pcs1", "p_set", 100.0)]
+        assert "paused" not in status.detail
+
+    async def test_promote_to_leader_resumes_writes(self):
+        """中途升格為 leader → 下一輪 reconcile 開始寫入。"""
+        dev = FakeDevice("pcs1", latest_values={"p_set": 95.0})
+        reg = FakeRegistry()
+        reg.add(dev)
+        router = FakeRouter(last_written={"pcs1": {"p_set": 100.0}})
+        gate = _FakeLeaderGate(is_leader=False)
+        svc = SetpointDriftReconciler(
+            router=router,  # type: ignore[arg-type]
+            registry=reg,  # type: ignore[arg-type]
+            tolerance=DriftTolerance(absolute=0.5, relative=0.0),
+            leader_gate=gate,  # type: ignore[arg-type]
+        )
+        # 第一輪：follower → 不寫
+        await svc.reconcile_once()
+        assert router.write_calls == []
+        # 升格
+        gate.set_leader(True)
+        # 第二輪：leader → 寫
+        status = await svc.reconcile_once()
+        assert router.write_calls == [("pcs1", "p_set", 100.0)]
+        assert status.detail["drift_count"] == 1
+
+
 # ─────────────── name / status initial ───────────────
 
 
