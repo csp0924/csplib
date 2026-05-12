@@ -166,8 +166,14 @@ class TestAlarmPersistenceHistoryCreate:
         assert doc["alarm_code"] == "OVER_TEMP"
         assert doc["device_id"] == "device_001"
 
-    async def test_existing_alarm_does_not_write_history(self):
-        """is_new=False（既有告警）時不應寫入 history（重複）"""
+    async def test_existing_alarm_writes_duplicate_trigger_history(self):
+        """is_new=False（既有 ACTIVE 告警）→ 寫入 history with event='duplicate_trigger'
+
+        合約：upsert 找到既有 ACTIVE 不代表 disconnect 沒發生；audit history 必須記錄每個
+        event。否則 resolve() 失敗造成 stuck-ACTIVE 後，後續同 alarm_key 的 disconnect
+        會 silent（無 audit、無 notify）→ silent monitoring blackout。
+        Notification 維持 dedupe，但 history 不去重。
+        """
         repository = MockRepository(is_new=False)
         buffered = _make_buffered_uploader()
         manager = AlarmPersistenceManager(repository=repository, buffered_uploader=buffered)
@@ -178,9 +184,15 @@ class TestAlarmPersistenceHistoryCreate:
         payload = DisconnectPayload(device_id="device_001", reason="timeout", consecutive_failures=1)
         await device.emit(EVENT_DISCONNECTED, payload)
 
-        # 只呼叫 upsert 不呼叫 history
         repository.upsert.assert_awaited_once()
-        buffered.write_immediate.assert_not_awaited()
+        # 既有 ACTIVE 也要寫 history,但用不同 event 區別
+        buffered.write_immediate.assert_awaited_once()
+        call = buffered.write_immediate.await_args
+        assert call.args[0] == "alarm_history"
+        doc = call.args[1]
+        assert doc["event"] == "duplicate_trigger"
+        assert doc["device_id"] == "device_001"
+        assert doc["alarm_code"] == "DISCONNECT"
 
     async def test_history_write_has_event_time(self):
         """history doc 應包含 event_time 欄位"""
@@ -353,6 +365,120 @@ class TestAlarmPersistenceHistoryCustomCollection:
 
         call = buffered.write_immediate.await_args
         assert call.args[0] == "my_alarm_archive"
+
+
+# ======================== Stuck-active silent-blackout regression ========================
+
+
+class TestStuckActiveSilentBlackoutRegression:
+    """resolve 失敗造成 DB 殘留 ACTIVE → 後續同 alarm_key disconnect 仍應有 audit history。
+
+    此類測試是 silent monitoring blackout bug 的回歸保護。修法前:resolve fail → 後續
+    disconnect 全部 silent(無 history、無 notify、無 log)。修法後:notification 維持
+    dedupe(原合約),但 history 每個 event 都寫入(event=triggered 或 duplicate_trigger)。
+    """
+
+    async def test_resolve_fail_then_subsequent_disconnect_still_writes_history(self):
+        """stuck-active 場景:resolve fail 後,下一次 disconnect 仍應寫 history。"""
+        # 模擬 transient resolve fail:第一次 disconnect 寫入 ACTIVE → connect resolve fail
+        # → DB 仍 ACTIVE → 第二次 disconnect upsert 返回 is_new=False
+        repository = MockRepository(is_new=True, resolve_success=False)
+        buffered = _make_buffered_uploader()
+        manager = AlarmPersistenceManager(repository=repository, buffered_uploader=buffered)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        # 第一次 disconnect:正常 triggered history
+        await device.emit(
+            EVENT_DISCONNECTED,
+            DisconnectPayload(device_id="device_001", reason="t1", consecutive_failures=5),
+        )
+        # connect 嘗試 resolve 失敗(modify_count=0)
+        await device.emit(EVENT_CONNECTED, ConnectedPayload(device_id="device_001"))
+
+        # 切換 upsert 為 is_new=False(模擬 DB 仍 ACTIVE)
+        repository.upsert.return_value = ("existing_id", False)
+
+        buffered.write_immediate.reset_mock()
+        # 第二次 disconnect:修法前 silent,修法後應寫 duplicate_trigger history
+        await device.emit(
+            EVENT_DISCONNECTED,
+            DisconnectPayload(device_id="device_001", reason="t2", consecutive_failures=5),
+        )
+
+        buffered.write_immediate.assert_awaited_once()
+        doc = buffered.write_immediate.await_args.args[1]
+        assert doc["event"] == "duplicate_trigger"
+        assert doc["device_id"] == "device_001"
+        assert doc["alarm_code"] == "DISCONNECT"
+
+    async def test_continuous_stuck_blackout_quantified(self):
+        """連續 N cycle flap 配 100% resolve fail → 全部 N 次 disconnect 都應有 history。
+
+        Quantified regression:修法前 history 只記第一次 disconnect(N-1 silent);
+        修法後每次 disconnect 都寫(triggered 1 次 + duplicate_trigger N-1 次)。
+        """
+        repository = MockRepository(is_new=True, resolve_success=False)
+        buffered = _make_buffered_uploader()
+        manager = AlarmPersistenceManager(repository=repository, buffered_uploader=buffered)
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        n_cycles = 5
+        for i in range(n_cycles):
+            await device.emit(
+                EVENT_DISCONNECTED,
+                DisconnectPayload(device_id="device_001", reason=f"#{i}", consecutive_failures=5),
+            )
+            # connect resolve 永遠失敗,第二次起 upsert 為 is_new=False
+            await device.emit(EVENT_CONNECTED, ConnectedPayload(device_id="device_001"))
+            repository.upsert.return_value = ("existing_id", False)
+
+        # 統計 history 事件
+        triggered = 0
+        duplicate = 0
+        for call in buffered.write_immediate.await_args_list:
+            event = call.args[1].get("event")
+            if event == "triggered":
+                triggered += 1
+            elif event == "duplicate_trigger":
+                duplicate += 1
+
+        # resolve 永遠 fail → 不該有 resolved history
+        assert triggered == 1  # 只有第一次是 new
+        assert duplicate == n_cycles - 1  # 其餘 N-1 次是 duplicate
+        # 加總 = N 個 disconnect 都被記錄(無 silent blackout)
+        assert triggered + duplicate == n_cycles
+
+    async def test_duplicate_trigger_does_not_notify(self):
+        """duplicate_trigger 不應觸發 notification(維持 dedupe spam 設計)。"""
+        from csp_lib.notification import NotificationDispatcher
+
+        repository = MockRepository(is_new=False)
+        buffered = _make_buffered_uploader()
+        dispatcher = MagicMock(spec=NotificationDispatcher)
+        dispatcher.dispatch = AsyncMock()
+        dispatcher.from_alarm_record = NotificationDispatcher.from_alarm_record
+
+        manager = AlarmPersistenceManager(
+            repository=repository,
+            dispatcher=dispatcher,
+            buffered_uploader=buffered,
+        )
+
+        device = MockDevice("device_001")
+        manager.subscribe(device)
+
+        await device.emit(
+            EVENT_DISCONNECTED,
+            DisconnectPayload(device_id="device_001", reason="t", consecutive_failures=1),
+        )
+
+        # history 有寫,但 notification 不發
+        buffered.write_immediate.assert_awaited_once()
+        dispatcher.dispatch.assert_not_awaited()
 
 
 # ======================== Config 驗證 ========================
