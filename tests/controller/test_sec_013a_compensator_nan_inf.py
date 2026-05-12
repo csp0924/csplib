@@ -21,18 +21,24 @@ import pytest
 from csp_lib.controller.compensator import PowerCompensator, PowerCompensatorConfig
 from csp_lib.controller.core import Command, StrategyContext
 
+_T_EQUIV_KI_03 = 0.05 / 0.3  # ≈ 0.167s, 等效 v0.7 ki=0.3
+_DB_RATIO_05_AT_2K = 0.5 / 2000.0  # = 0.00025, 等效 v0.7 deadband=0.5 kW @ rated=2000
+
 
 def _make_compensator(**overrides) -> PowerCompensator:
-    """建立測試用 PowerCompensator（對齊 test_compensator.py 的預設）"""
+    """建立測試用 PowerCompensator（對齊 test_compensator.py 的預設）
+
+    使用 v0.8 新 API：integral_time_seconds / deadband_ratio / hold_seconds / rate_limit=None。
+    """
     defaults = {
         "rated_power": 2000.0,
         "output_min": -2000.0,
         "output_max": 2000.0,
-        "ki": 0.3,
-        "deadband": 0.5,
-        "hold_cycles": 0,
+        "integral_time_seconds": _T_EQUIV_KI_03,
+        "deadband_ratio": _DB_RATIO_05_AT_2K,
+        "hold_seconds": 0.0,
         "error_ema_alpha": 0.0,
-        "rate_limit": 0.0,
+        "rate_limit": None,
         "persist_path": "",
     }
     defaults.update(overrides)
@@ -154,7 +160,7 @@ class TestCompensatorProcessNaNInfBypass:
 
     async def test_process_finite_measurement_still_compensates(self):
         """SEC-013a L4: 正常 measurement 應正常進行補償（regression guard）。"""
-        comp = _make_compensator(ki=0.0)  # 關掉 integral 簡化驗證
+        comp = _make_compensator(integral_time_seconds=None)  # 關掉 integral 簡化驗證
         ctx = StrategyContext(extra={"meter_power": 90.0, "dt": 0.3})
 
         # 正常路徑：setpoint=100, ff=1.0 → output = 100.0
