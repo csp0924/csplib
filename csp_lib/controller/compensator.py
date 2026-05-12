@@ -240,10 +240,8 @@ class PowerCompensatorConfig:
         deadband_ratio: 死區佔 rated 的比例（預設 0.00025 = 0.025%）。誤差低於
             ``deadband_ratio × rated_power`` 不累積 I。
         deadband_setpoint_ratio: 死區佔 |setpoint| 的比例（預設 0.02 = 2%）。
-            小 setpoint 時用此值取代固定 deadband，避免「setpoint × plant_loss < 固定
-            deadband」造成積分閘門 + 學習閘門雙重鎖死、FF 永遠卡在 1.0。
             實際 deadband = ``max(noise_floor, min(deadband_ratio × rated, |setpoint| × ratio))``。
-            ``0`` 或負值 = 停用相對縮放（純走 absolute deadband，等同 v0.8.0 行為）。
+            小 setpoint 時用此值縮小 deadband 允許學習；``0`` 或負值停用相對縮放。
         measurement_noise_kw: （選用）量測 noise 標準差估計 (kW)。若提供，實際
             死區 = ``max(deadband_ratio × rated, 3σ)``；不提供或非正值則純用 ratio。
         power_bin_step_pct: FF 表功率區間寬度 (% of rated)
@@ -251,11 +249,9 @@ class PowerCompensatorConfig:
             effective deadband 作為下限，避免誤差小於 deadband 反而被認為穩態。
         steady_state_seconds: 連續穩態時間 (秒)，達標後觸發 FF 學習。runtime
             cycles = ``max(1, round(steady_state_seconds / dt))``。
-        settle_ratio: **Deprecated**（自此版本起不再 gate hold，下個 major bump 將移除）。
-            原意「setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數 integral_hold」，
-            但持續性擾動下永久鎖死 hold（擾動 > 15% × setpoint 即觸發）。改為「error
-            變化率」判定 — |error| 還在縮小 = PCS 在追、維持 hold；|error| 穩定 / 變大 =
-            PCS 到位或持續擾動、decrement hold。Hard cap = hold_initial × 3 cycle 強制釋放。
+        settle_ratio: **Deprecated**，不再 gate hold（下個 major bump 移除）。
+            Hold 改用 |error| 變化率判定：縮小 → 維持、穩定 / 變大 → decrement，
+            hard cap = hold_initial × 3 cycle 強制釋放。
         hold_seconds: setpoint 變更後暫停積分的時間 (秒)；runtime cycles = round(hold_seconds / dt)。
         setpoint_change_threshold_ratio: setpoint 變動「視為改變」的相對閾值（佔 rated）。
             預設 0.00005 = 0.005%（對 rated=2000kW 為 0.1kW，對應舊 v0.7 hardcoded 行為）。
@@ -373,11 +369,9 @@ class PowerCompensator:
         self._last_output: float = 0.0
         self._steady_count: int = 0
         self._integral_hold: int = 0
-        self._hold_initial: int = 0  # 紀錄該次 hold 起始 cycle 數，用於 hard cap
-        self._cycles_in_hold: int = 0  # 已在 hold 內的 cycle 數
-        self._last_error_magnitude: float = 0.0  # 上一輪 |error|，判定 PCS 是否還在追
-        self._settle_threshold: float = 0.0  # Deprecated，留作 backward compat
-        # 飽和脫離週期計數（v0.7.2 BUG-012）— 累積連續飽和週期，達到 min_cycles 後啟動飽和學習
+        self._hold_initial: int = 0
+        self._cycles_in_hold: int = 0
+        self._last_error_magnitude: float = 0.0
         self._saturation_escape_count: int = 0
 
     # ─────────────────────── CommandProcessor Protocol ───────────────────────
@@ -482,35 +476,23 @@ class PowerCompensator:
         sat_low = ff_output <= cfg.output_min
         saturated = sat_high or sat_low
 
-        # Asymmetric anti-windup（v0.7.2 BUG-012）：
-        # - 飽和在上限 + error 為負（量測 > 目標）→ 朝脫離方向，允許累積負 integral 拉回
-        # - 飽和在下限 + error 為正（量測 < 目標）→ 朝脫離方向，允許累積正 integral 拉回
-        # - 非飽和 + 誤差超出死區 → 正常積分累積
-        # - 飽和同向（誤差與飽和一致）→ 凍結積分以避免 windup
+        # Asymmetric anti-windup：飽和異向（error 朝脫離）可累積 I 拉回；
+        # 飽和同向（error 與飽和方向一致）凍結 I 避免 windup。
         can_integrate_high = sat_high and filtered_error < -deadband_kw
         can_integrate_low = sat_low and filtered_error > deadband_kw
         can_integrate_free = (not saturated) and abs(filtered_error) >= deadband_kw
 
         # 6. 積分更新
         if self._integral_hold > 0:
-            # 變化率判定：|error| 還在縮小 → PCS 在追 → 維持 hold；
-            #             |error| 穩定 / 變大 → PCS 到位或持續擾動 → decrement。
-            # 取代原本「|error| < settle_threshold」判定（無法區分 PCS 還在追
-            # vs 持續擾動，在擾動 > 15% × setpoint 時永久鎖死）。
-            #
-            # Epsilon 用 deadband_kw（已 fold 量測 noise），確保 noise 不誤判。
-            # Hard cap：cycles_in_hold ≥ hold_initial × 3 強制釋放，防 PCS 慢
-            # 漸近 / 量測 drift 造成「永遠看起來在縮小」。
+            # |error| 縮小代表 PCS 仍在追 → 維持 hold；穩定 / 變大代表 PCS 到位
+            # 或持續擾動 → decrement。Hard cap 防止「永遠看起來縮小」造成鎖死。
             error_magnitude = abs(filtered_error)
             self._cycles_in_hold += 1
             if self._cycles_in_hold >= self._hold_initial * 3:
-                # Hard cap 觸發：覆蓋 PCS 反應時間 3 倍仍未穩，強制開 I
                 self._integral_hold = 0
             elif error_magnitude < self._last_error_magnitude - deadband_kw:
-                # PCS 還在追（|error| 顯著縮小）→ 維持 hold
                 pass
             else:
-                # |error| 穩定或變大 → decrement
                 self._integral_hold -= 1
             self._last_error_magnitude = error_magnitude
         elif can_integrate_high or can_integrate_low or can_integrate_free:
@@ -740,56 +722,28 @@ class PowerCompensator:
         return self._config.integral_max_ratio / t
 
     def _compute_effective_deadband(self) -> float:
-        """由 deadband_ratio 與 measurement_noise_kw 推算 effective 死區 (kW)。
+        """Absolute deadband floor (kW)：``max(deadband_ratio × rated, 3σ noise)``。
 
-        - 純 ratio: ``deadband = deadband_ratio × rated_power``
-        - 有 noise 估計時取較大者: ``max(deadband_ratio × rated, 3σ)``，
-          確保死區至少能蓋過 3σ noise，避免 I 在量測雜訊上空積分。
-
-        ``measurement_noise_kw`` 為 ``None`` / ``0`` / 負值 → 純走 ratio。
-        負值不 raise，silently fallback 跟 integral_time_seconds 一致。
-
-        Note: 此為「絕對下限」，不隨 setpoint 變動。Per-call 的 effective
-        deadband 走 :meth:`_effective_deadband_for_setpoint`，會再依 setpoint
-        相對縮放但不低於本函式回傳的 noise floor。
+        Per-setpoint 縮放走 :meth:`_effective_deadband_for_setpoint`。
         """
-        cfg = self._config
-        ratio_kw = cfg.deadband_ratio * cfg.rated_power
-        if cfg.measurement_noise_kw is None or cfg.measurement_noise_kw <= 0:
-            return ratio_kw
-        return max(ratio_kw, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
+        return max(self._config.deadband_ratio * self._config.rated_power, self._noise_floor())
+
+    def _noise_floor(self) -> float:
+        """3σ noise floor in kW；measurement_noise_kw 缺值或非正時回 0。"""
+        n = self._config.measurement_noise_kw
+        return _NOISE_SIGMA_MULTIPLIER * n if n is not None and n > 0 else 0.0
 
     def _effective_deadband_for_setpoint(self, setpoint: float) -> float:
         """Per-setpoint effective deadband (kW)。
 
-        修復「小 setpoint × plant_loss < 固定 deadband」造成積分閘門 + 學習閘門
-        雙重鎖死 FF 學習」的問題。
-
-        公式：
-            effective = max(noise_floor, min(absolute_deadband, |setpoint| × ratio))
-
-        其中：
-            - absolute_deadband = ``self._effective_deadband_kw``（noise-aware）
-            - noise_floor = ``3σ`` 若有 measurement_noise_kw，否則 0
-            - ratio = ``cfg.deadband_setpoint_ratio``；``<= 0`` 時純回 absolute
-
-        Rationale:
-            - 大 setpoint (|setpoint| × ratio > absolute) → 回 absolute，等同原行為
-            - 小 setpoint → 縮小 deadband 允許 I 累積與學習
-            - noise_floor 永遠是下限，避免在量測雜訊上空積分
+        ``max(noise_floor, min(absolute_deadband, |setpoint| × ratio))``。
+        小 setpoint 縮小 deadband 允許學習；大 setpoint 維持 absolute；
+        ``deadband_setpoint_ratio <= 0`` 跳過相對縮放。
         """
-        cfg = self._config
-        absolute = self._effective_deadband_kw
-        ratio = cfg.deadband_setpoint_ratio
+        ratio = self._config.deadband_setpoint_ratio
         if ratio <= 0:
-            return absolute
-        relative = abs(setpoint) * ratio
-        candidate = min(absolute, relative)
-        # 重新計算 noise floor（_effective_deadband_kw 已 fold 進 noise，但取 min
-        # 時可能跌破）— 顯式取 max 確保 floor。
-        if cfg.measurement_noise_kw is not None and cfg.measurement_noise_kw > 0:
-            return max(candidate, _NOISE_SIGMA_MULTIPLIER * cfg.measurement_noise_kw)
-        return candidate
+            return self._effective_deadband_kw
+        return max(self._noise_floor(), min(self._effective_deadband_kw, abs(setpoint) * ratio))
 
     def _build_initial_ff_table(self) -> dict[int, float]:
         step = self._config.power_bin_step_pct
@@ -840,25 +794,19 @@ class PowerCompensator:
         self._integral_hold = hold_cycles_needed
         self._hold_initial = hold_cycles_needed
         self._cycles_in_hold = 0
-        # 初始化 |error| 比較基準為無窮大，確保第一次 hold cycle 被視為「在縮小」
+        # 第一次 hold cycle 視為「正在縮小」，避免初始 hold 立刻被誤判
         self._last_error_magnitude = float("inf")
-        # Deprecated：留 settle_threshold 計算給診斷與 backward compat，但已不再 gate hold
-        self._settle_threshold = abs(new_setpoint - old) * cfg.settle_ratio
         self._inherit_ff(old, new_setpoint)
 
     def _inherit_ff(self, old_setpoint: float, new_setpoint: float) -> None:
-        # 設計對齊：FF 表的「寫入」路徑（learning + inherit）一律走 _get_bin_index
-        # 的 round 取單一 bin；只有 runtime 讀取（_get_ff）才做相鄰 bin 線性插值。
-        # 這讓學習資料的 sharpness 不被插值稀釋，但讀取時跨邊界平滑不會 chatter。
-        # 若未來改一邊請保持這個非對稱性。
+        # FF 表寫入（learning + inherit）一律 round 到單一 bin；
+        # 只有 runtime 讀取（_get_ff）才跨 bin 線性插值。
+        # 這個非對稱性讓學習 sharpness 不被插值稀釋、但讀取跨邊界不 chatter。
         old_idx = self._get_bin_index(old_setpoint)
         new_idx = self._get_bin_index(new_setpoint)
         if old_idx == new_idx:
             return
-        # 跨符號（放電 ↔ 充電）不繼承：兩方向物理機制不對稱
-        #   - 放電：ff_output = ff × setpoint，FF 補 PCS 出力被線路損耗吃掉
-        #   - 充電：ff_output = setpoint / ff，FF 補輔電讓電網讀數更負
-        # 同數值的 FF 套到反方向會放大切換瞬間誤差（譬如 AFC 每秒切換場景）。
+        # 跨符號不繼承：放電（ff × setpoint）與充電（setpoint / ff）物理意義不對稱。
         if old_idx * new_idx < 0:
             return
         old_ff = self._ff_table.get(old_idx, 1.0)
