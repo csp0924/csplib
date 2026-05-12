@@ -66,15 +66,21 @@ command = ff(power_bin) × setpoint + Ki × ∫error·dt
 | `saturation_learn_max_step` | `float` | `0.03` | 單次飽和學習 FF 最大變動量（限制單步衝擊，防過激修正） |
 
 > [!warning] v0.8 BREAKING
-> v0.7.x 的 `ki` / `deadband` / `hold_cycles` / `steady_state_cycles` 已移除。新 API 把時間相關參數一律用「秒」表達（與 dt 解耦），deadband 改用比例自動跟著 rated_power scale。對應換算：
+> v0.7.x 的 `ki` / `deadband` / `hold_cycles` / `steady_state_cycles` 已移除。新 API 把時間相關參數一律用「秒」表達（與 dt 解耦），deadband 改用比例自動跟著 rated_power scale。**預設值刻意保留 v0.7 行為**（`integral_time_seconds = 0.05/0.3 ≈ 0.167s`、`deadband_ratio = 0.5/2000 = 0.00025`、`hold_seconds = 0.6`、`steady_state_seconds = 1.5`），用 default 升級的 user 行為不變。
+>
+> 對應換算（自訂 v0.7 值的 user）：
 >
 > - `ki` → `integral_time_seconds = integral_max_ratio / ki`；`ki=0` → `integral_time_seconds=None`
-> - `deadband` → `deadband_ratio = deadband / rated_power`
+> - `deadband` → `deadband_ratio = deadband / rated_power`（可改提供 `measurement_noise_kw` 讓 lib 自動取 `max(ratio×rated, 3σ)`）
 > - `hold_cycles` → `hold_seconds = hold_cycles × dt`
 > - `steady_state_cycles` → `steady_state_seconds = cycles × dt`
 > - `rate_limit=0.0` → `rate_limit=None`
 >
-> 另外 `_get_ff` runtime 改線性插值（跨相鄰 bin），避免 setpoint 在 bin 邊界 chatter；學習仍 attribute 到最近的 bin（單 bin 學習資料 sharpness 不變）。
+> 另外：
+>
+> - `_get_ff` runtime 改線性插值（跨相鄰 bin），避免 setpoint 在 bin 邊界 chatter；學習仍 attribute 到最近的 bin（單 bin 學習資料 sharpness 不變）。
+> - `setpoint_change_threshold_ratio` 新增，取代舊版 hardcoded 0.1 kW（預設 0.00005 對應 rated=2000 kW 時 0.1 kW，行為不變）。
+> - `diagnostics` dict 新增 `effective_ki` / `effective_deadband_kw` 兩個 key（共 10 keys）。下游 dashboard / monitoring 若用 strict key-set 比對需更新；用 `.get()` 取值的 caller 不受影響。
 
 ## 演算法流程
 

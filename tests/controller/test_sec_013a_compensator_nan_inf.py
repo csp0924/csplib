@@ -21,6 +21,9 @@ import pytest
 from csp_lib.controller.compensator import PowerCompensator, PowerCompensatorConfig
 from csp_lib.controller.core import Command, StrategyContext
 
+_T_EQUIV_KI_03 = 0.05 / 0.3  # ≈ 0.167s, 等效 v0.7 ki=0.3
+_DB_RATIO_05_AT_2K = 0.5 / 2000.0  # = 0.00025, 等效 v0.7 deadband=0.5 kW @ rated=2000
+
 
 def _make_compensator(**overrides) -> PowerCompensator:
     """建立測試用 PowerCompensator（對齊 test_compensator.py 的預設）
@@ -31,8 +34,8 @@ def _make_compensator(**overrides) -> PowerCompensator:
         "rated_power": 2000.0,
         "output_min": -2000.0,
         "output_max": 2000.0,
-        "integral_time_seconds": 0.05 / 0.3,
-        "deadband_ratio": 0.5 / 2000.0,
+        "integral_time_seconds": _T_EQUIV_KI_03,
+        "deadband_ratio": _DB_RATIO_05_AT_2K,
         "hold_seconds": 0.0,
         "error_ema_alpha": 0.0,
         "rate_limit": None,

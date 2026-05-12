@@ -198,12 +198,13 @@ class PowerCompensatorConfig:
         output_max: 輸出上限 (kW)
         integral_time_seconds: I 項時間常數 (秒)。物理意義：誤差持續為 rated_power
             (100% 額定) 時，I 在這段時間內打滿 ``integral_max_ratio × rated``。
-            ``None`` 或 ``0`` = 停用 I 項。等效 Ki = integral_max_ratio / integral_time_seconds。
+            ``None`` 或 ``<= 0`` = 停用 I 項（負值同樣 silently 視為停用）。
+            等效 Ki = integral_max_ratio / integral_time_seconds。
         integral_max_ratio: I 項最大貢獻 = ratio × rated_power
-        deadband_ratio: 死區佔 rated 的比例 (0.0005 = 0.05%)。誤差低於
+        deadband_ratio: 死區佔 rated 的比例（預設 0.00025 = 0.025%）。誤差低於
             ``deadband_ratio × rated_power`` 不累積 I。
         measurement_noise_kw: （選用）量測 noise 標準差估計 (kW)。若提供，實際
-            死區 = ``max(deadband_ratio × rated, 3σ)``；不提供則純用 ratio。
+            死區 = ``max(deadband_ratio × rated, 3σ)``；不提供或非正值則純用 ratio。
         power_bin_step_pct: FF 表功率區間寬度 (% of rated)
         steady_state_threshold: 穩態門檻 |error/setpoint| (相對)；內部會強制以
             effective deadband 作為下限，避免誤差小於 deadband 反而被認為穩態。
@@ -211,6 +212,9 @@ class PowerCompensatorConfig:
             cycles = ``max(1, round(steady_state_seconds / dt))``。
         settle_ratio: 暫態閘門比例，setpoint 變更後 |error| > 變化量 × settle_ratio 時不倒數
         hold_seconds: setpoint 變更後暫停積分的時間 (秒)；runtime cycles = round(hold_seconds / dt)。
+        setpoint_change_threshold_ratio: setpoint 變動「視為改變」的相對閾值（佔 rated）。
+            預設 0.00005 = 0.005%（對 rated=2000kW 為 0.1kW，對應舊 v0.7 hardcoded 行為）。
+            上游若有 round-off / float drift 時調大此值可避免每 cycle 誤觸發 reset。
         ff_min: FF 補償係數下限
         ff_max: FF 補償係數上限
         error_ema_alpha: 誤差 EMA 濾波係數 (0=停用)
@@ -231,15 +235,24 @@ class PowerCompensatorConfig:
     rated_power: float = 2000.0
     output_min: float = -2000.0
     output_max: float = 2000.0
-    integral_time_seconds: float | None = 1.0
+    # 預設 ≈ 0.167s，對應舊 v0.7 ki=0.3 的行為（integral_max_ratio / 0.3）。
+    # 改大會讓 I 響應變慢、改小會變快；單位是「對 100% rated error 時 I 打滿 max 的時間」。
+    integral_time_seconds: float | None = 0.05 / 0.3
     integral_max_ratio: float = 0.05
-    deadband_ratio: float = 0.0005
+    # 預設 0.00025 對應舊 deadband=0.5 kW @ rated=2000 kW 的行為；
+    # 量測 noise 估計值較大時請用 measurement_noise_kw（取 max(ratio×rated, 3σ)）。
+    deadband_ratio: float = 0.5 / 2000.0
     measurement_noise_kw: float | None = None
     power_bin_step_pct: int = 5
     steady_state_threshold: float = 0.02
+    # 預設 1.5s = 5 cycles × 0.3s dt（舊 v0.7 行為）
     steady_state_seconds: float = 1.5
     settle_ratio: float = 0.15
+    # 預設 0.6s = 2 cycles × 0.3s dt（舊 v0.7 行為）
     hold_seconds: float = 0.6
+    # setpoint 變動視為「不變」的相對閾值 (佔 rated 的比例)；
+    # 0.00005 = 0.005% 對應舊 v0.7 hardcoded 的 0.1 kW @ rated=2000 kW。
+    setpoint_change_threshold_ratio: float = 0.1 / 2000.0
     ff_min: float = 0.8
     ff_max: float = 1.5
     error_ema_alpha: float = 0.0
@@ -626,7 +639,8 @@ class PowerCompensator:
             ki × rated × T = integral_max_ratio × rated
             → ki = integral_max_ratio / T
 
-        ``integral_time_seconds`` 為 ``None`` 或 ``<= 0`` → 回傳 0（停用 I）。
+        ``integral_time_seconds`` 為 ``None`` / ``0`` / 負值 → 回傳 0（停用 I）。
+        負值不 raise，silently 視為停用，跟其他 disable-via-sentinel 參數一致。
         """
         t = self._config.integral_time_seconds
         if t is None or t <= 0:
@@ -639,6 +653,9 @@ class PowerCompensator:
         - 純 ratio: ``deadband = deadband_ratio × rated_power``
         - 有 noise 估計時取較大者: ``max(deadband_ratio × rated, 3σ)``，
           確保死區至少能蓋過 3σ noise，避免 I 在量測雜訊上空積分。
+
+        ``measurement_noise_kw`` 為 ``None`` / ``0`` / 負值 → 純走 ratio。
+        負值不 raise，silently fallback 跟 integral_time_seconds 一致。
         """
         cfg = self._config
         ratio_kw = cfg.deadband_ratio * cfg.rated_power
@@ -685,16 +702,22 @@ class PowerCompensator:
         return ff_lo * (1.0 - frac) + ff_hi * frac
 
     def _apply_setpoint_change_policy(self, new_setpoint: float, hold_cycles_needed: int) -> None:
+        cfg = self._config
         old = self._last_setpoint
-        if abs(new_setpoint - old) < 0.1:
+        change_threshold_kw = cfg.setpoint_change_threshold_ratio * cfg.rated_power
+        if abs(new_setpoint - old) < change_threshold_kw:
             return
         self._integral = 0.0
         self._steady_count = 0
         self._integral_hold = hold_cycles_needed
-        self._settle_threshold = abs(new_setpoint - old) * self._config.settle_ratio
+        self._settle_threshold = abs(new_setpoint - old) * cfg.settle_ratio
         self._inherit_ff(old, new_setpoint)
 
     def _inherit_ff(self, old_setpoint: float, new_setpoint: float) -> None:
+        # 設計對齊：FF 表的「寫入」路徑（learning + inherit）一律走 _get_bin_index
+        # 的 round 取單一 bin；只有 runtime 讀取（_get_ff）才做相鄰 bin 線性插值。
+        # 這讓學習資料的 sharpness 不被插值稀釋，但讀取時跨邊界平滑不會 chatter。
+        # 若未來改一邊請保持這個非對稱性。
         old_idx = self._get_bin_index(old_setpoint)
         new_idx = self._get_bin_index(new_setpoint)
         if old_idx == new_idx:

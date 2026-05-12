@@ -12,6 +12,20 @@ from csp_lib.controller.compensator import (
 from csp_lib.controller.core import Command, StrategyContext
 
 # ===========================================================================
+# Equivalence constants (v0.8 新 API ↔ v0.7 舊 API 換算)
+# ===========================================================================
+
+# integral_time_seconds = integral_max_ratio (0.05) / 舊 ki
+_T_EQUIV_KI_03 = 0.05 / 0.3  # ≈ 0.167s,  舊 ki=0.3
+_T_EQUIV_KI_05 = 0.05 / 0.5  # = 0.1s,    舊 ki=0.5
+_T_EQUIV_KI_10 = 0.05 / 1.0  # = 0.05s,   舊 ki=1.0
+
+# deadband_ratio = 舊 deadband_kw / rated_power（測試固定 rated=2000）
+_DB_RATIO_05_AT_2K = 0.5 / 2000.0  # = 0.00025, 舊 deadband=0.5 kW
+_DB_RATIO_50_AT_2K = 5.0 / 2000.0  # = 0.0025,  舊 deadband=5.0 kW
+
+
+# ===========================================================================
 # Helpers
 # ===========================================================================
 
@@ -26,10 +40,8 @@ def _make_compensator(**overrides) -> PowerCompensator:
         "rated_power": 2000.0,
         "output_min": -2000.0,
         "output_max": 2000.0,
-        # integral_time_seconds=0.05 / 0.3 等效 integral_time = integral_max_ratio / ki = 0.05/0.3 ≈ 0.167s
-        "integral_time_seconds": 0.05 / 0.3,
-        # deadband_ratio=0.5 / 2000.0 kW @ rated 2000 → ratio 0.00025
-        "deadband_ratio": 0.5 / 2000.0,
+        "integral_time_seconds": _T_EQUIV_KI_03,
+        "deadband_ratio": _DB_RATIO_05_AT_2K,
         "hold_seconds": 0.0,  # no hold delay for simpler tests
         "error_ema_alpha": 0.0,
         "rate_limit": None,
@@ -109,7 +121,7 @@ class TestCompensatorFFTable:
 class TestCompensatorIntegral:
     def test_positive_error_accumulates_integral(self):
         """When setpoint > measurement, integral should accumulate positive error."""
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0)
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0)
         # setpoint=100, measurement=90 -> error=10
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         diag = comp.diagnostics
@@ -117,7 +129,9 @@ class TestCompensatorIntegral:
 
     def test_error_within_deadband_no_integral(self):
         """Error below deadband should not accumulate integral."""
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=5.0 / 2000.0, hold_seconds=0.0)
+        comp = _make_compensator(
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=_DB_RATIO_50_AT_2K, hold_seconds=0.0
+        )
         # error = 100 - 98 = 2 < deadband 5
         comp.compensate(setpoint=100.0, measurement=98.0, dt=1.0)
         diag = comp.diagnostics
@@ -126,7 +140,7 @@ class TestCompensatorIntegral:
     def test_integral_clamped_to_max(self):
         """Integral should be clamped by integral_max_ratio."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 1.0,
+            integral_time_seconds=_T_EQUIV_KI_10,
             integral_max_ratio=0.05,
             rated_power=1000.0,
             deadband_ratio=0.0,
@@ -148,7 +162,7 @@ class TestCompensatorIntegral:
 class TestCompensatorSetpointChange:
     def test_setpoint_change_resets_integral(self):
         """Changing setpoint by more than 0.1 should reset integral."""
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0)
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0)
         # Build up integral
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
@@ -164,7 +178,7 @@ class TestCompensatorSetpointChange:
 
     def test_small_setpoint_change_no_reset(self):
         """Change < 0.1 should not trigger reset."""
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0)
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         old_integral = comp.diagnostics["integral"]
         comp.compensate(setpoint=100.05, measurement=90.0, dt=1.0)
@@ -219,7 +233,7 @@ class TestCompensatorRateLimit:
 
 class TestCompensatorReset:
     def test_reset_clears_state(self):
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0)
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         assert comp.diagnostics["integral"] > 0
@@ -242,7 +256,7 @@ class TestCompensatorEnabled:
         assert comp.enabled is True
 
     def test_disable_resets_and_process_passthrough(self):
-        comp = _make_compensator(integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0)
+        comp = _make_compensator(integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0)
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         comp.enabled = False
         assert comp.diagnostics["integral"] == pytest.approx(0.0)
@@ -342,7 +356,7 @@ class TestCompensatorSteadyStateLearning:
     def test_learning_updates_ff_table(self):
         """After enough steady-state cycles with non-zero i_term, FF should update."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.5,
+            integral_time_seconds=_T_EQUIV_KI_05,
             deadband_ratio=0.0,
             hold_seconds=0.0,
             steady_state_threshold=0.05,
@@ -417,7 +431,7 @@ class TestFFTableRepository:
         comp = PowerCompensator(
             PowerCompensatorConfig(
                 persist_path="",
-                integral_time_seconds=0.05 / 0.5,
+                integral_time_seconds=_T_EQUIV_KI_05,
                 deadband_ratio=0.0,
                 hold_seconds=0.0,
                 steady_state_threshold=0.05,
@@ -515,7 +529,7 @@ class TestCompensatorTransientGate:
     def test_hold_cycles_delays_integral_accumulation(self):
         """After a setpoint change, integral should NOT accumulate during hold period."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.15
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.15
         )
         # Initial setpoint
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
@@ -530,7 +544,7 @@ class TestCompensatorTransientGate:
     def test_hold_counts_down_when_error_within_settle(self):
         """Hold should count down when |error| <= settle_threshold."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.5
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=3.0, settle_ratio=0.5
         )
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
         # Change setpoint: settle_threshold = |200-100| * 0.5 = 50
@@ -546,7 +560,7 @@ class TestCompensatorTransientGate:
     def test_integral_resumes_after_hold_expires(self):
         """After hold_cycles expire, integral accumulation should resume."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=1.0, settle_ratio=1.0
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=1.0, settle_ratio=1.0
         )
         comp.compensate(setpoint=100.0, measurement=100.0, dt=1.0)
         # Change setpoint: settle_threshold = |200-100| * 1.0 = 100
@@ -568,7 +582,7 @@ class TestCompensatorEMAFilter:
     def test_ema_filter_smooths_error(self):
         """With error_ema_alpha > 0, filtered error should lag behind raw error."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0, error_ema_alpha=0.3
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0, error_ema_alpha=0.3
         )
         # Step 1: error=10, filtered_error = 0.3*10 + 0.7*0 = 3.0
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
@@ -578,7 +592,7 @@ class TestCompensatorEMAFilter:
     def test_ema_alpha_zero_no_filtering(self):
         """With alpha=0, raw error is used directly."""
         comp = _make_compensator(
-            integral_time_seconds=0.05 / 0.3, deadband_ratio=0.0, hold_seconds=0.0, error_ema_alpha=0.0
+            integral_time_seconds=_T_EQUIV_KI_03, deadband_ratio=0.0, hold_seconds=0.0, error_ema_alpha=0.0
         )
         comp.compensate(setpoint=100.0, measurement=90.0, dt=1.0)
         # Raw error=10, integral = 10 * 1.0 = 10
@@ -600,7 +614,7 @@ class TestCompensatorSaturation:
         """
         comp = _make_compensator(
             output_max=500.0,
-            integral_time_seconds=0.05 / 0.3,
+            integral_time_seconds=_T_EQUIV_KI_03,
             deadband_ratio=0.0,
             hold_seconds=0.0,
         )
@@ -623,7 +637,7 @@ class TestCompensatorSaturation:
         """低飽和 + error < 0（同向 windup 風險）→ integral 不累積。"""
         comp = _make_compensator(
             output_min=-500.0,
-            integral_time_seconds=0.05 / 0.3,
+            integral_time_seconds=_T_EQUIV_KI_03,
             deadband_ratio=0.0,
             hold_seconds=0.0,
         )
@@ -660,8 +674,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         # 人為將 bin[19] (setpoint=1900) 的 ff 設為 1.1 → ff_output = 1.1 × 1900 = 2090 > 2000 飽和
@@ -677,8 +691,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[19] = 1.1  # → ff_output = 2090，飽和
@@ -693,8 +707,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_min=-2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         # 讓 ff_output 飽和到負端：setpoint=-1900, ff=0.9 → ff_output = -1900/0.9 = -2111 < -2000
@@ -709,8 +723,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_min=-2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[-19] = 0.9  # → ff_output = -2111，飽和
@@ -732,8 +746,8 @@ class TestCompensatorSaturationLearning:
             rated_power=2000.0,
             output_max=2000.0,
             output_min=-2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[20] = 1.1048
@@ -784,8 +798,8 @@ class TestCompensatorSaturationLearning:
             rated_power=2000.0,
             output_max=2200.0,
             output_min=-2200.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[19] = 1.1048
@@ -821,8 +835,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
             saturation_learn_min_cycles=2,
         )
@@ -846,8 +860,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
             saturation_learn_min_cycles=1,
             saturation_learn_alpha=0.5,
@@ -867,8 +881,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
             saturation_learn_min_cycles=1,
             saturation_learn_alpha=1.0,  # alpha=1 → new_ff = physical，完全無 EMA
@@ -891,8 +905,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_min=-2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
             ff_min=0.85,
             ff_max=1.5,
@@ -921,8 +935,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_max=2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[20] = 1.1048
@@ -1018,8 +1032,8 @@ class TestCompensatorSaturationLearning:
         comp = _make_compensator(
             rated_power=2000.0,
             output_min=-2000.0,
-            integral_time_seconds=0.05 / 0.3,
-            deadband_ratio=0.5 / 2000.0,
+            integral_time_seconds=_T_EQUIV_KI_03,
+            deadband_ratio=_DB_RATIO_05_AT_2K,
             hold_seconds=0.0,
         )
         comp._ff_table[-20] = 0.9
