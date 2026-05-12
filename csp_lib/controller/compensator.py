@@ -767,6 +767,12 @@ class PowerCompensator:
         new_idx = self._get_bin_index(new_setpoint)
         if old_idx == new_idx:
             return
+        # 跨符號（放電 ↔ 充電）不繼承：兩方向物理機制不對稱
+        #   - 放電：ff_output = ff × setpoint，FF 補 PCS 出力被線路損耗吃掉
+        #   - 充電：ff_output = setpoint / ff，FF 補輔電讓電網讀數更負
+        # 同數值的 FF 套到反方向會放大切換瞬間誤差（譬如 AFC 每秒切換場景）。
+        if old_idx * new_idx < 0:
+            return
         old_ff = self._ff_table.get(old_idx, 1.0)
         new_ff = self._ff_table.get(new_idx, 1.0)
         if abs(new_ff - 1.0) < 1e-6 and abs(old_ff - 1.0) > 1e-6:

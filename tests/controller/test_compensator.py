@@ -1339,3 +1339,96 @@ class TestCompensatorSmallSetpointLearning:
         # 修復後：應收斂到 < 0.1 kW（鬆綁的 deadband 約 0.1 kW）
         steady_error = abs(5.0 - final_meter)
         assert steady_error < 0.1, f"小 setpoint 穩態誤差過大：{steady_error:.3f} kW（修復前約 0.25 kW）"
+
+
+# ===========================================================================
+# Cross-sign FF inherit (BUG: 放電 bin 的 FF 被繼承到充電 bin)
+# ===========================================================================
+
+
+class TestCompensatorCrossSignInherit:
+    """跨符號 setpoint 切換時，FF 不應從異號 bin 繼承。
+
+    Bug 描述：
+      `_inherit_ff` 只檢查 new_idx != old_idx + new_ff == 1.0 + old_ff != 1.0，
+      沒擋 `old_idx * new_idx < 0`。
+      結果：放電 bin 學到的 FF（補放電損耗）被原樣套到充電 bin（應該補充電輔電），
+      物理意義錯誤，造成切換瞬間誤差放大。
+
+    場景：rated=2000、bin_step=5%、setpoint 從 +100 (bin +1) 切到 -100 (bin -1)
+    放電學完後 FF[+1] ≈ 1.05，切換後 _inherit_ff 應該:
+      - 不該把 FF[+1] 套給 FF[-1]
+      - FF[-1] 應保持 1.0（待充電方向自己學）
+
+    對 AFC / 頻率響應這種每秒切換的場景，每次跨號切換都會多一個暫態衝擊。
+    """
+
+    def _asymmetric_plant(self, pcs_cmd: float) -> float:
+        """放電 5% loss、充電 2% loss（兩方向物理不對稱）。"""
+        if pcs_cmd >= 0:
+            return pcs_cmd * (1 - 0.05)
+        return pcs_cmd * (1 + 0.02)
+
+    def _learn_discharge_phase(self, comp: PowerCompensator, cycles: int = 800) -> float:
+        """跑放電 setpoint=+100 直到 FF[+1] 收斂；回傳最後一輪 PCS 命令。"""
+        pcs_cmd = 100.0
+        for _ in range(cycles):
+            meter = self._asymmetric_plant(pcs_cmd)
+            pcs_cmd = comp.compensate(setpoint=100.0, measurement=meter, dt=0.3)
+        return pcs_cmd
+
+    def test_phase_a_learns_positive_bin(self):
+        """Sanity: 放電階段應該真的把 FF[+1] 學到 ≠ 1.0（驗證後續測試前提）。"""
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        self._learn_discharge_phase(comp)
+        ff_pos = comp.ff_table[comp._get_bin_index(100.0)]
+        assert ff_pos > 1.01, f"放電 bin 沒學到（FF[+1]={ff_pos}），測試前提不成立"
+
+    def test_cross_sign_switch_does_not_inherit_ff(self):
+        """Bug repro: 切換到充電 setpoint 後，FF[-1] 不應被繼承為 FF[+1] 的值。
+
+        修復前：FF[-1] = FF[+1] (錯誤繼承)
+        修復後：FF[-1] = 1.0（保持初始值，由 _learn_if_steady 自己學）
+        """
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+
+        # Phase A: 放電學習
+        self._learn_discharge_phase(comp)
+        ff_pos_before_switch = comp.ff_table[comp._get_bin_index(100.0)]
+        assert ff_pos_before_switch > 1.01  # sanity
+
+        # Phase B: 切換到充電 setpoint，只跑 1 cycle 觀察 inherit 結果
+        # 用一個合理的 measurement（與 PCS 命令一致的方向）
+        comp.compensate(setpoint=-100.0, measurement=-100.0, dt=0.3)
+
+        ff_neg_after_switch = comp.ff_table[comp._get_bin_index(-100.0)]
+        # 充電 bin 不該繼承放電 bin 的學習結果
+        assert ff_neg_after_switch == pytest.approx(1.0, abs=1e-6), (
+            f"FF[-1]={ff_neg_after_switch} 被錯誤繼承自 FF[+1]={ff_pos_before_switch}。"
+            f"跨符號 bin 物理意義不對稱（放電補損耗 vs 充電補輔電），不應繼承。"
+        )
+
+    def test_cross_sign_first_cycle_error_consistent_with_unlearned(self):
+        """切換瞬間誤差應該對應「FF=1.0」的物理（PCS 出 -100 → meter ≈ -102，欠 2 kW），
+        而非繼承後的物理（PCS 出 -95 → meter ≈ -97，過 2.6 kW）。
+        """
+        comp = _make_compensator(hold_seconds=0.6, steady_state_seconds=1.5)
+        self._learn_discharge_phase(comp)
+
+        # 從 phase A 結束的 PCS 命令切到 -100
+        # 用 phase A 最後輸出當第一個 measurement 的來源
+        pcs_at_phase_a_end = comp.compensate(setpoint=100.0, measurement=100.0 * 0.95, dt=0.3)
+        meter_first = self._asymmetric_plant(pcs_at_phase_a_end)
+
+        # 第一個 phase B cycle：setpoint=-100, measurement 從 phase A 帶來
+        pcs_phase_b_0 = comp.compensate(setpoint=-100.0, measurement=meter_first, dt=0.3)
+        # 第二個 cycle 才是真實的 phase B 物理回饋
+        meter_phase_b_1 = self._asymmetric_plant(pcs_phase_b_0)
+
+        # 修復後：FF[-1]=1.0 → PCS 出 -100 → meter = -100 × 1.02 = -102 → error = +2
+        # 修復前：FF[-1]≈1.05 → PCS 出 -95.2 → meter = -97.1 → error = -2.9
+        error = -100.0 - meter_phase_b_1
+        assert error > 0, (
+            f"切換瞬間 error={error:.2f} 為負（過充），表示 FF[-1] 被錯誤繼承。"
+            f"正確物理：FF[-1]=1.0 時 error 應為正（不足充約 +2 kW）。"
+        )
