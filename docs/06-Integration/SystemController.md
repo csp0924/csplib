@@ -243,7 +243,7 @@ async def deactivate_schedule_mode(self) -> None
 
 ### 觀測介面：describe() 與 health()
 
-> [!info] 需要 v0.9.2+（feat/integration-subsystem-health）
+> [!info] feat/integration-subsystem-health
 > `HeartbeatService`、`CommandRefreshService`、`SystemCommandOrchestrator` 三個內建服務在此版本補實 `HealthCheckable.health()`，auto-discovery 從 1/4 提升至 4/4。
 
 #### describe() → SystemControllerStatus
@@ -252,9 +252,9 @@ async def deactivate_schedule_mode(self) -> None
 def describe(self) -> SystemControllerStatus
 ```
 
-回傳 `SystemControllerStatus` frozen dataclass，聚合當前所有子系統的觀測快照。Sync 呼叫；可安全地從任何 thread 呼叫（內部持有 `dict` 的 copy-on-read 快照，防禦跨 thread 競態）。
+回傳 `SystemControllerStatus` frozen dataclass，聚合當前所有子系統的觀測快照。Sync 呼叫；主要使用情境為 async 單 thread。實作上對 `self._subsystems` / `self._alarmed_devices` 先做 shallow copy 再迭代，CPython GIL 下不會看到 dict/set「changed size during iteration」例外，但 attach/detach 與 describe() 無 lock 同步，跨 thread 同時呼叫時觀察到的子系統集合可能略為過期。若需嚴格跨 thread 一致性，請在外層自行加鎖。
 
-**自動探索邏輯**：`SystemController` 在 `_on_start()` 時自動對四個內建服務做 auto-discovery：
+**自動探索邏輯**：`SystemController.__init__` 建構時即對四個內建服務做 auto-discovery（不依賴 lifecycle start）：
 
 | 子系統名稱 | 對應服務 | 探索方式 |
 |-----------|---------|---------|
@@ -270,12 +270,13 @@ def describe(self) -> SystemControllerStatus
 ```python
 @dataclass(frozen=True, slots=True)
 class SystemControllerStatus:
-    is_running: bool
-    effective_mode: str | None
-    protection_status: ProtectionResult | None
-    subsystems: MappingProxyType[str, SubsystemSnapshot]
-    device_health: HealthReport
-    snapshot_at: float          # monotonic timestamp
+    component: str                              # 固定 "system_controller"
+    effective_mode: str | None                  # 當前生效模式名稱
+    auto_stop_active: bool                      # 自動停機 override 是否生效
+    auto_stop_on_alarm: bool                    # 配置是否啟用「告警時自動 stop」
+    alarmed_device_ids: tuple[str, ...]         # 已排序、確定性
+    device_health: HealthReport                 # 等同 self.health() 回傳
+    subsystems: Mapping[str, SubsystemSnapshot] # MappingProxyType 包裝，caller 不得改動
 ```
 
 #### SubsystemSnapshot
@@ -322,7 +323,11 @@ from csp_lib.integration import SystemController
 
 # describe() 取完整快照
 status = controller.describe()
-print(f"mode: {status.effective_mode}, running: {status.is_running}")
+print(
+    f"mode: {status.effective_mode}, "
+    f"auto_stop_active: {status.auto_stop_active}, "
+    f"alarmed: {status.alarmed_device_ids}"
+)
 
 for name, snap in status.subsystems.items():
     if snap.kind == "health":
