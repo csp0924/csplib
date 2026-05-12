@@ -26,15 +26,18 @@ from typing import Any, Protocol, runtime_checkable
 @runtime_checkable
 class BatchUploader(Protocol):
     def register_collection(self, collection_name: str) -> None: ...
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None: ...
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool: ...
 ```
+
+> [!warning] v1.0.0 Breaking change
+> `enqueue` 的回傳型別自 v1.0.0 起從 `None` 改為 `bool`：True 代表 document 安全入隊，False 代表底層佇列已滿、最舊資料被丟棄（silent drop）。所有自訂實作必須回傳 bool。使用 dedup / 節流的呼叫端（例如 [[DataUploadManager]] 的 `WritePolicy.ON_CHANGE` 與 legacy `save_interval`）會把 False 視同失敗，避免下次相同 payload 被去重吞掉。
 
 ## 方法
 
 | 方法 | 說明 |
 |------|------|
 | `register_collection(collection_name)` | 註冊 collection 名稱，確保上傳器為該 collection 準備好佇列 |
-| `enqueue(collection_name, document)` | 將文件加入上傳佇列（async） |
+| `enqueue(collection_name, document)` | 將文件加入上傳佇列（async），回傳 bool 表示是否成功入隊 |
 
 ### register_collection
 
@@ -49,13 +52,18 @@ def register_collection(self, collection_name: str) -> None
 ### enqueue
 
 ```python
-async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None
+async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool
 ```
 
 | 參數 | 型別 | 說明 |
 |------|------|------|
 | `collection_name` | `str` | 目標 collection 名稱 |
 | `document` | `dict[str, Any]` | 要上傳的文件 |
+
+**回傳值**：
+
+- `True` — document 已安全進入佇列
+- `False` — 底層佇列容量已滿，最舊資料被 `popleft` 丟棄；呼叫端必須視同失敗，不可 commit dedup / 節流狀態
 
 ## 既有實作
 
@@ -78,8 +86,9 @@ class InMemoryUploader:
     def register_collection(self, collection_name: str) -> None:
         self._collections.setdefault(collection_name, [])
 
-    async def enqueue(self, collection_name: str, document: dict) -> None:
+    async def enqueue(self, collection_name: str, document: dict) -> bool:
         self._collections[collection_name].append(document)
+        return True  # in-memory list 不限容量，永遠成功
 
 # runtime_checkable 驗證
 assert isinstance(InMemoryUploader(), BatchUploader)

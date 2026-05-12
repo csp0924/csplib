@@ -57,13 +57,20 @@ class BatchUploader(Protocol):
         """
         ...
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """
         將文件加入上傳佇列
 
         Args:
             collection_name: 目標 collection 名稱
             document: 要上傳的文件
+
+        Returns:
+            True 表示資料已安全進入佇列；False 表示底層佇列已滿、最舊資料被
+            丟棄（silent drop）。使用 dedup / 節流狀態的呼叫端（例如
+            ``DataUploadManager`` 的 ``WritePolicy.ON_CHANGE`` 與 legacy
+            ``save_interval``）**必須**把 False 視同失敗、不可 commit 狀態，
+            否則下次同樣輸出會被去重吞掉造成靜默資料遺失。
         """
         ...
 

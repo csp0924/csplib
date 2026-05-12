@@ -158,7 +158,7 @@ class MongoBatchUploader:
             self._retry_counts[collection_name] = 0
             logger.debug(f"MongoBatchUploader: 註冊 collection '{collection_name}'")
 
-    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> None:
+    async def enqueue(self, collection_name: str, document: dict[str, Any]) -> bool:
         """
         將資料加入對應 collection 的 queue
 
@@ -168,15 +168,23 @@ class MongoBatchUploader:
         Args:
             collection_name: MongoDB collection 名稱
             document: 要加入的文件
+
+        Returns:
+            True 表示 document 安全進入 queue；False 表示 queue 已達
+            ``max_queue_size``、最舊資料被 ``popleft`` 丟棄。呼叫端必須
+            把 False 視同失敗，避免上層 dedup / 節流狀態誤判 silent drop
+            為成功而 commit（見 ``BatchUploader.enqueue`` 契約）。
         """
         if collection_name not in self._queues:
             self.register_collection(collection_name)
 
-        await self._queues[collection_name].enqueue(document)
+        accepted = await self._queues[collection_name].enqueue(document)
 
         # 達到閾值 → 主動喚醒 _flush_loop
         if self._queues[collection_name].size_sync() >= self._config.batch_size_threshold:
             self._threshold_event.set()
+
+        return accepted
 
     async def write_immediate(
         self,

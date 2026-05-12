@@ -52,7 +52,8 @@ class MockUploader:
     """Mock MongoBatchUploader for testing"""
 
     def __init__(self):
-        self.enqueue = AsyncMock()
+        # ``BatchUploader.enqueue`` 自 v1.0 起回傳 bool；測試 mock 預設回 True
+        self.enqueue = AsyncMock(return_value=True)
         self.register_collection = MagicMock()
 
 
