@@ -179,8 +179,8 @@ class TestCompensatorSetpointChange:
         comp.compensate(setpoint=200.0, measurement=190.0, dt=1.0)
         # Integral should have been reset (then possibly re-accumulated for 1 step)
         # The key assertion: it should not be the accumulated value from before
-        # After reset, integral_hold prevents accumulation for hold_seconds=0.0, so
-        # one step of error 10 over dt=1 gives integral=10 (not the old value)
+        # hold_seconds=0.0 → hold_cycles_needed=0，setpoint 變動 reset 後不進 hold；
+        # 同一 cycle 立刻累積：error=10 × dt=1 → integral=10。
         assert comp.diagnostics["integral"] <= 10.1
 
     def test_small_setpoint_change_no_reset(self):
