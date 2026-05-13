@@ -119,9 +119,10 @@ class TestStopGuaranteesNoSilentLoss:
         for i in range(50):
             await uploader.enqueue("metrics", {"i": i})
 
-        uploader.start()
-        await asyncio.sleep(0.05)
-        await uploader.stop()
+        with LogCapture(level="WARNING") as cap:
+            uploader.start()
+            await asyncio.sleep(0.05)
+            await uploader.stop()
 
         # 暫時性失敗應在 bounded retry 內恢復 → queue 為空
         assert await uploader._queues["metrics"].size() == 0, (
@@ -129,3 +130,11 @@ class TestStopGuaranteesNoSilentLoss:
         )
         # 至少呼叫 2 次（1 次失敗 + 1 次重試成功）
         assert call_count["n"] >= 2, f"應該有 retry，實際 write_batch 呼叫次數={call_count['n']}"
+
+        # 重試成功路徑不應留下任何 ERROR log（lost-count ERROR 是 silent loss 訊號，
+        # transient failure 順利恢復後不該誤觸發；防止未來改動把暫時性失敗誤判成 lost）
+        error_records = [rec for rec in cap.records if rec.level == "ERROR"]
+        assert not error_records, (
+            "暫時性失敗在 bounded retry 內恢復後不應 emit ERROR log，"
+            f"實際 ERROR records: {[(r.level, r.message) for r in error_records]}"
+        )
