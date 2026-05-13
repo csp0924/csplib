@@ -49,6 +49,16 @@ class IntervalAccumulator:
     累計型 (CUMULATIVE): 記錄首末讀數，kWh = last - first
     瞬時型 (INSTANTANEOUS): 梯形積分 kW × 時間
 
+    Boundary handling（修復 boundary truncation bug）：
+      當 feed() 偵測到 timestamp 跨越 boundary 時，使用 prev sample 與剛抵達的 sample
+      做 *線性內插* 估出 boundary 瞬間的 value：
+          v_b = prev_value + (value - prev_value) * (boundary - prev_ts) / (ts - prev_ts)
+      - INSTANTANEOUS: 補上 trapezoid 尾段 (prev_value + v_b)/2 * (boundary - prev_ts).hours
+      - CUMULATIVE: kwh = v_b - first_value
+      然後以 (v_b, boundary) 為「合成種子 sample」開啟下一個 interval，再 accumulate
+      真實抵達的 sample。這確保 boundary 兩側無 leakage，constant 信號完全精確，
+      ramp 信號也只受兩 sample 間二階近似誤差影響。
+
     Args:
         device_id: 設備 ID
         interval_minutes: 區間長度（分鐘）
@@ -79,14 +89,15 @@ class IntervalAccumulator:
 
     @property
     def sample_count(self) -> int:
-        """目前區間的取樣數"""
+        """目前區間的取樣數（不含 boundary 合成種子）"""
         return self._sample_count
 
     def feed(self, value: float, timestamp: datetime) -> IntervalRecord | None:
         """
         輸入一筆讀數
 
-        若跨越區間邊界，會完成當前區間並返回記錄，然後開始新區間。
+        若跨越區間邊界，會完成當前區間並返回記錄，然後以 boundary 內插值為種子
+        開啟下一個區間（boundary truncation 修復）。
 
         Args:
             value: 讀數值（kWh 或 kW）
@@ -102,10 +113,14 @@ class IntervalAccumulator:
 
         boundary = self._next_boundary()
         if timestamp >= boundary:
-            record = self._finalize(boundary)
+            # 線性內插：用 prev sample 與剛抵達的 sample 估算 boundary 瞬間值
+            value_at_boundary = self._interpolate_at_boundary(value, timestamp, boundary)
+            record = self._finalize(boundary, value_at_boundary)
+            # 開啟下一個 interval：先以 (v_b, boundary) 為合成種子，再 accumulate 真實 sample
             self._period_start = self._floor_timestamp(timestamp)
             self._reset()
-            self._start_sample(value, timestamp)
+            self._seed_from_boundary(value_at_boundary, boundary)
+            self._accumulate(value, timestamp)
             return record
 
         self._accumulate(value, timestamp)
@@ -121,16 +136,58 @@ class IntervalAccumulator:
         assert self._period_start is not None
         return self._period_start + timedelta(minutes=self._interval_minutes)
 
+    def _interpolate_at_boundary(
+        self,
+        value: float,
+        timestamp: datetime,
+        boundary: datetime,
+    ) -> float:
+        """
+        對 boundary 瞬間做線性內插。
+
+        防呆：prev_ts 應 < boundary <= timestamp。若 prev 不存在（理論上不會發生，
+        因為 _period_start 已存在意味著至少有過一筆 sample），fallback 直接取 value。
+        若 timestamp == prev_ts（同瞬間兩筆），回傳 value 避免除以零。
+        """
+        if self._prev_timestamp is None or self._prev_value is None:
+            return value
+        span_seconds = (timestamp - self._prev_timestamp).total_seconds()
+        if span_seconds <= 0.0:
+            return value
+        offset_seconds = (boundary - self._prev_timestamp).total_seconds()
+        ratio = offset_seconds / span_seconds
+        # 夾在 [0, 1] 避免 boundary 落在 prev 之前的退化情境（理論上不會發生）
+        ratio = max(0.0, min(1.0, ratio))
+        return self._prev_value + (value - self._prev_value) * ratio
+
     def _start_sample(self, value: float, timestamp: datetime) -> None:
-        """開始新的取樣"""
+        """開始新的取樣（首筆真實 sample）。
+
+        兩種模式都記錄 prev_value / prev_timestamp 以支援 boundary 內插。
+        """
         self._sample_count = 1
+        self._prev_value = value
+        self._prev_timestamp = timestamp
         if self._meter_type == DeviceMeterType.CUMULATIVE:
             self._first_value = value
             self._last_value = value
         else:
             self._kwh_accumulated = 0.0
-            self._prev_value = value
-            self._prev_timestamp = timestamp
+
+    def _seed_from_boundary(self, value_at_boundary: float, boundary: datetime) -> None:
+        """
+        以 boundary 內插值為新 interval 的起點種子。
+
+        此 sample 是合成的（非真實量測），不計入 sample_count，但設好內部狀態
+        讓後續 _accumulate 可以從 boundary 起算 trapezoid / 差值。
+        """
+        self._prev_value = value_at_boundary
+        self._prev_timestamp = boundary
+        if self._meter_type == DeviceMeterType.CUMULATIVE:
+            self._first_value = value_at_boundary
+            self._last_value = value_at_boundary
+        else:
+            self._kwh_accumulated = 0.0
 
     def _accumulate(self, value: float, timestamp: datetime) -> None:
         """累積一筆讀數"""
@@ -141,15 +198,31 @@ class IntervalAccumulator:
             if self._prev_timestamp is not None and self._prev_value is not None:
                 dt_hours = (timestamp - self._prev_timestamp).total_seconds() / 3600.0
                 self._kwh_accumulated += (self._prev_value + value) / 2.0 * dt_hours
-            self._prev_value = value
-            self._prev_timestamp = timestamp
+        self._prev_value = value
+        self._prev_timestamp = timestamp
 
-    def _finalize(self, boundary: datetime) -> IntervalRecord:
-        """完成當前區間，返回記錄"""
+    def _finalize(self, boundary: datetime, value_at_boundary: float) -> IntervalRecord:
+        """
+        完成當前區間，返回記錄。
+
+        Args:
+            boundary: 區間結束邊界
+            value_at_boundary: boundary 瞬間的內插值，用於補齊尾段能耗
+
+        Returns:
+            IntervalRecord 含已含尾段補償的 kwh
+        """
         if self._meter_type == DeviceMeterType.CUMULATIVE:
-            kwh = (self._last_value or 0.0) - (self._first_value or 0.0)
+            # 用 boundary 內插值取代「最後一筆 sample」，跨 interval 連續、無 leakage
+            kwh = value_at_boundary - (self._first_value or 0.0)
         else:
-            kwh = self._kwh_accumulated
+            # INSTANTANEOUS：補上 prev_ts → boundary 的 trapezoid 尾段
+            tail_kwh = 0.0
+            if self._prev_timestamp is not None and self._prev_value is not None:
+                dt_hours = (boundary - self._prev_timestamp).total_seconds() / 3600.0
+                if dt_hours > 0.0:
+                    tail_kwh = (self._prev_value + value_at_boundary) / 2.0 * dt_hours
+            kwh = self._kwh_accumulated + tail_kwh
 
         return IntervalRecord(
             device_id=self._device_id,

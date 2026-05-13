@@ -67,7 +67,9 @@ class TestEngineEnergyTracking:
 
         assert len(records) == 1
         assert records[0].device_id == "pcs_01"
-        assert records[0].kwh == pytest.approx(10.0)
+        # CUMULATIVE 跨 boundary 10:15：prev=110@10:10, curr=120@10:16
+        # 內插 v_b@10:15 = 110 + 10*5/6 = 118.333 → kwh = v_b - first(100) = 18.333
+        assert records[0].kwh == pytest.approx(110.0 + 10.0 * 5.0 / 6.0 - 100.0)
 
     def test_process_read_unknown_device(self, engine: StatisticsEngine):
         """未配置的設備不追蹤"""
