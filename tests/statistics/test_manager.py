@@ -194,7 +194,9 @@ class TestStatisticsManagerEnergyUpload:
         assert doc["type"] == "energy"
         assert doc["device_id"] == "dev_01"
         assert doc["interval_minutes"] == 15
-        assert doc["kwh"] == pytest.approx(10.0)
+        # CUMULATIVE 跨 boundary 10:15：prev=110@10:10, curr=120@10:16
+        # 內插 v_b@10:15 = 110 + 10*5/6 = 118.333 → kwh = v_b - first(100) = 18.333
+        assert doc["kwh"] == pytest.approx(110.0 + 10.0 * 5.0 / 6.0 - 100.0)
         assert doc["meter_type"] == "cumulative"
         assert doc["period_start"] == datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
         assert doc["period_end"] == datetime(2025, 1, 1, 10, 15, 0, tzinfo=timezone.utc)
