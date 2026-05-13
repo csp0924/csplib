@@ -108,6 +108,11 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
     # 子類別可覆寫，定義支援的 action -> method 映射
     ACTIONS: dict[str, str] = {}
 
+    # Rotating slot 同一 slot 連續 rollback 上限。
+    # 超過此次數仍未拿到完整資料時，放棄重試讓 index 正常推進，
+    # 避免一個永久失敗的 slot starve 整個 rotating queue。
+    _MAX_ROTATING_ROLLBACKS: int = 3
+
     def __init__(
         self,
         config: DeviceConfig,
@@ -186,6 +191,13 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         # DO 動作（WriteMixin）
         self._do_actions: dict[str, DOActionConfig] = {}
         self._pulse_tasks: list[asyncio.Task[None]] = []
+
+        # Rotating slot 失敗回滾的 bounded retry：避免單一永久壞掉的 slot
+        # 把 rotating queue 卡死、讓其他 slot 永遠讀不到（starvation）。
+        # 同一個 slot 連續 ``_MAX_ROTATING_ROLLBACKS`` 次 rollback 後改為「放棄重試」，
+        # index 正常推進並紀錄 WARNING，讓下個 slot 有機會被讀到。
+        self._rotating_rollback_index: int | None = None  # 上次 rollback 的 slot index
+        self._rotating_rollback_count: int = 0  # 同一 slot 連續 rollback 次數
 
     # =============== Properties ===============
 
@@ -736,28 +748,54 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
         修復：若本輪取到的 rotating slot 任一預期點位在 ``read_many`` 回傳結果中
         缺席（被 ``return_exceptions=True`` 路徑 swallow），則呼叫
         ``scheduler.rollback_index()`` 讓下個 cycle 重訪同一個 slot，避免該 slot
-        要等一整輪 K-cycle 才會被重訪的 silent staleness（見
-        ``sandbox/read_scheduler_rotating_silent_skip_demo.py``）。
+        要等一整輪 K-cycle 才會被重訪的 silent staleness。
+
+        Bounded retry：同一個 slot 連續 rollback 達 ``_MAX_ROTATING_ROLLBACKS`` 次
+        後改為放棄重試 — index 正常推進並記錄 WARNING，避免一個永久壞掉的 slot
+        把 rotating queue 卡死、讓後續其他 slot 永遠讀不到（starvation）。
 
         Aggregator pipeline 套用 raw_values 之前先判斷是否要 rollback，因為
         aggregator 可能改名 / 合併 keys，會讓「rotating slot 預期 key 是否齊全」
         失準。
         """
+        # 推進前先記錄這次讀的是哪個 slot（rollback 計數要對應到此 slot）
+        current_slot_index = self._scheduler.current_rotating_index if self._scheduler.has_rotating else None
         groups, rotating_slice = self._scheduler.get_next_groups_with_rotating()
         if not groups:
             return {}
         raw_values = await self._reader.read_many(groups)
 
-        # rotating slot 完整性檢查：任一預期點位缺席就 rollback 讓下輪重訪
+        # rotating slot 完整性檢查：任一預期點位缺席就 rollback 讓下輪重訪，
+        # 但同一 slot 連續失敗到上限就放棄重試（避免 starvation）。
         if rotating_slice:
             expected_names = {p.name for g in rotating_slice for p in g.points}
-            if expected_names and not expected_names.issubset(raw_values.keys()):
-                missing = expected_names - raw_values.keys()
-                logger.warning(
-                    f"[{self._config.device_id}] Rotating slot read incomplete, "
-                    f"rolling back rotating_index for retry next cycle. missing={sorted(missing)}"
-                )
-                self._scheduler.rollback_index()
+            missing = expected_names - raw_values.keys()
+            if missing:
+                if self._rotating_rollback_index == current_slot_index:
+                    self._rotating_rollback_count += 1
+                else:
+                    self._rotating_rollback_index = current_slot_index
+                    self._rotating_rollback_count = 1
+
+                if self._rotating_rollback_count <= self._MAX_ROTATING_ROLLBACKS:
+                    logger.warning(
+                        f"[{self._config.device_id}] Rotating slot {current_slot_index} read incomplete "
+                        f"(attempt {self._rotating_rollback_count}/{self._MAX_ROTATING_ROLLBACKS}), "
+                        f"rolling back rotating_index for retry next cycle. missing={sorted(missing)}"
+                    )
+                    self._scheduler.rollback_index()
+                else:
+                    logger.warning(
+                        f"[{self._config.device_id}] Rotating slot {current_slot_index} failed "
+                        f"{self._rotating_rollback_count - 1} consecutive retries; giving up retry and "
+                        f"advancing to avoid starving other slots. missing={sorted(missing)}"
+                    )
+                    self._rotating_rollback_index = None
+                    self._rotating_rollback_count = 0
+            elif self._rotating_rollback_index == current_slot_index:
+                # 該 slot 這次讀成功 → 清掉它的失敗計數
+                self._rotating_rollback_index = None
+                self._rotating_rollback_count = 0
 
         if self._aggregator_pipeline:
             return self._aggregator_pipeline.process(raw_values)
