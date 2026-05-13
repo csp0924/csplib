@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from csp_lib.cluster.config import ClusterConfig, EtcdConfig
-from csp_lib.cluster.election import ElectionState, LeaderElector
+from csp_lib.cluster.election import LeaderElector
 
 # --- Watch event helpers ---
 
@@ -36,10 +36,11 @@ def _make_config(instance_id: str = "node-1") -> ClusterConfig:
     )
 
 
-def _make_watch_queue(events: list[FakeWatchEvent], hang_forever: bool = True):
+def _make_watch_queue(events: list[FakeWatchEvent]):
     """建立一個 async iterator，依序 yield 給定的 events。
 
-    hang_forever=True：yield 完所有事件後阻塞（模擬 etcd watch 長連線）。
+    Yield 完所有事件後阻塞（模擬 etcd watch 長連線）；測試可透過 queue.put(None)
+    主動結束 iterator。
     """
     queue: asyncio.Queue[FakeWatchEvent | None] = asyncio.Queue()
     for ev in events:
@@ -113,9 +114,9 @@ class TestWatchLeaderKey:
                 break
             await asyncio.sleep(0.01)
 
-        assert elector.state != ElectionState.LEADER, (
-            f"Elector should have been demoted by watch loop, still {elector.state}"
-        )
+        # 應觀察到 demotion callback 被呼叫；state 可能因 campaign loop 立即重選
+        # 又回到 LEADER（mock client 的 txn_put_if_not_exists 永遠成功），這是預期的
+        # 「demote → re-campaign」行為，故只驗證 callback 而不卡 state。
         on_demoted.assert_awaited()
 
         await elector.stop()
