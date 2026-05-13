@@ -731,11 +731,34 @@ class AsyncModbusDevice(AlarmMixin, WriteMixin):
     # =============== Private ===============
 
     async def _read_all(self) -> dict[str, Any]:
-        """讀取所有點位（使用排程器預計算分組）"""
-        groups = self._scheduler.get_next_groups()
+        """讀取所有點位（使用排程器預計算分組）。
+
+        修復：若本輪取到的 rotating slot 任一預期點位在 ``read_many`` 回傳結果中
+        缺席（被 ``return_exceptions=True`` 路徑 swallow），則呼叫
+        ``scheduler.rollback_index()`` 讓下個 cycle 重訪同一個 slot，避免該 slot
+        要等一整輪 K-cycle 才會被重訪的 silent staleness（見
+        ``sandbox/read_scheduler_rotating_silent_skip_demo.py``）。
+
+        Aggregator pipeline 套用 raw_values 之前先判斷是否要 rollback，因為
+        aggregator 可能改名 / 合併 keys，會讓「rotating slot 預期 key 是否齊全」
+        失準。
+        """
+        groups, rotating_slice = self._scheduler.get_next_groups_with_rotating()
         if not groups:
             return {}
         raw_values = await self._reader.read_many(groups)
+
+        # rotating slot 完整性檢查：任一預期點位缺席就 rollback 讓下輪重訪
+        if rotating_slice:
+            expected_names = {p.name for g in rotating_slice for p in g.points}
+            if expected_names and not expected_names.issubset(raw_values.keys()):
+                missing = expected_names - raw_values.keys()
+                logger.warning(
+                    f"[{self._config.device_id}] Rotating slot read incomplete, "
+                    f"rolling back rotating_index for retry next cycle. missing={sorted(missing)}"
+                )
+                self._scheduler.rollback_index()
+
         if self._aggregator_pipeline:
             return self._aggregator_pipeline.process(raw_values)
         return raw_values
