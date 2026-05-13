@@ -20,6 +20,14 @@ from csp_lib.mongo.writer import MongoWriter, WriteResult
 
 logger = get_logger(__name__)
 
+# stop() 流程中對 flush_all 進行 bounded retry 的次數上限。
+# Mongo 在 shutdown 時偶發性連線抖動很常見，但若持續 N 次仍失敗，
+# 表示 Mongo 真的不可用，必須以 ERROR log 顯式告知 operator 遺失筆數，
+# 而不是把資料留在 in-memory queue 後 silent loss。
+_SHUTDOWN_FLUSH_MAX_ATTEMPTS = 3
+# 每次 shutdown retry 之間的等待秒數（給暫時性網路抖動恢復時間）
+_SHUTDOWN_FLUSH_RETRY_DELAY = 0.1
+
 
 class MongoBatchUploader:
     """
@@ -301,27 +309,126 @@ class MongoBatchUploader:
 
         採用多事件等待（stop / threshold / timeout），threshold 達到
         時可立即 flush，不必等整個 ``flush_interval``。
+
+        關機保證：無論 loop 從哪條路徑離開（``stop_event`` 先 set 而跳過
+        首次迭代、正常 stop 訊號、CancelledError、或非預期例外），都會
+        在 ``finally`` 內執行 ``_shutdown_drain()``，避免 start 後立刻
+        stop 或 race condition 造成 in-flight queue silent loss。
+
+        Python 3.11+ cancellation 語意：``task.cancel()`` 會把 cancel
+        count 累積到 task 上，每次 await 點都會再次 raise
+        ``CancelledError``。為了在 ``finally`` 內讓 ``_shutdown_drain``
+        能跑完所有 await（drain → write_batch → sleep），先呼叫
+        ``current_task().uncancel()`` 清掉 pending cancel，再執行 drain。
+        若原本是被 cancel 而離開 loop，drain 完成後再重新 raise
+        ``CancelledError`` 以保留 cancellation 語意。
         """
-        while not self._stop_event.is_set():
-            try:
-                # 等待 stop / threshold / timeout 三路任一
-                await self._wait_for_trigger()
+        cancelled = False
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    # 等待 stop / threshold / timeout 三路任一
+                    await self._wait_for_trigger()
 
-                if self._stop_event.is_set():
-                    # 結束迴圈前 flush 所有資料
+                    if self._stop_event.is_set():
+                        # 跳到 finally 統一 drain，避免兩條路徑重複實作
+                        break
+
+                    # 被 threshold 喚醒或 timeout 到期 → flush 所有 queue
                     await self.flush_all()
+
+                    # 清除 threshold 旗標等待下次達閾值
+                    self._threshold_event.clear()
+
+                except asyncio.CancelledError:
+                    # 記錄狀態，drain 完成後再 raise，保留 cancellation 語意
+                    cancelled = True
                     break
+                except Exception as e:
+                    logger.error(f"MongoBatchUploader: flush loop 錯誤: {e}")
+                    await asyncio.sleep(1)
+        finally:
+            # 若是被 cancel 進來的，先 uncancel 清掉 pending count，避免
+            # drain 內部的 await 點再次 raise CancelledError 中斷收尾。
+            current = asyncio.current_task()
+            if cancelled and current is not None:
+                current.uncancel()
+            await self._shutdown_drain()
 
-                # 被 threshold 喚醒或 timeout 到期 → flush 所有 queue
-                await self.flush_all()
+        if cancelled:
+            raise asyncio.CancelledError
 
-                # 清除 threshold 旗標等待下次達閾值
-                self._threshold_event.clear()
+    async def _shutdown_drain(self) -> None:
+        """
+        關機路徑專用：對 in-flight queue bounded retry 直接寫入 Mongo。
 
-            except asyncio.CancelledError:
-                # 結束前 flush 所有資料
-                await self.flush_all()
-                break
-            except Exception as e:
-                logger.error(f"MongoBatchUploader: flush loop 錯誤: {e}")
-                await asyncio.sleep(1)
+        與 ``flush_all`` 的差別：
+        - 不走 ``_handle_write_failure`` 的 "重試 N/M" WARNING 路徑（誤導 operator，
+          因為 stop 後 loop 已 break，不會有後續 retry 發生）
+        - 寫入失敗時 documents 暫存在區域變數，每次 retry 重打同一份
+        - 達上限後仍失敗 → ERROR log 標明每個 collection 的未落庫筆數
+
+        最終仍失敗的資料不會放回 queue（process 即將結束，restore 也救不回來），
+        改以 ERROR log 讓 operator 可以從外部記錄／告警系統辨認資料遺失規模。
+
+        為避免 stop 期間其他協程 ``enqueue()`` 進來的 late docs 被遺漏，
+        在每次 retry 前都會重新 drain 一次 queue 把新增 docs 併入 pending；
+        retry 全失敗時也再 drain 一次，確保最終 ERROR log 的 lost count
+        反映「shutdown 全程實際未落庫」的真實筆數。
+        """
+
+        async def _collect_pending_from_queues(target: dict[str, list[dict[str, Any]]]) -> None:
+            """把所有 queue 目前殘留的 docs drain 出來併入 target。"""
+            for collection_name in list(self._queues.keys()):
+                docs = await self._queues[collection_name].drain()
+                if not docs:
+                    continue
+                target.setdefault(collection_name, []).extend(docs)
+
+        pending: dict[str, list[dict[str, Any]]] = {}
+        await _collect_pending_from_queues(pending)
+
+        for attempt in range(1, _SHUTDOWN_FLUSH_MAX_ATTEMPTS + 1):
+            # 每輪 retry 前再 drain 一次，把 stop 後 late enqueue 進來的 docs 也納入
+            if attempt > 1:
+                await _collect_pending_from_queues(pending)
+
+            if not pending:
+                return
+
+            succeeded: list[str] = []
+            for collection_name, docs in pending.items():
+                result = await self._writer.write_batch(collection_name, docs)
+                if result.success:
+                    self._retry_counts[collection_name] = 0
+                    succeeded.append(collection_name)
+            for name in succeeded:
+                pending.pop(name, None)
+
+            if not pending:
+                # 寫完後再掃一次，捕捉 stop 期間 late enqueue 進來的 docs
+                await _collect_pending_from_queues(pending)
+                if not pending:
+                    return
+
+            if attempt < _SHUTDOWN_FLUSH_MAX_ATTEMPTS:
+                logger.warning(
+                    f"MongoBatchUploader: shutdown flush 第 {attempt}/"
+                    f"{_SHUTDOWN_FLUSH_MAX_ATTEMPTS} 次失敗，"
+                    f"剩餘 collections={sorted(pending.keys())}，將重試"
+                )
+                await asyncio.sleep(_SHUTDOWN_FLUSH_RETRY_DELAY)
+
+        # 最後掃一次，把 retry 期間 late enqueue 進來的 docs 也算進 lost count
+        await _collect_pending_from_queues(pending)
+        if not pending:
+            return
+
+        # 用完 retry 配額仍有資料 → 顯式 ERROR，列出每個 collection 的未落庫筆數
+        total_lost = sum(len(docs) for docs in pending.values())
+        per_collection = ", ".join(f"{name}={len(docs)}" for name, docs in sorted(pending.items()))
+        logger.error(
+            f"MongoBatchUploader: shutdown 後仍有 {total_lost} 筆資料無法寫入 Mongo（"
+            f"per-collection: {per_collection}）— 已耗盡 {_SHUTDOWN_FLUSH_MAX_ATTEMPTS} "
+            f"次 shutdown retry，process 結束後資料遺失"
+        )
