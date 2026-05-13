@@ -55,9 +55,14 @@ class IntervalAccumulator:
           v_b = prev_value + (value - prev_value) * (boundary - prev_ts) / (ts - prev_ts)
       - INSTANTANEOUS: 補上 trapezoid 尾段 (prev_value + v_b)/2 * (boundary - prev_ts).hours
       - CUMULATIVE: kwh = v_b - first_value
-      然後以 (v_b, boundary) 為「合成種子 sample」開啟下一個 interval，再 accumulate
-      真實抵達的 sample。這確保 boundary 兩側無 leakage，constant 信號完全精確，
-      ramp 信號也只受兩 sample 間二階近似誤差影響。
+      然後以 *floor(timestamp) 對應時刻的內插值* 為合成種子開啟下一個 interval（不是
+      用「舊 boundary」的內插值，避免 timestamp 跨越 >1 個 interval 時把整段 gap
+      能量灌進新 interval）。再 accumulate 真實抵達的 sample。這確保 boundary 兩側
+      無 leakage；constant 信號完全精確；ramp 信號也只受兩 sample 間二階近似誤差影響。
+
+      Multi-interval skip：當 timestamp 跨越 >1 個 boundary（取樣斷線後恢復），只
+      finalize 第一個跨越的 interval；中間被跳過的 interval 不 emit record（缺乏
+      足夠資訊重建 partial interval），新 interval 從 floor(timestamp) 起算。
 
     Args:
         device_id: 設備 ID
@@ -116,10 +121,13 @@ class IntervalAccumulator:
             # 線性內插：用 prev sample 與剛抵達的 sample 估算 boundary 瞬間值
             value_at_boundary = self._interpolate_at_boundary(value, timestamp, boundary)
             record = self._finalize(boundary, value_at_boundary)
-            # 開啟下一個 interval：先以 (v_b, boundary) 為合成種子，再 accumulate 真實 sample
-            self._period_start = self._floor_timestamp(timestamp)
+            # Seed 新 interval：用 floor(timestamp) 對應時刻的內插值，而非舊 boundary
+            # 的內插值。多 interval 跨越時這能避免把整段 gap 能量灌進新 interval。
+            new_period_start = self._floor_timestamp(timestamp)
+            value_at_period_start = self._interpolate_at_boundary(value, timestamp, new_period_start)
+            self._period_start = new_period_start
             self._reset()
-            self._seed_from_boundary(value_at_boundary, boundary)
+            self._seed_from_boundary(value_at_period_start, new_period_start)
             self._accumulate(value, timestamp)
             return record
 

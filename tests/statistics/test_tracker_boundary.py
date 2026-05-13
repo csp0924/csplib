@@ -208,3 +208,109 @@ class TestFirstIntervalPartial:
         # 第二個 onwards 應為完整 2.5
         for r in records[1:]:
             assert r.kwh == pytest.approx(2.5, abs=1e-3)
+
+
+class TestMultiIntervalSkip:
+    """讀數跨越 >1 個 interval boundary 時，gap 能量不得灌進新 interval。
+
+    Bug 描述（PR #146 Copilot review）：
+      舊版 feed() 在偵測到 timestamp >= boundary 時，只 finalize 第一個跨界的 interval，
+      之後把 `_period_start` 直接跳到 floor(timestamp)（可能跨好幾個 interval），但
+      seed 卻是用第一個 boundary 的內插值（舊 boundary）。接著 `_accumulate(value, ts)`
+      會以 (prev_value=v_b@舊 boundary, prev_ts=舊 boundary) 為起點對 timestamp 算
+      trapezoid，等於把整個 gap（橫跨數個 interval）的能量塞給「最後落點的當前 interval」。
+
+      Emergent 後果：若取樣斷線（例如 Modbus timeout 半小時），恢復後第一筆 sample
+      所屬 interval 的 kWh 會被嚴重灌水；中間被跳過的 interval 則完全沒有 record。
+
+    修復策略：
+      偵測到多 interval 跨越時，以 `_period_start = floor(timestamp)` 對應的時刻
+      （新 interval 的 period_start）做內插得到 v@period_start，然後以該值為新
+      interval 的合成 seed，而不是用舊 boundary 的內插值。如此新 interval 從
+      period_start 起算，accumulate 真實 sample 時的 trapezoid 僅覆蓋
+      [period_start, timestamp]，不會把 gap 灌進來。中間被跳過的 interval 不
+      emit record（we don't have enough data to attribute partial intervals）。
+    """
+
+    def test_instantaneous_gap_does_not_inflate_current_interval(self) -> None:
+        """INSTANTANEOUS：12:00 餵 10 kW，沉默到 12:46 才再餵 10 kW；新 interval
+        [12:45, 13:00] 在後續完成時應為 ≈ 2.5 kWh，而非 7.5 kWh（gap 灌水）。
+
+        Bug 重現：
+          - 舊版會把 12:15→12:46 的 trapezoid (≈ 5.167 kWh) 塞進 [12:45, 13:00]，
+            之後 13:01 再餵一筆完成 interval 時得 7.5 kWh。
+          - 修復後新 interval 從 12:45 (內插值 10 kW) seed，13:01 完成時為 2.5 kWh。
+        """
+        base = datetime(2026, 5, 13, 12, 0, 0, tzinfo=timezone.utc)
+        acc = IntervalAccumulator(
+            device_id="DEV1",
+            interval_minutes=15,
+            meter_type=DeviceMeterType.INSTANTANEOUS,
+        )
+        # 12:00 起首筆 sample
+        r0 = acc.feed(10.0, base)
+        assert r0 is None
+        # 沉默 46 分鐘，跨越 12:15 / 12:30 / 12:45 三個 boundary
+        gap_ts = base + timedelta(minutes=46)
+        r1 = acc.feed(10.0, gap_ts)
+        # 第一個 boundary [12:00, 12:15] 仍應 emit，且 ≈ 2.5 kWh
+        assert r1 is not None
+        assert r1.period_start == base
+        assert r1.period_end == base + timedelta(minutes=15)
+        assert r1.kwh == pytest.approx(2.5, abs=1e-3)
+        # 接著 13:01 完成 [12:45, 13:00]：應為完整 2.5 kWh（沒被 gap 灌水）
+        r2 = acc.feed(10.0, base + timedelta(minutes=61))
+        assert r2 is not None
+        assert r2.period_start == base + timedelta(minutes=45)
+        assert r2.period_end == base + timedelta(minutes=60)
+        assert r2.kwh == pytest.approx(2.5, abs=1e-3), (
+            f"gap 能量被灌進 [12:45, 13:00]，kwh={r2.kwh} (expected ≈ 2.5, bug 表現為 ≈ 7.5)"
+        )
+
+    def test_cumulative_gap_does_not_inflate_current_interval(self) -> None:
+        """CUMULATIVE：用 10 kW 恆功率對應的累積值跨多 interval 沉默，
+        新 interval 結算應為 ≈ 2.5 kWh，不含 gap 段。
+
+        舊 bug：CUMULATIVE 在新 interval seed `_first_value = v_b@舊 boundary`，
+        finalize 時 kwh = v_b@新 boundary - v_b@舊 boundary，等於把整個 gap 算進去。
+        """
+        base = datetime(2026, 5, 13, 12, 0, 0, tzinfo=timezone.utc)
+        acc = IntervalAccumulator(
+            device_id="DEV1",
+            interval_minutes=15,
+            meter_type=DeviceMeterType.CUMULATIVE,
+        )
+
+        # CUMULATIVE：value = 10 kW * elapsed_hours
+        def cum_value(t_min: float) -> float:
+            return 10.0 * (t_min / 60.0)
+
+        # 12:00 起，cum = 0
+        r0 = acc.feed(cum_value(0), base)
+        assert r0 is None
+        # 沉默到 12:46，cum = 10 * 46/60 ≈ 7.6667
+        r1 = acc.feed(cum_value(46), base + timedelta(minutes=46))
+        assert r1 is not None
+        # 第一個 interval [12:00, 12:15]：v_b@12:15 = 10*15/60 = 2.5 → kwh = 2.5 - 0 = 2.5
+        assert r1.kwh == pytest.approx(2.5, abs=1e-3)
+        # 13:01 完成 [12:45, 13:00]：應為 2.5 kWh（不是 7.5）
+        r2 = acc.feed(cum_value(61), base + timedelta(minutes=61))
+        assert r2 is not None
+        assert r2.period_start == base + timedelta(minutes=45)
+        assert r2.kwh == pytest.approx(2.5, abs=1e-3), (
+            f"CUMULATIVE 新 interval 把 gap 段算進去，kwh={r2.kwh} (expected ≈ 2.5)"
+        )
+
+    def test_instantaneous_period_start_after_multi_skip_is_floored(self) -> None:
+        """多 interval 跨越後，新 interval 的 period_start 必為 floor(timestamp)。"""
+        base = datetime(2026, 5, 13, 12, 0, 0, tzinfo=timezone.utc)
+        acc = IntervalAccumulator(
+            device_id="DEV1",
+            interval_minutes=15,
+            meter_type=DeviceMeterType.INSTANTANEOUS,
+        )
+        acc.feed(10.0, base)
+        # 跨越 12:15 / 12:30 / 12:45，停在 12:46
+        acc.feed(10.0, base + timedelta(minutes=46))
+        # period_start 應跳到 12:45（floor(12:46) = 12:45）
+        assert acc.period_start == base + timedelta(minutes=45)
