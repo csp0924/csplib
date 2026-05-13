@@ -135,7 +135,9 @@ class PymodbusTcpClient(AsyncModbusClientBase):
 
     # ========== 讀取操作 ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1, timeout: float | None = None) -> list[bool]:
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
         """讀取線圈狀態 (FC 0x01)
 
         Args:
@@ -151,7 +153,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_discrete_inputs(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[bool]:
         """讀取離散輸入 (FC 0x02)
 
@@ -168,7 +170,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_holding_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取保持暫存器 (FC 0x03)
 
@@ -185,7 +187,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         return list(response.registers)
 
     async def read_input_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取輸入暫存器 (FC 0x04)
 
@@ -204,7 +206,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
     # ========== 寫入操作 ==========
 
     async def write_single_coil(
-        self, address: int, value: bool, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一線圈 (FC 0x05)
 
@@ -220,7 +222,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
     async def write_single_register(
-        self, address: int, value: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一暫存器 (FC 0x06)
 
@@ -236,7 +238,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
     async def write_multiple_coils(
-        self, address: int, values: list[bool], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個線圈 (FC 0x0F)
 
@@ -252,7 +254,7 @@ class PymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
     async def write_multiple_registers(
-        self, address: int, values: list[int], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個暫存器 (FC 0x10)
 
@@ -429,7 +431,9 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     # ========== 讀取操作 (via request queue) ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1, timeout: float | None = None) -> list[bool]:
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
         """讀取線圈狀態 (FC 0x01)
 
         Args:
@@ -450,7 +454,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_discrete_inputs(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[bool]:
         """讀取離散輸入 (FC 0x02)
 
@@ -472,7 +476,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_holding_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取保持暫存器 (FC 0x03)
 
@@ -494,7 +498,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         return list(response.registers)
 
     async def read_input_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取輸入暫存器 (FC 0x04)
 
@@ -518,7 +522,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
     # ========== 寫入操作 (via request queue) ==========
 
     async def write_single_coil(
-        self, address: int, value: bool, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一線圈 (FC 0x05)
 
@@ -539,7 +543,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
     async def write_single_register(
-        self, address: int, value: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一暫存器 (FC 0x06)
 
@@ -560,7 +564,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
     async def write_multiple_coils(
-        self, address: int, values: list[bool], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個線圈 (FC 0x0F)
 
@@ -581,7 +585,7 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
     async def write_multiple_registers(
-        self, address: int, values: list[int], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個暫存器 (FC 0x10)
 
@@ -763,7 +767,9 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     # ========== 讀取操作 (via request queue) ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1, timeout: float | None = None) -> list[bool]:
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
         """讀取線圈狀態 (FC 0x01)
 
         Args:
@@ -784,7 +790,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_discrete_inputs(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[bool]:
         """讀取離散輸入 (FC 0x02)
 
@@ -806,7 +812,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         return list(response.bits[:count])
 
     async def read_holding_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取保持暫存器 (FC 0x03)
 
@@ -828,7 +834,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         return list(response.registers)
 
     async def read_input_registers(
-        self, address: int, count: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> list[int]:
         """讀取輸入暫存器 (FC 0x04)
 
@@ -852,7 +858,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
     # ========== 寫入操作 (via request queue) ==========
 
     async def write_single_coil(
-        self, address: int, value: bool, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一線圈 (FC 0x05)
 
@@ -873,7 +879,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
     async def write_single_register(
-        self, address: int, value: int, unit_id: int = 1, timeout: float | None = None
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入單一暫存器 (FC 0x06)
 
@@ -894,7 +900,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
     async def write_multiple_coils(
-        self, address: int, values: list[bool], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個線圈 (FC 0x0F)
 
@@ -915,7 +921,7 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
     async def write_multiple_registers(
-        self, address: int, values: list[int], unit_id: int = 1, timeout: float | None = None
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
     ) -> None:
         """寫入多個暫存器 (FC 0x10)
 

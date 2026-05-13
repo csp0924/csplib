@@ -14,6 +14,7 @@ import pytest
 
 from csp_lib.modbus.clients.client import (
     PymodbusRtuClient,
+    PymodbusTcpClient,
     SharedPymodbusTcpClient,
     _rtu_instances,
     _tcp_instances,
@@ -224,3 +225,88 @@ class TestRtuPerCallTimeout:
             assert result == [1, 2, 3]
         finally:
             await _teardown_rtu(client)
+
+
+# ============================================================================
+# PymodbusTcpClient — per-call timeout (非共用、直接 wait_for 包裝)
+# ============================================================================
+
+
+def _make_tcp_client_with_slow_underlying(slow_seconds: float) -> tuple[PymodbusTcpClient, AsyncMock]:
+    """建立 PymodbusTcpClient 並注入 slow underlying pymodbus client。
+
+    PymodbusTcpClient 不走 queue，timeout 直接由 asyncio.wait_for 包裝。
+    """
+    config = ModbusTcpConfig(host="127.0.0.1", port=15021)
+    client = PymodbusTcpClient(config)
+    mock_pymodbus = _make_slow_mock_pymodbus(slow_seconds)
+    # 直接注入 underlying client，跳過實際連線
+    client._client = mock_pymodbus
+    return client, mock_pymodbus
+
+
+class TestTcpPerCallTimeout:
+    """PymodbusTcpClient 的 per-call timeout 由 _maybe_wait_for 直接包裝。
+
+    timeout 過短時應拋 asyncio.TimeoutError；timeout=None 維持原本行為。
+    """
+
+    async def test_read_holding_registers_per_call_timeout_honored(self):
+        client, _ = _make_tcp_client_with_slow_underlying(slow_seconds=2.0)
+        t0 = time.monotonic()
+        with pytest.raises(asyncio.TimeoutError):
+            await client.read_holding_registers(0, 3, unit_id=1, timeout=0.2)
+        elapsed = time.monotonic() - t0
+        assert elapsed < 1.0, f"timeout did not propagate, elapsed={elapsed:.2f}s"
+
+    async def test_write_single_register_per_call_timeout_honored(self):
+        client, _ = _make_tcp_client_with_slow_underlying(slow_seconds=2.0)
+        t0 = time.monotonic()
+        with pytest.raises(asyncio.TimeoutError):
+            await client.write_single_register(0, 42, unit_id=1, timeout=0.2)
+        assert time.monotonic() - t0 < 1.0
+
+    async def test_no_timeout_preserves_prior_behavior(self):
+        """timeout=None 不應包裝 asyncio.wait_for，呼叫應依底層 pymodbus 速度返回。"""
+        client, _ = _make_tcp_client_with_slow_underlying(slow_seconds=0.05)
+        result = await client.read_holding_registers(0, 3, unit_id=1)
+        assert result == [1, 2, 3]
+
+
+# ============================================================================
+# Signature guard — timeout 必須為 keyword-only，禁止 positional
+# ============================================================================
+
+
+class TestTimeoutKeywordOnly:
+    """守門：所有 client 實作的 read/write 方法，timeout 必須 keyword-only。
+
+    避免 downstream 用 positional 形式 (e.g., read_coils(addr, count, unit_id, 0.2))，
+    讓未來 signature 演進不會默默打破呼叫端。
+    """
+
+    @pytest.mark.parametrize(
+        "client_cls,method_name",
+        [
+            (PymodbusTcpClient, "read_coils"),
+            (PymodbusTcpClient, "read_holding_registers"),
+            (PymodbusTcpClient, "write_single_register"),
+            (PymodbusTcpClient, "write_multiple_registers"),
+            (SharedPymodbusTcpClient, "read_coils"),
+            (SharedPymodbusTcpClient, "read_holding_registers"),
+            (SharedPymodbusTcpClient, "write_single_register"),
+            (SharedPymodbusTcpClient, "write_multiple_registers"),
+            (PymodbusRtuClient, "read_coils"),
+            (PymodbusRtuClient, "read_holding_registers"),
+            (PymodbusRtuClient, "write_single_register"),
+            (PymodbusRtuClient, "write_multiple_registers"),
+        ],
+    )
+    def test_timeout_is_keyword_only(self, client_cls, method_name):
+        import inspect
+
+        sig = inspect.signature(getattr(client_cls, method_name))
+        timeout_param = sig.parameters["timeout"]
+        assert timeout_param.kind == inspect.Parameter.KEYWORD_ONLY, (
+            f"{client_cls.__name__}.{method_name} 的 timeout 必須為 KEYWORD_ONLY, 目前是 {timeout_param.kind.name}"
+        )
