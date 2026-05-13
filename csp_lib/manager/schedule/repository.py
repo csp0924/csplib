@@ -107,7 +107,8 @@ class MongoScheduleRepository(MongoRepositoryBase):
         for rule in all_enabled:
             if not self._matches_time(rule, now_time):
                 continue
-            if not self._matches_schedule(rule, now_weekday, now_date):
+            # 將 now_time 一併傳入，讓 matcher 能正確處理跨午夜尾段的 weekday/date 歸屬
+            if not self._matches_schedule(rule, now_weekday, now_date, now_time_str=now_time):
                 continue
             matched.append(rule)
 
@@ -163,18 +164,24 @@ class MongoScheduleRepository(MongoRepositoryBase):
         return matcher.matches_time(rule, now_time)
 
     @staticmethod
-    def _matches_schedule(rule: ScheduleRule, now_weekday: int, now_date: date) -> bool:
+    def _matches_schedule(
+        rule: ScheduleRule,
+        now_weekday: int,
+        now_date: date,
+        now_time_str: str | None = None,
+    ) -> bool:
         """檢查排程類型條件是否匹配（委派至 matcher 模組）
 
         Args:
             rule: 排程規則
             now_weekday: 當前星期幾（0=Mon..6=Sun）
             now_date: 當前日期
+            now_time_str: 當前時間（"HH:MM"），用於辨識跨午夜尾段；可選
 
         Returns:
             bool: 是否匹配
         """
-        return matcher.matches_schedule(rule, now_weekday, now_date)
+        return matcher.matches_schedule(rule, now_weekday, now_date, now_time_str=now_time_str)
 
 
 __all__ = [
