@@ -139,7 +139,13 @@ class TestFinalFlushAggregateFailures:
 
     @pytest.mark.asyncio
     async def test_final_flush_logs_aggregate_error_when_channels_fail(self) -> None:
-        """shutdown 時 channel 全失敗應有 ERROR-level aggregate log（非 silent）"""
+        """shutdown 時 channel 全失敗應有 ERROR-level aggregate log（非 silent）
+
+        穩定信號優先：
+          1. shutdown 後 ``batcher.last_flush_failure_count`` 應非 0（不依賴 log 文字）
+          2. log 端 match batcher prefix + 「停止時」（_final_flush ERROR），
+             避開依賴 exception 文字（"simulated ... failure"）的 fragile 比對。
+        """
         from loguru import logger as loguru_logger
 
         records: list[tuple[str, str]] = []
@@ -164,10 +170,17 @@ class TestFinalFlushAggregateFailures:
                     await batcher.dispatch(_make_notification(f"k#{i}"))
 
             # shutdown 完成（__aexit__ → _on_stop → _final_flush）
-            error_msgs = [m for lvl, m in records if lvl in ("ERROR", "WARNING")]
-            aggregate = [m for m in error_msgs if "channel" in m.lower() and "fail" in m.lower()]
+            # 穩定信號 1：last_flush_failure_count 暴露失敗 channel 數
+            assert batcher.last_flush_failure_count >= 1, (
+                f"Expected last_flush_failure_count >= 1 after shutdown with failing channel, "
+                f"got {batcher.last_flush_failure_count}"
+            )
+            # 穩定信號 2：用 batcher log prefix + 「停止時」 match _final_flush 的 aggregate ERROR
+            error_msgs = [m for lvl, m in records if lvl == "ERROR"]
+            aggregate = [m for m in error_msgs if "NotificationBatcher" in m and "停止時" in m]
             assert aggregate, (
-                f"Expected aggregate ERROR/WARNING log about channel failures during shutdown, got records: {records}"
+                f"Expected aggregate ERROR log with 'NotificationBatcher' + '停止時' during shutdown, "
+                f"got records: {records}"
             )
         finally:
             loguru_logger.remove(sink_id)
