@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from csp_lib.manager.device import DeviceManager
+from tests.helpers import wait_for_condition
 
 
 class _CancelAwareFakeDevice:
@@ -104,8 +105,13 @@ class TestDeviceManagerStartupCancelZombies:
             mgr.register(d)
 
         start_task = asyncio.create_task(mgr.start(), name="mgr.start")
-        # 等 fast device 完成 connect+start（read_loop 已建立），slow 仍卡 connect
-        await asyncio.sleep(0.15)
+        # 用 wait_for_condition 取代固定 sleep，等 fast device 完成 connect+start
+        # （read_loop 已建立），slow 仍卡 connect。避免 CI 排程抖動造成 flaky。
+        await wait_for_condition(
+            lambda: all(d.start_count == 1 for d in fast),
+            timeout=2.0,
+            message="fast devices 未在預期時間內完成 start()",
+        )
 
         # sanity：fast device 應已 start()
         assert all(d.start_count == 1 for d in fast), f"fast 應已 start：{[d.start_count for d in fast]}"
@@ -117,8 +123,12 @@ class TestDeviceManagerStartupCancelZombies:
         except asyncio.CancelledError:
             pass
 
-        # 給 event loop 一輪排程
-        await asyncio.sleep(0.05)
+        # 輪詢確認 rollback 完成（manager 不再 running 且 fast 的 read_loop 皆已退出）
+        await wait_for_condition(
+            lambda: (not mgr.is_running) and all(not d.read_loop_alive for d in fast),
+            timeout=2.0,
+            message="rollback 後仍有 zombie read_loop 或 mgr 仍 running",
+        )
 
         try:
             # 核心斷言：fast device 的 read_loop 在 rollback 後不應殘留
@@ -143,14 +153,22 @@ class TestDeviceManagerStartupCancelZombies:
             mgr.register(d)
 
         start_task = asyncio.create_task(mgr.start())
-        await asyncio.sleep(0.15)
+        await wait_for_condition(
+            lambda: all(d.start_count == 1 for d in fast),
+            timeout=2.0,
+            message="fast devices 未在預期時間內完成 start()",
+        )
         start_task.cancel()
         try:
             await start_task
         except asyncio.CancelledError:
             pass
 
-        await asyncio.sleep(0.05)
+        await wait_for_condition(
+            lambda: (not mgr.is_running) and all(not d.read_loop_alive for d in fast),
+            timeout=2.0,
+            message="rollback 後仍有 zombie read_loop 或 mgr 仍 running",
+        )
         prev_stop_counts = {d.device_id: d.stop_count for d in all_devices}
 
         # 額外的 stop() 不應炸
@@ -179,14 +197,23 @@ class TestDeviceManagerStartupCancelZombies:
             mgr.register(d)
 
         start_task = asyncio.create_task(mgr.start())
-        await asyncio.sleep(0.15)
+        await wait_for_condition(
+            lambda: all(d.start_count == 1 for d in fast),
+            timeout=2.0,
+            message="fast devices 未在預期時間內完成 start()",
+        )
         start_task.cancel()
         try:
             await start_task
         except asyncio.CancelledError:
             pass
 
-        await asyncio.sleep(0.05)
+        # 輪詢等所有 read_loop_ 命名 task 退出，避免固定 sleep 造成 flaky
+        await wait_for_condition(
+            lambda: not any(t.get_name().startswith("read_loop_") and not t.done() for t in asyncio.all_tasks()),
+            timeout=2.0,
+            message="rollback 後 read_loop_ task 仍未退出",
+        )
 
         try:
             leaked = [t for t in asyncio.all_tasks() if t.get_name().startswith("read_loop_") and not t.done()]

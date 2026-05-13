@@ -390,11 +390,28 @@ class DeviceManager(AsyncLifecycleMixin):
                 # 避免 read_loop task 變 zombie；對已 ensure_event_loop_started 的
                 # group device 反向 ensure_event_loop_stopped + disconnect；對已 start
                 # 的 group 也要 stop()。rollback 採 best-effort，個別失敗只 warn。
-                await self._rollback_partial_startup(
+                #
+                # 用 ``asyncio.shield`` 包住 rollback 並 suppress 內部 ``CancelledError``，
+                # 確保即使 start() 已被 cancel（current task 仍處於 cancelling 狀態），
+                # rollback 內部的 await 也能跑完不被打斷（否則 read_loop 仍可能殘留）。
+                # 第二次 cancel 時透過 ``task.uncancel()`` 短暫吸收 cancellation，
+                # 等 rollback 完成後再讓 start() 的 ``CancelledError`` 自然向上傳播。
+                rollback_coro = self._rollback_partial_startup(
                     started_standalone,
                     started_group_devices,
                     started_groups,
                 )
+                rollback_task = asyncio.ensure_future(rollback_coro)
+                current = asyncio.current_task()
+                while not rollback_task.done():
+                    try:
+                        await asyncio.shield(rollback_task)
+                    except asyncio.CancelledError:
+                        # cancellation 由 caller 觸發（如 start_task.cancel()）；
+                        # 吸收掉以讓 rollback 跑完，迴圈下一輪繼續 await 直到 done。
+                        if current is not None:
+                            current.uncancel()
+                        continue
                 self._running = False
 
         logger.info(
