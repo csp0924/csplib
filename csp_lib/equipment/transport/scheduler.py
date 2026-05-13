@@ -73,6 +73,36 @@ class ReadScheduler:
 
         return groups
 
+    def get_next_groups_with_rotating(self) -> tuple[list[ReadGroup], list[ReadGroup]]:
+        """
+        取得下一批要讀取的分組，同時回傳本次的 rotating slice。
+
+        與 ``get_next_groups`` 同樣推進 rotating_index，但額外回傳「本次取到的
+        rotating slot 之 groups」，方便呼叫端在讀取失敗時透過 ``rollback_index``
+        將該 slot 排回隊伍頭部重試（避免 silent skip）。
+
+        Returns:
+            (all_groups, rotating_slice) — all_groups 是 always + rotating 的合併，
+            rotating_slice 是本次推進讀到的 rotating slot；無 rotating 時為空 list。
+        """
+        always = list(self._always_groups)
+        if not self._rotating_groups:
+            return always, []
+        rotating_slice = list(self._rotating_groups[self._rotating_index])
+        self._rotating_index = (self._rotating_index + 1) % len(self._rotating_groups)
+        return [*always, *rotating_slice], rotating_slice
+
+    def rollback_index(self) -> None:
+        """
+        將 rotating_index 回退一格（與最近一次 advance 對稱）。
+
+        用於呼叫端偵測到 rotating slot 讀取失敗、想讓下個 cycle 重訪同一個 slot
+        的情境。無 rotating 群組時為 no-op，避免呼叫端額外 guard。
+        """
+        if not self._rotating_groups:
+            return
+        self._rotating_index = (self._rotating_index - 1) % len(self._rotating_groups)
+
     def peek_next_groups(self) -> list[ReadGroup]:
         """
         預覽下一批要讀取的分組（不推進索引）
