@@ -28,9 +28,14 @@ def _default_group_key(item: NotificationItem) -> str:
 
 
 def _dedup_key(item: NotificationItem) -> str | None:
-    """取得去重鍵：Notification 使用 alarm_key，EventNotification 不去重"""
+    """取得去重鍵：Notification 使用 (alarm_key, event)，EventNotification 不去重
+
+    Note:
+        必須包含 event，否則同 alarm_key 的 TRIGGERED 與 RESOLVED 在同一 flush
+        window 內會互蓋，operator 會錯過告警觸發事件。
+    """
     if isinstance(item, Notification):
-        return item.alarm_key
+        return f"{item.alarm_key}:{item.event.value}"
     return None
 
 
@@ -78,6 +83,8 @@ class NotificationBatcher(AsyncLifecycleMixin):
         self._lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
         self._flush_task: asyncio.Task[None] | None = None
+        # H2 可觀測性：最近一次 flush 中失敗的 channel 清單，count 由 property derive
+        self._last_flush_failures: list[tuple[str, str]] = []
 
     # ================ Lifecycle ================
 
@@ -101,24 +108,26 @@ class NotificationBatcher(AsyncLifecycleMixin):
         logger.info("NotificationBatcher: 已停止")
 
     async def _final_flush(self) -> None:
-        """停止時的最終 flush，含一次重試"""
+        """停止時的最終 flush，並對 channel 失敗做 aggregate ERROR 通報
+
+        Note:
+            原本的 try/except + sleep + retry 結構在 _send_to_channels 改成
+            collect-and-aggregate 之後其實永遠 unreachable（flush() 不會 raise），
+            因此移除 dead code。改用「flush 後檢查失敗計數」走顯式的可觀測路徑。
+        """
         pending = len(self._queue)
         if pending == 0:
             return
-        try:
-            await self.flush()
-        except Exception:
-            logger.opt(exception=True).warning(f"NotificationBatcher: 停止時 flush 失敗，{pending} 則通知待重試")
-            await asyncio.sleep(1)
-            remaining = len(self._queue)
-            if remaining == 0:
-                return
-            try:
-                await self.flush()
-            except Exception:
-                dropped = len(self._queue)
-                self._queue.clear()
-                logger.error(f"NotificationBatcher: 重試仍失敗，{dropped} notifications dropped")
+        await self.flush()
+        if self._last_flush_failures:
+            failure_summary = ", ".join(f"{name}: {err}" for name, err in self._last_flush_failures)
+            logger.error(
+                "NotificationBatcher: 停止時 flush 完成但 {failure_count} 個 channel 失敗，"
+                "{pending} 則 in-flight 通知未送達（failures={failure_summary}）",
+                failure_count=len(self._last_flush_failures),
+                pending=pending,
+                failure_summary=failure_summary,
+            )
 
     # ================ Public API ================
 
@@ -167,24 +176,38 @@ class NotificationBatcher(AsyncLifecycleMixin):
         await self._send_to_channels([notification])
 
     async def flush(self) -> None:
-        """強制 flush 佇列中所有通知"""
+        """強制 flush 佇列中所有通知
+
+        Note:
+            single flush 視為一次 batch operation：``last_flush_failures`` 反映本次 flush
+            所有 channel 的累計失敗。若有任一 channel 失敗，會 emit 一筆 aggregate WARNING，
+            避免 caller 看不到「silent 模式下 channel 全掛」的情況。
+        """
         async with self._lock:
             items = list(self._queue)
             self._queue.clear()
 
+        aggregated_failures: list[tuple[str, str]] = []
+        self._last_flush_failures = aggregated_failures
+
         if not items:
             return
 
-        # 去重
         if self._config.deduplicate_by_key:
             items = self._deduplicate(items)
 
-        # 分組
         groups = self._group(items)
 
-        # 逐組發送
         for group_items in groups.values():
-            await self._send_to_channels(group_items)
+            aggregated_failures.extend(await self._send_to_channels(group_items))
+
+        if aggregated_failures:
+            failure_summary = ", ".join(f"{name}: {err}" for name, err in aggregated_failures)
+            logger.warning(
+                "NotificationBatcher: flush 期間 {failure_count} 個 channel 發送失敗 ({failure_summary})",
+                failure_count=len(aggregated_failures),
+                failure_summary=failure_summary,
+            )
 
     # ================ Flush Loop ================
 
@@ -244,13 +267,23 @@ class NotificationBatcher(AsyncLifecycleMixin):
             groups.setdefault(key, []).append(item)
         return groups
 
-    async def _send_to_channels(self, items: list[NotificationItem]) -> None:
-        """將通知列表發送到所有通道"""
+    async def _send_to_channels(self, items: list[NotificationItem]) -> list[tuple[str, str]]:
+        """將通知列表發送到所有通道
+
+        Per-channel exception 仍然被 swallow（保持 `dispatch()` happy-path 不 raise 的契約），
+        但會將每筆失敗收集成 ``(channel_name, error_repr)`` 並 return 給呼叫方做 aggregate 處理。
+
+        Returns:
+            list of ``(channel_name, error_str)`` for channels that raised during this send.
+        """
+        failures: list[tuple[str, str]] = []
         for channel in self._channels:
             try:
                 await channel.send_batch(items)
-            except Exception:
+            except Exception as exc:
                 logger.opt(exception=True).warning(f"NotificationBatcher: 通道 '{channel.name}' 批次發送失敗")
+                failures.append((channel.name, repr(exc)))
+        return failures
 
     # ================ Properties ================
 
@@ -263,6 +296,21 @@ class NotificationBatcher(AsyncLifecycleMixin):
     def channels(self) -> list[NotificationChannel]:
         """已註冊的通知通道列表"""
         return list(self._channels)
+
+    @property
+    def last_flush_failure_count(self) -> int:
+        """最近一次 flush() 失敗的 channel 計數
+
+        Note:
+            僅追蹤透過 ``flush()`` 走的批次發送；``dispatch_immediate`` 與
+            ``dispatch_event(immediate=True)`` 等 bypass 路徑不會更新此值。
+        """
+        return len(self._last_flush_failures)
+
+    @property
+    def last_flush_failures(self) -> list[tuple[str, str]]:
+        """最近一次 flush() 失敗清單：``[(channel_name, error_repr), ...]``"""
+        return list(self._last_flush_failures)
 
 
 __all__ = [
