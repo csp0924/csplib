@@ -215,8 +215,9 @@ class ValidatedWriter:
           (kW / V / Hz·1e3, 1e3~1e7) 均合理；
           原 1e-6 *絕對* 容差在大值下比 device 端 float32 儲存精度
           (LSB ≈ value × 5.96e-8) 還緊，每次 verify=True round-trip 都 false-fail。
-        - ``abs_tol=1e-9`` 作為近零值絕對下限，避免 rel_tol 在 0 附近退化造成
-          0 vs 任意小數的 false-pass。
+        - ``abs_tol=1e-9`` 作為 near-zero noise floor：rel_tol 在接近 0 時會
+          退化為極嚴格 (容忍度趨近 0)，abs_tol 提供最小絕對容差帶，把 |delta|
+          ≤ 1e-9 視為相等；> 1e-9 的差異仍會被拒絕。
         """
         if isinstance(expected, float) and isinstance(actual, float):
             return math.isclose(expected, actual, rel_tol=1e-6, abs_tol=1e-9)

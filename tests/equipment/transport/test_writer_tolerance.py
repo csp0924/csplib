@@ -8,11 +8,12 @@
 #
 # 修正後採用 math.isclose(rel_tol=1e-6, abs_tol=1e-9):
 #   - rel_tol=1e-6 給大數值合理相對精度 (1ppm)
-#   - abs_tol=1e-9 給近零值安全絕對下限, 避免 0.0 vs 1e-12 假成功
+#   - abs_tol=1e-9 作為 near-zero noise floor: 把 |delta| ≤ 1e-9 視為相等,
+#     仍會拒絕超過 1e-9 的近零差異 (rel_tol 在 0 附近會退化, 需 abs_tol 兜底)
 #
 # 本檔覆蓋:
 #   - 大數量級 float32 round-trip (新行為, 修正前 FAIL)
-#   - 近零值仍維持嚴格 (abs_tol floor)
+#   - 近零值: noise floor 內視為相等, 超過 floor 仍 FAIL
 #   - 完全相等
 #   - 明顯不等 (應 FAIL)
 
@@ -80,10 +81,12 @@ class TestVerifyFloat32RoundTrip:
 
     @pytest.fixture
     def mock_client_float32_storage(self) -> AsyncMock:
-        """模擬 device 端用 float32 儲存的 Modbus 客戶端。
+        """模擬 device 端 float32 儲存的 Modbus 客戶端。
 
-        write_multiple_registers 收到的暫存器, 我們解回 float, truncate 成 float32,
-        再以 float32 編碼回兩個 16-bit word, 供 read_holding_registers 回吐。
+        write_multiple_registers 收到的暫存器本身已經是 ValidatedWriter 用
+        Float32 encode 過的兩個 16-bit word (已含 float32 精度損失), 因此
+        fixture 只需原樣保存 values, 並在 read_holding_registers 時原樣回吐,
+        即可模擬「裝置直接回吐寫入的 float32 registers」這個典型行為。
         """
         client = AsyncMock()
         storage: dict[int, list[int]] = {}
