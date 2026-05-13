@@ -333,6 +333,13 @@ class DeviceManager(AsyncLifecycleMixin):
 
         self._running = True
 
+        # 追蹤已成功啟動的 device / group，供 startup cancel rollback 收尾
+        # （否則 _on_stop 的 `if not self._running: return` early-return 會讓
+        # 已啟動的 read_loop task 變成 zombie — closed-loop probe H3）。
+        started_standalone: list[DeviceProtocol] = []
+        started_group_devices: list[DeviceProtocol] = []
+        started_groups: list[DeviceGroup] = []
+
         # lifecycle 方法（connect / start）尚未納入 DeviceProtocol → cast（追蹤 B-P2）
         async def _start_standalone(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
@@ -341,6 +348,9 @@ class DeviceManager(AsyncLifecycleMixin):
             # start 失敗吞掉 + warn（expected_exc=() 讓所有 Exception 帶 stack）
             # 以維持「單台失敗不擋其他」語意。
             await _safe_device_step(concrete.start(), device_id=device.device_id, action="start", expected_exc=())
+            # start() 完成（含被吞掉的失敗）即視為「已啟動」需在 rollback 收尾。
+            # CancelledError 不會走到這一行（_safe_device_step 會 re-raise）。
+            started_standalone.append(device)
 
         async def _prepare_group_device(device: "DeviceProtocol") -> None:
             concrete = cast("AsyncModbusDevice", device)
@@ -352,6 +362,7 @@ class DeviceManager(AsyncLifecycleMixin):
                 action="ensure_event_loop_started",
                 expected_exc=(),
             )
+            started_group_devices.append(device)
 
         # 若啟動過程被 cancel 中斷，_running 需 rollback 避免卡在 True 狀態
         # （否則後續 start() 會被 `if self._running: return` 跳過）。用 try/finally
@@ -371,15 +382,113 @@ class DeviceManager(AsyncLifecycleMixin):
                     failure_msg="群組設備 {} 準備失敗（保留在群組中）: {}",
                 )
                 group.start()
+                started_groups.append(group)
             startup_completed = True
         finally:
             if not startup_completed:
+                # 對已成功 start() 的 standalone device best-effort stop+disconnect，
+                # 避免 read_loop task 變 zombie；對已 ensure_event_loop_started 的
+                # group device 反向 ensure_event_loop_stopped + disconnect；對已 start
+                # 的 group 也要 stop()。rollback 採 best-effort，個別失敗只 warn。
+                #
+                # 用 ``asyncio.shield`` 包住 rollback 並 suppress 內部 ``CancelledError``，
+                # 確保即使 start() 已被 cancel（current task 仍處於 cancelling 狀態），
+                # rollback 內部的 await 也能跑完不被打斷（否則 read_loop 仍可能殘留）。
+                # 第二次 cancel 時透過 ``task.uncancel()`` 短暫吸收 cancellation，
+                # 等 rollback 完成後再讓 start() 的 ``CancelledError`` 自然向上傳播。
+                rollback_coro = self._rollback_partial_startup(
+                    started_standalone,
+                    started_group_devices,
+                    started_groups,
+                )
+                rollback_task = asyncio.ensure_future(rollback_coro)
+                current = asyncio.current_task()
+                while not rollback_task.done():
+                    try:
+                        await asyncio.shield(rollback_task)
+                    except asyncio.CancelledError:
+                        # cancellation 由 caller 觸發（如 start_task.cancel()）；
+                        # 吸收掉以讓 rollback 跑完，迴圈下一輪繼續 await 直到 done。
+                        if current is not None:
+                            current.uncancel()
+                        continue
                 self._running = False
 
         logger.info(
             "DeviceManager 已啟動: {} 個獨立設備, {} 個群組",
             len(self._standalone),
             len(self._groups),
+        )
+
+    async def _rollback_partial_startup(
+        self,
+        started_standalone: Sequence["DeviceProtocol"],
+        started_group_devices: Sequence["DeviceProtocol"],
+        started_groups: Sequence[DeviceGroup],
+    ) -> None:
+        """``_on_start`` 中途失敗 / 被 cancel 時的局部收尾。
+
+        對已成功啟動的 device 反向 stop+disconnect，避免 ``read_loop`` task 殘留。
+        全程 best-effort：個別失敗只 warn，不再向上拋（已在 rollback 路徑）。
+
+        統一抓 ``BaseException``（不只 ``Exception``）才能保證即使再次被 cancel
+        也不會留下 zombie ``read_loop`` task。
+        """
+
+        # 還沒進到 group.start 階段卻已 ensure_event_loop_started 的 device 也要停
+        async def _rollback_standalone(device: "DeviceProtocol") -> None:
+            concrete = cast("AsyncModbusDevice", device)
+            try:
+                await concrete.stop()
+            except BaseException as e:  # noqa: BLE001 — rollback path 全 best-effort
+                logger.warning("DeviceManager rollback: 設備 {} stop 失敗: {}", device.device_id, e)
+            try:
+                await concrete.disconnect()
+            except BaseException as e:  # noqa: BLE001
+                logger.warning("DeviceManager rollback: 設備 {} disconnect 失敗: {}", device.device_id, e)
+
+        async def _rollback_group_device(device: "DeviceProtocol") -> None:
+            concrete = cast("AsyncModbusDevice", device)
+            try:
+                await concrete.ensure_event_loop_stopped()
+            except BaseException as e:  # noqa: BLE001
+                logger.warning(
+                    "DeviceManager rollback: 群組設備 {} ensure_event_loop_stopped 失敗: {}",
+                    device.device_id,
+                    e,
+                )
+            try:
+                await concrete.disconnect()
+            except BaseException as e:  # noqa: BLE001
+                logger.warning(
+                    "DeviceManager rollback: 群組設備 {} disconnect 失敗: {}",
+                    device.device_id,
+                    e,
+                )
+
+        # 已啟動的 group：先停 group 的 read 迴圈
+        for group in started_groups:
+            try:
+                await group.stop()
+            except BaseException as e:  # noqa: BLE001
+                logger.warning("DeviceManager rollback: 群組 {} stop 失敗: {}", group.device_ids, e)
+
+        if started_standalone:
+            await asyncio.gather(
+                *(_rollback_standalone(d) for d in started_standalone),
+                return_exceptions=True,
+            )
+        if started_group_devices:
+            await asyncio.gather(
+                *(_rollback_group_device(d) for d in started_group_devices),
+                return_exceptions=True,
+            )
+
+        logger.info(
+            "DeviceManager startup rollback 完成: 收尾 standalone={} group_devices={} groups={}",
+            len(started_standalone),
+            len(started_group_devices),
+            len(started_groups),
         )
 
     async def _on_stop(self) -> None:
