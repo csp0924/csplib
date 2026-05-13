@@ -130,22 +130,24 @@ class SetpointDriftReconciler(ReconcilerMixin):
         避免對共用設備發出寫入破壞 single-writer invariant。對齊
         ``WriteCommandManager.execute`` 的 gate 守門設計。
         """
+        drift_count = 0
+        skipped_by_cooldown = 0
+        devices_fixed: list[str] = []
+        cooldown_enabled = self._min_rewrite_interval > 0
+
+        # 先寫初值，確保 follower 早退或迴圈中途 raise 都能從 detail 看到 0/空，
+        # 讓呼叫端用 detail["drift_count"] / detail["devices_fixed"] 直接 index 不會 KeyError。
+        detail["drift_count"] = 0
+        detail["devices_fixed"] = ()
+        if cooldown_enabled:
+            detail["skipped_by_cooldown"] = 0
+
         # Leader gate：非 leader 直接早退，零寫入；不視為 unhealthy（被 gate 擋是正常運作）
         if self._leader_gate is not None and not self._leader_gate.is_leader:
             detail["paused"] = "not_leader"
             return
 
-        drift_count = 0
-        skipped_by_cooldown = 0
-        devices_fixed: list[str] = []
-        cooldown_enabled = self._min_rewrite_interval > 0
         now = time.monotonic()
-
-        # 先寫初值，確保即使迴圈中途 raise 也能從 detail 看到 0/空
-        detail["drift_count"] = 0
-        detail["devices_fixed"] = ()
-        if cooldown_enabled:
-            detail["skipped_by_cooldown"] = 0
 
         for device_id in self._router.get_tracked_device_ids():
             snapshot = self._router.get_last_written(device_id)
