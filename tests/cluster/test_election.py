@@ -26,6 +26,15 @@ def _make_mock_client(**overrides) -> MagicMock:
     client.lease_revoke = AsyncMock()
     client.get = AsyncMock(return_value=None)
     client.close = AsyncMock()
+
+    # watch() 預設回傳一個會永遠 hang 直到被 cancel 的 async iterator —
+    # leader-elected 後 _watch_leader_key 會啟動，必須能被 stop()/cancel 正確收尾。
+    async def _hang_until_cancelled(*_args, **_kwargs):
+        await asyncio.Event().wait()  # never set → cancellable hang
+        yield  # unreachable, makes function an async generator
+
+    client.watch = _hang_until_cancelled
+
     for k, v in overrides.items():
         setattr(client, k, v)
     return client
