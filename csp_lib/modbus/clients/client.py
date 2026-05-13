@@ -126,51 +126,78 @@ class PymodbusTcpClient(AsyncModbusClientBase):
         """檢查連線狀態"""
         return self._client is not None and self._client.connected
 
+    @staticmethod
+    async def _maybe_wait_for(coro: Any, timeout: float | None) -> Any:
+        """若有指定 timeout, 用 asyncio.wait_for 包裝；否則直接 await coro。"""
+        if timeout is None:
+            return await coro
+        return await asyncio.wait_for(coro, timeout=timeout)
+
     # ========== 讀取操作 ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取線圈狀態 (FC 0x01)"""
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取線圈狀態 (FC 0x01)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.read_coils(
-            address=address,
-            count=count,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.read_coils(address=address, count=count, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
         return list(response.bits[:count])
 
-    async def read_discrete_inputs(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取離散輸入 (FC 0x02)"""
+    async def read_discrete_inputs(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取離散輸入 (FC 0x02)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.read_discrete_inputs(
-            address=address,
-            count=count,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.read_discrete_inputs(address=address, count=count, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
         return list(response.bits[:count])
 
-    async def read_holding_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取保持暫存器 (FC 0x03)"""
+    async def read_holding_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取保持暫存器 (FC 0x03)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.read_holding_registers(
-            address=address,
-            count=count,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.read_holding_registers(address=address, count=count, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
         return list(response.registers)
 
-    async def read_input_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取輸入暫存器 (FC 0x04)"""
+    async def read_input_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取輸入暫存器 (FC 0x04)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.read_input_registers(
-            address=address,
-            count=count,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.read_input_registers(address=address, count=count, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"讀取輸入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC04")
@@ -178,46 +205,66 @@ class PymodbusTcpClient(AsyncModbusClientBase):
 
     # ========== 寫入操作 ==========
 
-    async def write_single_coil(self, address: int, value: bool, unit_id: int = 1) -> None:
-        """寫入單一線圈 (FC 0x05)"""
+    async def write_single_coil(
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一線圈 (FC 0x05)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.write_coil(
-            address=address,
-            value=value,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.write_coil(address=address, value=value, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
-    async def write_single_register(self, address: int, value: int, unit_id: int = 1) -> None:
-        """寫入單一暫存器 (FC 0x06)"""
+    async def write_single_register(
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一暫存器 (FC 0x06)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.write_register(
-            address=address,
-            value=value,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.write_register(address=address, value=value, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
-    async def write_multiple_coils(self, address: int, values: list[bool], unit_id: int = 1) -> None:
-        """寫入多個線圈 (FC 0x0F)"""
+    async def write_multiple_coils(
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個線圈 (FC 0x0F)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.write_coils(
-            address=address,
-            values=values,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.write_coils(address=address, values=values, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
-    async def write_multiple_registers(self, address: int, values: list[int], unit_id: int = 1) -> None:
-        """寫入多個暫存器 (FC 0x10)"""
+    async def write_multiple_registers(
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個暫存器 (FC 0x10)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 config.timeout
+        """
         client = self._get_client()
-        response = await client.write_registers(
-            address=address,
-            values=values,
-            **_slave_kwarg(unit_id),
+        response = await self._maybe_wait_for(
+            client.write_registers(address=address, values=values, **_slave_kwarg(unit_id)),
+            timeout,
         )
         if response.isError():
             raise ModbusError(f"寫入多個暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC10")
@@ -367,23 +414,36 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         unit_id: int,
         priority: RequestPriority,
         coroutine_factory: Any,
+        timeout: float | None = None,
     ) -> Any:
-        """提交請求到共用佇列"""
+        """提交請求到共用佇列
+
+        Args:
+            timeout: 此單一請求的逾時 (秒)；None 則使用 queue 的 default_timeout
+        """
         _, queue = await self._get_resources()
         return await queue.submit(
             unit_id=unit_id,
             priority=priority,
             coroutine_factory=coroutine_factory,
+            timeout=timeout,
         )
 
     # ========== 讀取操作 (via request queue) ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取線圈狀態 (FC 0x01)"""
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取線圈狀態 (FC 0x01)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_coils(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_coils(self, address: int, count: int, unit_id: int) -> list[bool]:
@@ -393,12 +453,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
         return list(response.bits[:count])
 
-    async def read_discrete_inputs(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取離散輸入 (FC 0x02)"""
+    async def read_discrete_inputs(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取離散輸入 (FC 0x02)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_discrete_inputs(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_discrete_inputs(self, address: int, count: int, unit_id: int) -> list[bool]:
@@ -408,12 +475,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
         return list(response.bits[:count])
 
-    async def read_holding_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取保持暫存器 (FC 0x03)"""
+    async def read_holding_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取保持暫存器 (FC 0x03)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_holding_registers(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_holding_registers(self, address: int, count: int, unit_id: int) -> list[int]:
@@ -423,12 +497,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
         return list(response.registers)
 
-    async def read_input_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取輸入暫存器 (FC 0x04)"""
+    async def read_input_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取輸入暫存器 (FC 0x04)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_input_registers(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_input_registers(self, address: int, count: int, unit_id: int) -> list[int]:
@@ -440,12 +521,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
 
     # ========== 寫入操作 (via request queue) ==========
 
-    async def write_single_coil(self, address: int, value: bool, unit_id: int = 1) -> None:
-        """寫入單一線圈 (FC 0x05)"""
+    async def write_single_coil(
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一線圈 (FC 0x05)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=value, u=unit_id: self._do_write_single_coil(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_single_coil(self, address: int, value: bool, unit_id: int) -> None:
@@ -454,12 +542,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
-    async def write_single_register(self, address: int, value: int, unit_id: int = 1) -> None:
-        """寫入單一暫存器 (FC 0x06)"""
+    async def write_single_register(
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一暫存器 (FC 0x06)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=value, u=unit_id: self._do_write_single_register(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_single_register(self, address: int, value: int, unit_id: int) -> None:
@@ -468,12 +563,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
-    async def write_multiple_coils(self, address: int, values: list[bool], unit_id: int = 1) -> None:
-        """寫入多個線圈 (FC 0x0F)"""
+    async def write_multiple_coils(
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個線圈 (FC 0x0F)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=values, u=unit_id: self._do_write_multiple_coils(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_multiple_coils(self, address: int, values: list[bool], unit_id: int) -> None:
@@ -482,12 +584,19 @@ class PymodbusRtuClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
-    async def write_multiple_registers(self, address: int, values: list[int], unit_id: int = 1) -> None:
-        """寫入多個暫存器 (FC 0x10)"""
+    async def write_multiple_registers(
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個暫存器 (FC 0x10)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=values, u=unit_id: self._do_write_multiple_registers(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_multiple_registers(self, address: int, values: list[int], unit_id: int) -> None:
@@ -641,23 +750,36 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         unit_id: int,
         priority: RequestPriority,
         coroutine_factory: Any,
+        timeout: float | None = None,
     ) -> Any:
-        """提交請求到共用佇列"""
+        """提交請求到共用佇列
+
+        Args:
+            timeout: 此單一請求的逾時 (秒)；None 則使用 queue 的 default_timeout
+        """
         _, queue = await self._get_resources()
         return await queue.submit(
             unit_id=unit_id,
             priority=priority,
             coroutine_factory=coroutine_factory,
+            timeout=timeout,
         )
 
     # ========== 讀取操作 (via request queue) ==========
 
-    async def read_coils(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取線圈狀態 (FC 0x01)"""
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取線圈狀態 (FC 0x01)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_coils(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_coils(self, address: int, count: int, unit_id: int) -> list[bool]:
@@ -667,12 +789,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC01")
         return list(response.bits[:count])
 
-    async def read_discrete_inputs(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
-        """讀取離散輸入 (FC 0x02)"""
+    async def read_discrete_inputs(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
+        """讀取離散輸入 (FC 0x02)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_discrete_inputs(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_discrete_inputs(self, address: int, count: int, unit_id: int) -> list[bool]:
@@ -682,12 +811,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取離散輸入失敗: {response}", address=address, unit_id=unit_id, function_code="FC02")
         return list(response.bits[:count])
 
-    async def read_holding_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取保持暫存器 (FC 0x03)"""
+    async def read_holding_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取保持暫存器 (FC 0x03)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_holding_registers(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_holding_registers(self, address: int, count: int, unit_id: int) -> list[int]:
@@ -697,12 +833,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
             raise ModbusError(f"讀取保持暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC03")
         return list(response.registers)
 
-    async def read_input_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
-        """讀取輸入暫存器 (FC 0x04)"""
+    async def read_input_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
+        """讀取輸入暫存器 (FC 0x04)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         return await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.READ,
             coroutine_factory=lambda a=address, c=count, u=unit_id: self._do_read_input_registers(a, c, u),
+            timeout=timeout,
         )
 
     async def _do_read_input_registers(self, address: int, count: int, unit_id: int) -> list[int]:
@@ -714,12 +857,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
 
     # ========== 寫入操作 (via request queue) ==========
 
-    async def write_single_coil(self, address: int, value: bool, unit_id: int = 1) -> None:
-        """寫入單一線圈 (FC 0x05)"""
+    async def write_single_coil(
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一線圈 (FC 0x05)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=value, u=unit_id: self._do_write_single_coil(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_single_coil(self, address: int, value: bool, unit_id: int) -> None:
@@ -728,12 +878,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC05")
 
-    async def write_single_register(self, address: int, value: int, unit_id: int = 1) -> None:
-        """寫入單一暫存器 (FC 0x06)"""
+    async def write_single_register(
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入單一暫存器 (FC 0x06)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=value, u=unit_id: self._do_write_single_register(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_single_register(self, address: int, value: int, unit_id: int) -> None:
@@ -742,12 +899,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入暫存器失敗: {response}", address=address, unit_id=unit_id, function_code="FC06")
 
-    async def write_multiple_coils(self, address: int, values: list[bool], unit_id: int = 1) -> None:
-        """寫入多個線圈 (FC 0x0F)"""
+    async def write_multiple_coils(
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個線圈 (FC 0x0F)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=values, u=unit_id: self._do_write_multiple_coils(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_multiple_coils(self, address: int, values: list[bool], unit_id: int) -> None:
@@ -756,12 +920,19 @@ class SharedPymodbusTcpClient(AsyncModbusClientBase):
         if response.isError():
             raise ModbusError(f"寫入多個線圈失敗: {response}", address=address, unit_id=unit_id, function_code="FC0F")
 
-    async def write_multiple_registers(self, address: int, values: list[int], unit_id: int = 1) -> None:
-        """寫入多個暫存器 (FC 0x10)"""
+    async def write_multiple_registers(
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
+        """寫入多個暫存器 (FC 0x10)
+
+        Args:
+            timeout: 此請求逾時 (秒)；None 沿用 queue default_timeout
+        """
         await self._submit_request(
             unit_id=unit_id,
             priority=RequestPriority.WRITE,
             coroutine_factory=lambda a=address, v=values, u=unit_id: self._do_write_multiple_registers(a, v, u),
+            timeout=timeout,
         )
 
     async def _do_write_multiple_registers(self, address: int, values: list[int], unit_id: int) -> None:

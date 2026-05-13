@@ -42,7 +42,9 @@ class AsyncModbusClientBase(ABC):
     # ========== 讀取操作 ==========
 
     @abstractmethod
-    async def read_coils(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
+    async def read_coils(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
         """
         讀取線圈狀態 (Function Code 0x01)
 
@@ -50,13 +52,16 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             count: 讀取數量
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
 
         Returns:
             布林值列表
         """
 
     @abstractmethod
-    async def read_discrete_inputs(self, address: int, count: int, unit_id: int = 1) -> list[bool]:
+    async def read_discrete_inputs(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[bool]:
         """
         讀取離散輸入 (Function Code 0x02)
 
@@ -64,13 +69,16 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             count: 讀取數量
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
 
         Returns:
             布林值列表
         """
 
     @abstractmethod
-    async def read_holding_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
+    async def read_holding_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
         """
         讀取保持暫存器 (Function Code 0x03)
 
@@ -78,13 +86,16 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             count: 讀取數量
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
 
         Returns:
             暫存器值列表 (每個為 0-65535)
         """
 
     @abstractmethod
-    async def read_input_registers(self, address: int, count: int, unit_id: int = 1) -> list[int]:
+    async def read_input_registers(
+        self, address: int, count: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> list[int]:
         """
         讀取輸入暫存器 (Function Code 0x04)
 
@@ -92,6 +103,7 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             count: 讀取數量
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
 
         Returns:
             暫存器值列表 (每個為 0-65535)
@@ -100,7 +112,9 @@ class AsyncModbusClientBase(ABC):
     # ========== 寫入操作 ==========
 
     @abstractmethod
-    async def write_single_coil(self, address: int, value: bool, unit_id: int = 1) -> None:
+    async def write_single_coil(
+        self, address: int, value: bool, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
         """
         寫入單一線圈 (Function Code 0x05)
 
@@ -108,10 +122,13 @@ class AsyncModbusClientBase(ABC):
             address: 線圈位址
             value: 布林值
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
         """
 
     @abstractmethod
-    async def write_single_register(self, address: int, value: int, unit_id: int = 1) -> None:
+    async def write_single_register(
+        self, address: int, value: int, unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
         """
         寫入單一暫存器 (Function Code 0x06)
 
@@ -119,10 +136,13 @@ class AsyncModbusClientBase(ABC):
             address: 暫存器位址
             value: 暫存器值 (0-65535)
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
         """
 
     @abstractmethod
-    async def write_multiple_coils(self, address: int, values: list[bool], unit_id: int = 1) -> None:
+    async def write_multiple_coils(
+        self, address: int, values: list[bool], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
         """
         寫入多個線圈 (Function Code 0x0F)
 
@@ -130,10 +150,13 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             values: 布林值列表
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
         """
 
     @abstractmethod
-    async def write_multiple_registers(self, address: int, values: list[int], unit_id: int = 1) -> None:
+    async def write_multiple_registers(
+        self, address: int, values: list[int], unit_id: int = 1, *, timeout: float | None = None
+    ) -> None:
         """
         寫入多個暫存器 (Function Code 0x10)
 
@@ -141,6 +164,7 @@ class AsyncModbusClientBase(ABC):
             address: 起始位址
             values: 暫存器值列表
             unit_id: 設備位址 (Slave ID)
+            timeout: 此請求逾時 (秒)，**keyword-only**；None 沿用 client / queue 預設值
         """
 
     # ========== Context Manager ==========
