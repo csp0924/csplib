@@ -62,6 +62,16 @@ class LeaderElector(AsyncLifecycleMixin):
         self._keepalive_task: asyncio.Task | None = None
         self._watch_task: asyncio.Task | None = None
         self._stop_event = asyncio.Event()
+        # term-ended 信號：demotion 發生時 set，讓 campaign loop 的 leader 分支
+        # 脫離 _stop_event.wait()、取消 keepalive/watch 背景任務，並進入下一輪選舉。
+        # 與 _stop_event 分開以區分「整體停止」與「leader 任期結束需重選」。
+        self._term_ended_event = asyncio.Event()
+        # self-resign 旗標：在主動 resign 期間設為 True，避免 watch 對 self-induced
+        # DELETE 事件再走一次 demotion 流程（會誤觸 on_demoted）。
+        self._resigning = False
+        # watch 重連退避（秒），失敗時遞增直到上限
+        self._watch_backoff_initial = 0.1
+        self._watch_backoff_max = 5.0
 
     @property
     def is_leader(self) -> bool:
@@ -78,6 +88,8 @@ class LeaderElector(AsyncLifecycleMixin):
     async def _on_start(self) -> None:
         """啟動選舉流程"""
         self._stop_event.clear()
+        self._term_ended_event.clear()
+        self._resigning = False
         self._state = ElectionState.CANDIDATE
 
         self._client = self._create_etcd_client()
@@ -103,6 +115,8 @@ class LeaderElector(AsyncLifecycleMixin):
     async def _on_stop(self) -> None:
         """停止選舉，resign 如果是 leader"""
         self._stop_event.set()
+        # 同時喚醒任何等待 term-ended 的路徑（campaign loop 的 leader 分支）
+        self._term_ended_event.set()
 
         if self._state == ElectionState.LEADER:
             await self._resign_internal()
@@ -135,7 +149,12 @@ class LeaderElector(AsyncLifecycleMixin):
         await self._resign_internal()
 
     async def _resign_internal(self) -> None:
-        """內部 resign 實作"""
+        """內部 resign 實作
+
+        設置 self._resigning 旗標，讓 watch loop 對接下來收到的 DELETE 事件
+        判斷為 self-induced 並略過 demotion 流程。
+        """
+        self._resigning = True
         if self._lease is not None and self._client is not None:
             try:
                 await self._client.lease_revoke(self._lease)
@@ -195,8 +214,13 @@ class LeaderElector(AsyncLifecycleMixin):
             self._keepalive_task = asyncio.create_task(self._keepalive_loop(lease_id))
             self._watch_task = asyncio.create_task(self._watch_leader_key())
 
-            # 等待直到被 demoted 或 stopped
-            await self._stop_event.wait()
+            # 等待直到被 demoted（term-ended）或整體 stopped
+            await self._wait_for_term_or_stop()
+
+            # 任期結束（demotion 或 stop）— 收掉 leader 期間的背景任務，
+            # 讓 campaign loop 能進入下一輪選舉（若非 stop）。
+            await self._cancel_leader_tasks()
+            self._term_ended_event.clear()
         else:
             # 讀取目前 leader
             current_value = await self._client.get(election_key)
@@ -245,11 +269,57 @@ class LeaderElector(AsyncLifecycleMixin):
                     return
 
     async def _watch_leader_key(self) -> None:
-        """Leader 模式下監視自己的 key 是否被外部刪除"""
-        # 此 coroutine 僅在 leader 期間運行
-        # 具體實作依賴 etcetra 的 watch API
-        # 如果 key 被刪除（非我們自己 resign），觸發 demotion
-        pass
+        """Leader 模式下監視自己的 key 是否被外部刪除。
+
+        若收到 DELETE 事件且非自身 resign 觸發（self._resigning == False），
+        立即呼叫 _handle_demotion，避免等到 keepalive 連續失敗才偵測到失主權
+        （該路徑延遲約 max_keepalive_failures × (lease_ttl/3) 秒）。
+
+        實作細節：
+          - 使用 client.watch(key) 取得 async iterator
+          - 事件型別判斷以 ev.event_type / ev.event 為主（兼容 etcetra.WatchEvent
+            的 .event: WatchEventType 與測試 mock 的 .event_type: str）
+          - watch 連線失敗時以指數退避重連，直到 stop 或 demoted
+          - 由 stop()/demotion 透過 task.cancel() 終止
+        """
+        if self._client is None:
+            return
+
+        election_key = self._config.election_key
+        backoff = self._watch_backoff_initial
+
+        while not self._stop_event.is_set() and self._state == ElectionState.LEADER:
+            try:
+                watcher = self._client.watch(election_key)
+                async for event in watcher:
+                    if self._stop_event.is_set() or self._state != ElectionState.LEADER:
+                        return
+                    if not _is_delete_event(event):
+                        continue
+                    if self._resigning:
+                        # 自身 resign 觸發的 DELETE — 不再走 demotion 流程
+                        logger.debug("Ignoring self-induced DELETE event during resign")
+                        return
+                    logger.warning(
+                        f"Election key externally deleted, demoting: "
+                        f"instance={self._config.instance_id}, key={election_key}"
+                    )
+                    await self._handle_demotion()
+                    return
+                # watch iterator 結束（連線斷）— 重試
+                backoff = self._watch_backoff_initial
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                logger.opt(exception=True).warning(
+                    f"Watch loop error, retrying in {backoff:.1f}s: "
+                    f"instance={self._config.instance_id}, key={election_key}: {e}"
+                )
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=backoff)
+                    return  # stopped
+                except asyncio.TimeoutError:
+                    backoff = min(backoff * 2, self._watch_backoff_max)
 
     async def _wait_for_leader_loss(self) -> None:
         """Follower 模式下等待 leader key 消失"""
@@ -282,7 +352,12 @@ class LeaderElector(AsyncLifecycleMixin):
                 )
 
     async def _handle_demotion(self) -> None:
-        """處理從 leader 降級"""
+        """處理從 leader 降級
+
+        除了更新狀態 + 觸發 on_demoted callback，還會 set 一個 term-ended event
+        讓 campaign loop 的 leader 分支從 wait 中脫離、並由它負責取消 keepalive/watch。
+        本函式自身不取消 keepalive/watch task，避免「自身執行的 task 取消自己」的 race。
+        """
         if self._state != ElectionState.LEADER:
             return
 
@@ -290,8 +365,84 @@ class LeaderElector(AsyncLifecycleMixin):
         self._current_leader_id = None
         logger.warning("Demoted from leader")
 
+        self._term_ended_event.set()
+
         if self._on_demoted is not None:
             await self._on_demoted()
+
+    async def _wait_for_term_or_stop(self) -> None:
+        """等待 leader 任期結束（demotion）或整體 stop。
+
+        以兩個獨立 Event 區分原因，避免 _stop_event 同時表達「整體 stop」與
+        「需要重選」兩種語義（這會讓 campaign loop 無法判斷是否該繼續迴圈）。
+        """
+        stop_wait = asyncio.create_task(self._stop_event.wait())
+        term_wait = asyncio.create_task(self._term_ended_event.wait())
+        try:
+            _, pending = await asyncio.wait(
+                {stop_wait, term_wait},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        except asyncio.CancelledError:
+            for task in (stop_wait, term_wait):
+                if not task.done():
+                    task.cancel()
+            raise
+
+    async def _cancel_leader_tasks(self) -> None:
+        """取消 leader 期間的背景任務（keepalive / watch）。
+
+        在任期結束（demotion 或 stop）時呼叫，確保不再產生 keepalive 噪音
+        或重複 demote 嘗試。注意：本方法可能由 keepalive_task 內部觸發的
+        demotion 路徑間接呼叫，因此跳過取消「目前正在執行的 task 自身」。
+        """
+        current = asyncio.current_task()
+        tasks = []
+        if self._keepalive_task is not None and self._keepalive_task is not current:
+            tasks.append(self._keepalive_task)
+        if self._watch_task is not None and self._watch_task is not current:
+            tasks.append(self._watch_task)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Background task ended with exception during cancel: {e}")
+        if self._keepalive_task is not current:
+            self._keepalive_task = None
+        if self._watch_task is not current:
+            self._watch_task = None
+
+
+def _is_delete_event(event: object) -> bool:
+    """判斷 watch 事件是否為 DELETE。
+
+    兼容 etcetra.types.WatchEvent（.event: WatchEventType enum，name == "DELETE"）
+    與測試 mock（.event_type: str == "DELETE"）兩種形態。
+    """
+    # 測試 mock 路徑：直接帶 event_type 字串
+    et = getattr(event, "event_type", None)
+    if isinstance(et, str):
+        return et.upper() == "DELETE"
+    # etcetra 路徑：ev.event 為 WatchEventType enum
+    ev_field = getattr(event, "event", None)
+    if ev_field is not None:
+        name = getattr(ev_field, "name", None)
+        if isinstance(name, str):
+            return name.upper() == "DELETE"
+        # fallback：直接比字串化
+        return str(ev_field).upper().endswith("DELETE")
+    return False
 
 
 __all__ = [
