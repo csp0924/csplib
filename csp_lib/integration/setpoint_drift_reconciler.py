@@ -29,6 +29,8 @@ from csp_lib.core.errors import ConfigurationError
 from .reconciler import ReconcilerMixin
 
 if TYPE_CHECKING:
+    from csp_lib.manager.base import LeaderGate
+
     from .command_router import CommandRouter
     from .registry import DeviceRegistry
 
@@ -72,6 +74,12 @@ class SetpointDriftReconciler(ReconcilerMixin):
             破壞 reconciler 「偵測 + 記錄 drift event」的 audit-trail 設計意圖。
             **write 失敗不啟動 cooldown**（cooldown 是「成功記錄」的去抖，不是「最近嘗試」的去抖）
             → transient modbus error 不會卡死，下一 reconcile 立即 retry。
+        leader_gate: HA cluster 場景下的 leader 守門；注入後 follower 節點的 reconcile
+            會在入口早退（router.try_write_single 零呼叫，detail["paused"]="not_leader"），
+            避免 follower 對共用設備發出寫入破壞 single-writer invariant。``None``
+            （預設）= 單節點部署，維持原行為。**僅守 reconciler-driven 寫入**：strategy
+            path 透過 CommandRouter 的寫入仍可在 follower 跑 shadow-mode compute。
+            對齊 ``WriteCommandManager.execute`` 的 leader_gate 早期拒絕設計。
         name:      Reconciler name（預設 ``"setpoint_drift"``）
 
     Raises:
@@ -87,6 +95,7 @@ class SetpointDriftReconciler(ReconcilerMixin):
         tolerance: DriftTolerance = _DEFAULT_TOLERANCE,
         per_device_tolerance: Mapping[str, DriftTolerance] | None = None,
         min_rewrite_interval_seconds: float = 0.0,
+        leader_gate: LeaderGate | None = None,
         name: str = "setpoint_drift",
     ) -> None:
         if tolerance.absolute < 0 or tolerance.relative < 0:
@@ -103,6 +112,7 @@ class SetpointDriftReconciler(ReconcilerMixin):
         self._tolerance = tolerance
         self._per_device: Mapping[str, DriftTolerance] = MappingProxyType(dict(per_device_tolerance or {}))
         self._min_rewrite_interval = min_rewrite_interval_seconds
+        self._leader_gate = leader_gate
         # 每對 (device_id, point_name) 最近一次成功寫入的 monotonic timestamp。
         # Stable-topology 假設：caller 動態 untrack device 時，對應 entry 不會自動 evict；
         # production EMS 通常 boot 時 fix 設備集合，typical scale (~500 entry / ~40KB) 無虞。
@@ -114,18 +124,30 @@ class SetpointDriftReconciler(ReconcilerMixin):
     # name / status / reconcile_once 由 ReconcilerMixin 提供。
 
     async def _reconcile_work(self, detail: dict[str, Any]) -> None:
-        """掃描所有被追蹤 device，偵測 drift 並重寫；隨時更新 detail 以保留部分進度。"""
+        """掃描所有被追蹤 device，偵測 drift 並重寫；隨時更新 detail 以保留部分進度。
+
+        HA：注入 ``leader_gate`` 後，follower 節點在進迴圈前早退（``paused="not_leader"``），
+        避免對共用設備發出寫入破壞 single-writer invariant。對齊
+        ``WriteCommandManager.execute`` 的 gate 守門設計。
+        """
         drift_count = 0
         skipped_by_cooldown = 0
         devices_fixed: list[str] = []
         cooldown_enabled = self._min_rewrite_interval > 0
-        now = time.monotonic()
 
-        # 先寫初值，確保即使迴圈中途 raise 也能從 detail 看到 0/空
+        # 先寫初值，確保 follower 早退或迴圈中途 raise 都能從 detail 看到 0/空，
+        # 讓呼叫端用 detail["drift_count"] / detail["devices_fixed"] 直接 index 不會 KeyError。
         detail["drift_count"] = 0
         detail["devices_fixed"] = ()
         if cooldown_enabled:
             detail["skipped_by_cooldown"] = 0
+
+        # Leader gate：非 leader 直接早退，零寫入；不視為 unhealthy（被 gate 擋是正常運作）
+        if self._leader_gate is not None and not self._leader_gate.is_leader:
+            detail["paused"] = "not_leader"
+            return
+
+        now = time.monotonic()
 
         for device_id in self._router.get_tracked_device_ids():
             snapshot = self._router.get_last_written(device_id)
