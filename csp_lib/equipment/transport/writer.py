@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -206,9 +207,20 @@ class ValidatedWriter:
 
     @staticmethod
     def _values_equal(expected: Any, actual: Any) -> bool:
-        """比較值是否相等"""
+        """比較值是否相等
+
+        Float 採 ``math.isclose(rel_tol=1e-6, abs_tol=1e-9)``：
+
+        - ``rel_tol=1e-6`` 提供 1 ppm 相對精度，跨工業 setpoint 全量級
+          (kW / V / Hz·1e3, 1e3~1e7) 均合理；
+          原 1e-6 *絕對* 容差在大值下比 device 端 float32 儲存精度
+          (LSB ≈ value × 5.96e-8) 還緊，每次 verify=True round-trip 都 false-fail。
+        - ``abs_tol=1e-9`` 作為 near-zero noise floor：rel_tol 在接近 0 時會
+          退化為極嚴格 (容忍度趨近 0)，abs_tol 提供最小絕對容差帶，把 |delta|
+          ≤ 1e-9 視為相等；> 1e-9 的差異仍會被拒絕。
+        """
         if isinstance(expected, float) and isinstance(actual, float):
-            return abs(expected - actual) < 1e-6
+            return math.isclose(expected, actual, rel_tol=1e-6, abs_tol=1e-9)
         return expected == actual
 
 
